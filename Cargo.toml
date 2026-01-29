@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+authors = ["datenkollektiv"]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/datenkollektiv/rustyfarian-power"
+
+[workspace.dependencies]
+log = "0.4"
+esp-idf-hal = "0.45"
