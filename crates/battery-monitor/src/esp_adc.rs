@@ -11,7 +11,7 @@ use esp_idf_hal::adc::ADC1;
 use esp_idf_hal::gpio::Gpio1;
 use esp_idf_hal::peripheral::Peripheral;
 
-use crate::{BatteryConfig, BatteryStatus, PowerSource};
+use crate::{BatteryConfig, BatteryMonitor, BatteryStatus};
 
 /// Battery monitor using ESP-IDF ADC oneshot driver.
 ///
@@ -50,37 +50,6 @@ impl<'a> EspAdcBatteryMonitor<'a> {
         Ok(Self { channel, config })
     }
 
-    /// Read the current battery status.
-    ///
-    /// Takes multiple samples and averages them for noise reduction.
-    /// Detects USB power when voltage exceeds the configured threshold.
-    pub fn read(&mut self) -> BatteryStatus {
-        let raw_mv = self.read_averaged_mv();
-        let voltage_mv = (raw_mv as f32 * self.config.divider_ratio) as u16;
-
-        let power_source = if voltage_mv > self.config.usb_detection_mv {
-            PowerSource::External
-        } else if voltage_mv < self.config.min_voltage_mv / 2 {
-            PowerSource::Unknown
-        } else {
-            PowerSource::Battery
-        };
-
-        let percentage = match power_source {
-            PowerSource::Battery => Some(self.config.voltage_to_percent(voltage_mv)),
-            _ => None,
-        };
-
-        let status = BatteryStatus {
-            voltage_mv,
-            percentage,
-            power_source,
-        };
-
-        log::debug!("Battery: {}", status);
-        status
-    }
-
     /// Read averaged ADC voltage in millivolts (before divider compensation).
     fn read_averaged_mv(&mut self) -> u16 {
         let num_samples = self.config.samples.max(1) as u32;
@@ -105,5 +74,18 @@ impl<'a> EspAdcBatteryMonitor<'a> {
         }
 
         (sum / valid_count) as u16
+    }
+}
+
+impl<'a> BatteryMonitor for EspAdcBatteryMonitor<'a> {
+    /// Read the current battery status.
+    ///
+    /// Takes multiple ADC samples, averages them, and delegates to
+    /// [`BatteryConfig::evaluate_reading()`] for conversion.
+    fn read(&mut self) -> BatteryStatus {
+        let raw_mv = self.read_averaged_mv();
+        let status = self.config.evaluate_reading(raw_mv);
+        log::debug!("Battery: {}", status);
+        status
     }
 }
