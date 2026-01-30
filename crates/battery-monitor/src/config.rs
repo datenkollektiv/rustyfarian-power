@@ -1,5 +1,7 @@
 //! Battery monitoring configuration.
 
+use crate::{BatteryStatus, PowerSource};
+
 /// Configuration for battery voltage monitoring.
 #[derive(Debug, Clone)]
 pub struct BatteryConfig {
@@ -59,5 +61,33 @@ impl BatteryConfig {
         let range = (self.max_voltage_mv - self.min_voltage_mv) as u32;
         let above_min = (voltage_mv - self.min_voltage_mv) as u32;
         ((above_min * 100) / range) as u8
+    }
+
+    /// Evaluate a raw ADC reading and produce a [`BatteryStatus`].
+    ///
+    /// Applies voltage divider compensation, detects the power source, and
+    /// calculates battery percentage when running on battery power.
+    /// This contains all conversion logic so it can be tested without hardware.
+    pub fn evaluate_reading(&self, raw_mv: u16) -> BatteryStatus {
+        let voltage_mv = (raw_mv as f32 * self.divider_ratio) as u16;
+
+        let power_source = if voltage_mv > self.usb_detection_mv {
+            PowerSource::External
+        } else if voltage_mv < self.min_voltage_mv / 2 {
+            PowerSource::Unknown
+        } else {
+            PowerSource::Battery
+        };
+
+        let percentage = match power_source {
+            PowerSource::Battery => Some(self.voltage_to_percent(voltage_mv)),
+            _ => None,
+        };
+
+        BatteryStatus {
+            voltage_mv,
+            percentage,
+            power_source,
+        }
     }
 }
