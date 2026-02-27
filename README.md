@@ -1,12 +1,27 @@
-# Rustyfarian Battery Power Management
+# Rustyfarian Power Management
 
-A Rust library for battery voltage monitoring on ESP32 microcontrollers, targeting the **Heltec WiFi LoRa 32 V3**.
-Provides battery percentage estimation, power source detection (battery vs USB/external), and configurable voltage thresholds.
+A Rust library for power management on ESP32 microcontrollers, targeting the **Heltec WiFi LoRa 32 V3**.
+Powers the rustyfarian ecosystem's battery-driven field deployments — from battery monitoring to deep sleep and radio power gating.
+
+## Vision
+
+> Give every rustyfarian application on ESP32 a single, ergonomic power management layer so battery-powered field deployments run reliably for months without intervention.
+
+**We are building this for:** developers building battery-powered IoT applications in the rustyfarian ecosystem (e.g., remote beehive monitoring via LoRaWAN)
+
+**Long-term goals:**
+- Deep sleep with configurable wake-up sources as first-class primitives
+- Radio power gating that coordinates cleanly with `rustyfarian-network` crates
+- Solar-assisted deployment support via charging/boost input awareness
+
+**Out of scope:** Wi-Fi, MQTT, and LoRaWAN protocol logic — these belong in `rustyfarian-network`.
+
+*Full vision, success signals, and open questions: [VISION.md](./VISION.md)*
 
 ## Features
 
 - Battery voltage reading via ADC with voltage divider compensation
-- Linear interpolation for battery percentage (0-100%)
+- Linear interpolation for battery percentage (0–100%)
 - Power source detection: Battery, USB/External, or Unknown
 - Configurable thresholds (min/max voltage, USB detection, sample count)
 - Hardware-independent core logic behind a `BatteryMonitor` trait for testability
