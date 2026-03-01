@@ -9,5 +9,6 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/datenkollektiv/rustyfarian-power"
 
 [workspace.dependencies]
+anyhow = "1"
 log = "0.4"
 esp-idf-hal = "0.45"

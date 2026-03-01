@@ -14,5 +14,6 @@ default = ["esp-idf"]
 esp-idf = ["dep:esp-idf-hal"]
 
 [dependencies]
+anyhow.workspace = true
 log.workspace = true
 esp-idf-hal = { workspace = true, optional = true }

@@ -1,22 +1,32 @@
-//! Battery voltage monitoring for embedded projects.
+//! Battery voltage monitoring and power management for embedded projects.
 //!
-//! Provides battery voltage reading, percentage estimation,
-//! and power source detection (battery vs USB).
+//! Provides battery voltage reading, percentage estimation, power source
+//! detection (battery vs USB), and deep sleep management.
 //!
 //! # ESP-IDF (default feature)
 //!
-//! The `esp-idf` feature provides [`EspAdcBatteryMonitor`], which reads
-//! battery voltage via an ADC pin with a configurable voltage divider.
+//! The `esp-idf` feature provides hardware implementations:
+//! - [`EspAdcBatteryMonitor`] — reads battery voltage via ADC
+//! - [`EspSleepManager`] — enters deep sleep with configured wake sources
+//! - [`EspWakeCauseSource`] — reads the reason for the last wake
 
 pub mod config;
+pub mod sleep;
 
 #[cfg(feature = "esp-idf")]
 pub mod esp_adc;
 
+#[cfg(feature = "esp-idf")]
+pub mod esp_sleep;
+
 pub use config::BatteryConfig;
+pub use sleep::{NoopSleepManager, SleepManager, WakeCause, WakeCauseSource, WakeSource};
 
 #[cfg(feature = "esp-idf")]
 pub use esp_adc::EspAdcBatteryMonitor;
+
+#[cfg(feature = "esp-idf")]
+pub use esp_sleep::{EspSleepManager, EspWakeCauseSource};
 
 /// Trait for reading battery status from hardware.
 ///
