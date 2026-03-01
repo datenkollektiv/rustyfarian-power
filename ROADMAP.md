@@ -4,6 +4,32 @@
 
 See [VISION.md](./VISION.md) for goals, success signals, and non-goals.
 
+```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "cScale0": "#c8f7c5",
+    "cScaleLabel0": "#1b5e20",
+    "cScale1": "#fff3cd",
+    "cScaleLabel1": "#7a5a00",
+    "cScale2": "#e3f2fd",
+    "cScaleLabel2": "#0d47a1"
+  }
+}}%%
+
+timeline
+    title Fuzzy rustyfarian-power Roadmap
+
+    Near term : Deep Sleep – Timer Wake
+              : Deep Sleep – GPIO Wake Sources (after Timer Wake)
+
+    Mid term  : Radio Power Gating (after GPIO Wake)
+              : Charging and Solar Awareness (after Radio Power Gating)
+
+    Long term : Light Sleep and PM Locks (after Solar Awareness)
+              : ULP Coprocessor Monitor (after Light Sleep)
+```
+
 ---
 
 ## Current State

@@ -24,46 +24,64 @@ Powers the rustyfarian ecosystem's battery-driven field deployments — from bat
 - Linear interpolation for battery percentage (0–100%)
 - Power source detection: Battery, USB/External, or Unknown
 - Configurable thresholds (min/max voltage, USB detection, sample count)
-- Hardware-independent core logic behind a `BatteryMonitor` trait for testability
+- Deep sleep with timer wake and deterministic wake-cause detection
+- Hardware-independent core logic behind traits for full host-side testability
 
 ## Prerequisites
 
 This project cross-compiles for the `xtensa-esp32s3-espidf` target using Espressif's custom Rust toolchain (`esp` channel).
 See `rust-toolchain.toml` for toolchain configuration.
 
-## Shell Commands
-
-Build the workspace:
+First-time setup:
 
 ```shell
-cargo build
+just setup-toolchain
+just setup-cargo-config
 ```
 
-Run tests (host target, no ESP-IDF dependency):
+## Common Tasks
+
+Run `just` with no arguments to list all available recipes.
+
+Check platform-independent code (no ESP toolchain required):
 
 ```shell
-cargo test -p battery-monitor --no-default-features --target aarch64-apple-darwin
+just check
 ```
 
-Run a single test:
+Check all code including ESP-IDF implementations (requires espup):
 
 ```shell
-cargo test -p battery-monitor --no-default-features --target aarch64-apple-darwin <test_name>
+just check-all
 ```
 
-Check without building:
+Run host-side tests:
 
 ```shell
-cargo check
+just test
+```
+
+Run a single test by name:
+
+```shell
+just test-one <test_name>
+```
+
+Format, check, lint, and test in one step:
+
+```shell
+just pre-commit
 ```
 
 ## Crate Structure
 
-| Module       | Description                                                                           |
-|:-------------|:--------------------------------------------------------------------------------------|
-| `lib.rs`     | Public API: `PowerSource`, `BatteryStatus`, `BatteryMonitor` trait, `is_sufficient()` |
-| `config.rs`  | `BatteryConfig` with voltage thresholds, `voltage_to_percent()`, `evaluate_reading()` |
-| `esp_adc.rs` | `EspAdcBatteryMonitor` — ESP-IDF ADC implementation (feature-gated behind `esp-idf`)  |
+| Module          | Description                                                                            |
+|:----------------|:---------------------------------------------------------------------------------------|
+| `lib.rs`        | Public API: `PowerSource`, `BatteryStatus`, `BatteryMonitor` trait, `is_sufficient()` |
+| `config.rs`     | `BatteryConfig` with voltage thresholds, `voltage_to_percent()`, `evaluate_reading()` |
+| `sleep.rs`      | `SleepManager`, `WakeCauseSource` traits; `WakeCause`, `WakeSource` enums; `NoopSleepManager` |
+| `esp_adc.rs`    | `EspAdcBatteryMonitor` — ESP-IDF ADC implementation (feature-gated behind `esp-idf`)  |
+| `esp_sleep.rs`  | `EspSleepManager`, `EspWakeCauseSource` — ESP-IDF deep sleep implementation (feature-gated) |
 
 ## License
 

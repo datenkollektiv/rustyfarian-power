@@ -105,3 +105,9 @@ Remove or update entries that are superseded.
 - The `esp-idf` feature is enabled by default, which triggers the ESP-IDF CMake build on the first compiler.
   This can take 10–20 minutes on a cold cache.
   Subsequent builds are fast due to the `.embuild` cache.
+- **Host tests require an explicit target flag.**
+  `.cargo/config.toml` forces `target = "xtensa-esp32s3-espidf"` for all builds, so `cargo test` without `--target` tries to link with `ldproxy` and fails.
+  Always run host tests as: `cargo test -p battery-monitor --no-default-features --target aarch64-apple-darwin` (adjust the triple for non-Apple hosts).
+- **`esp_sleep_config_gpio_isolate()` returns `void` in ESP-IDF v5.x**, not `esp_err_t`.
+  Do not wrap it in an error check; call it directly and document the `SAFETY` comment.
+  (The key-insights entry about calling this function before sleep is still correct — just no error check needed.)
