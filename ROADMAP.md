@@ -20,14 +20,15 @@ See [VISION.md](./VISION.md) for goals, success signals, and non-goals.
 timeline
     title Fuzzy rustyfarian-power Roadmap
 
-    Near term : Deep Sleep – Timer Wake
-              : Deep Sleep – GPIO Wake Sources (after Timer Wake)
+    Done      : ✓ Deep Sleep – Timer Wake
 
-    Mid term  : Radio Power Gating (after GPIO Wake)
-              : Charging and Solar Awareness (after Radio Power Gating)
+    Near term : Deep Sleep – GPIO Wake Sources
 
-    Long term : Light Sleep and PM Locks (after Solar Awareness)
-              : ULP Coprocessor Monitor (after Light Sleep)
+    Mid term  : Radio Power Gating
+              : Charging and Solar Awareness
+
+    Long term : Light Sleep and PM Locks
+              : ULP Coprocessor Monitor
 ```
 
 ---
@@ -41,13 +42,16 @@ It provides battery voltage reading, percentage estimation, and power source det
 - `BatteryMonitor` trait + `BatteryStatus` struct + `PowerSource` enum
 - `BatteryConfig` with `evaluate_reading()` and `voltage_to_percent()`
 - `EspAdcBatteryMonitor` (ADC1/GPIO1, feature-gated behind `esp-idf`)
+- `SleepManager` + `WakeCauseSource` traits + `WakeCause` / `WakeSource` enums
+- `EspSleepManager` + `EspWakeCauseSource` (feature-gated behind `esp-idf`)
+- `NoopSleepManager` mock for host tests
 - Host-side unit tests covering all branch cases
 
-**What is missing (the whole roadmap below):**
-- Deep sleep / wake
-- Radio power gating
-- Charging / solar awareness
-- Light sleep / PM locks
+**What is missing:**
+- Deep sleep – GPIO wake sources (Milestone 2)
+- Radio power gating (Milestone 3)
+- Charging / solar awareness (Milestone 4)
+- Light sleep / PM locks (Milestone 5)
 
 ---
 
@@ -70,7 +74,7 @@ These were decided during the vision session and drive every milestone below.
 
 ---
 
-## Milestone 1 — Deep Sleep: Timer Wake
+## ✓ Milestone 1 — Deep Sleep: Timer Wake — **COMPLETE** (commit `aea4645`)
 
 **Goal:** Any rustyfarian app can enter deep sleep and wake on a configurable timer in under a day of integration work.
 
@@ -228,11 +232,11 @@ The `SleepManager` trait surface is designed to not foreclose this — a future 
 
 ## Open Questions
 
-| Question | Blocks | How to resolve |
-|:---|:---|:---|
-| Is GPIO 3 = VEXT on the Heltec WiFi LoRa 32 V3? | Milestone 3 | Check the V3-specific schematic before writing `GpioRadioPowerGate` |
-| Is the TP4054 CHRG pin connected to an ESP32 GPIO on Heltec V3? | Milestone 4 | Check the V3-specific schematic; identify pin number |
-| `pin_mask: u64` vs `&[u8]` pin list for `WakeSource::GpioLevel`? | Milestone 2 | Decide before implementing `EspSleepManager` for GPIO sources |
-| Add `#[non_exhaustive]` to `PowerSource` before publishing? | Milestone 4 | Decide at first crates.io publish, or when M4 is scoped |
-| Radio stabilisation delay on `RadioPowerGate` trait or constructor only? | Milestone 3 | Defer until there is an async consumer requiring it |
-| Solar integration depth — CHRG pin only, or richer energy budget? | Milestone 4 | Confirmed as CHRG pin only for Heltec V3; revisit if hardware changes |
+| Question                                                                 | Blocks      | How to resolve                                                        |
+|:-------------------------------------------------------------------------|:------------|:----------------------------------------------------------------------|
+| Is GPIO 3 = VEXT on the Heltec WiFi LoRa 32 V3?                          | Milestone 3 | Check the V3-specific schematic before writing `GpioRadioPowerGate`   |
+| Is the TP4054 CHRG pin connected to an ESP32 GPIO on Heltec V3?          | Milestone 4 | Check the V3-specific schematic; identify pin number                  |
+| ~~`pin_mask: u64` vs `&[u8]` pin list for `WakeSource::GpioLevel`?~~ **Resolved:** `pin_mask: u64` — preserves `WakeSource: Copy`; see `docs/key-insights.md` | ~~Milestone 2~~ | ~~Decide before implementing `EspSleepManager` for GPIO sources~~ |
+| Add `#[non_exhaustive]` to `PowerSource` before publishing?              | Milestone 4 | Decide at first crates.io publish, or when M4 is scoped               |
+| Radio stabilisation delay on `RadioPowerGate` trait or constructor only? | Milestone 3 | Defer until there is an async consumer requiring it                   |
+| Solar integration depth — CHRG pin only, or richer energy budget?        | Milestone 4 | Confirmed as CHRG pin only for Heltec V3; revisit if hardware changes |
