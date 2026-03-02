@@ -9,8 +9,8 @@
 //! This prevents floating digital GPIO pins from leaking current during sleep —
 //! one of the most commonly missed power optimisations on real boards.
 //!
-//! When adding GPIO wake sources (Milestone 2), set `isolate_gpio: false` if
-//! you need explicit control over pin hold state around wake-capable pins.
+//! When configuring GPIO wake sources, set `isolate_gpio: false` if you need
+//! explicit control over pin hold state around wake-capable pins.
 //!
 //! # Persisting state across deep sleep
 //!
@@ -75,7 +75,7 @@ fn check(err: sys::esp_err_t) -> anyhow::Result<()> {
 /// Use [`EspSleepManager::default()`] for the recommended configuration
 /// (`isolate_gpio: true`).
 /// Set `isolate_gpio: false` if you need manual control over GPIO hold state
-/// (e.g. when configuring GPIO wake sources in Milestone 2).
+/// when configuring GPIO wake sources.
 pub struct EspSleepManager {
     /// Isolate all digital GPIO pins before entering sleep.
     ///
