@@ -20,8 +20,8 @@
 //!
 //! # ESP-IDF implementation
 //!
-//! Enable the `esp-idf` feature (default) to access [`EspSleepManager`] and
-//! [`EspWakeCauseSource`] in the [`crate::esp_sleep`] module.
+//! Enable the `esp-idf` feature (default) to access `EspSleepManager` and
+//! `EspWakeCauseSource` in the `crate::esp_sleep` module.
 
 /// The reason the device woke from sleep, or [`WakeCause::PowerOn`] on cold boot.
 ///
@@ -190,6 +190,41 @@ pub(crate) fn validate_gpio_level_source(pin_mask: u64) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Validates a `sources` slice passed to [`SleepManager::sleep`].
+///
+/// This is a pure function with no hardware or ESP-IDF dependency.
+/// Called by `EspSleepManager::sleep()` before any FFI call so the same
+/// checks are available to any `SleepManager` implementation.
+///
+/// # Errors
+///
+/// - More than one `WakeSource::Timer` — ESP-IDF supports only one timer source.
+/// - More than one `WakeSource::GpioLevel` — combine multiple pins into one mask.
+pub(crate) fn validate_wake_sources(sources: &[WakeSource]) -> anyhow::Result<()> {
+    let timer_count = sources
+        .iter()
+        .filter(|s| matches!(s, WakeSource::Timer { .. }))
+        .count();
+    if timer_count > 1 {
+        anyhow::bail!(
+            "at most one Timer wake source is supported per sleep call; \
+             {} were provided",
+            timer_count
+        );
+    }
+    let gpio_level_count = sources
+        .iter()
+        .filter(|s| matches!(s, WakeSource::GpioLevel { .. }))
+        .count();
+    if gpio_level_count > 1 {
+        anyhow::bail!(
+            "at most one GpioLevel wake source is supported per sleep call; \
+             combine multiple pins into a single pin_mask"
+        );
+    }
+    Ok(())
+}
+
 /// Controls entry into a low-power sleep mode.
 ///
 /// # Does not return on real hardware
@@ -229,21 +264,58 @@ pub trait WakeCauseSource {
 
 /// A no-op sleep manager for host-side unit testing.
 ///
-/// [`SleepManager::sleep`] it returns `Ok(())` immediately without entering any
-/// sleep mode.
-/// All [`WakeSource`] variants are accepted without validation.
-/// [`WakeCauseSource::last_wake_cause`] always returns [`WakeCause::PowerOn`].
-pub struct NoopSleepManager;
+/// `SleepManager::sleep` validates sources with [`validate_wake_sources`] and
+/// returns `Ok(())` without entering any sleep mode.
+/// Misconfigured sources (duplicate `Timer`, duplicate `GpioLevel`) are
+/// rejected with the same errors as `EspSleepManager`, so tests mirror
+/// on-device behaviour.
+/// `WakeCauseSource::last_wake_cause` returns the cause configured at construction;
+/// defaults to `WakeCause::PowerOn`.
+///
+/// # Examples
+///
+/// Use the default (cold-boot path) or program a specific wake cause to test
+/// branches in consumer code:
+///
+/// ```
+/// use battery_monitor::{NoopSleepManager, WakeCause, WakeCauseSource, GpioWakeMask};
+///
+/// let mut mock = NoopSleepManager::with_cause(WakeCause::Timer);
+/// assert_eq!(mock.last_wake_cause(), WakeCause::Timer);
+///
+/// let mut gpio_mock = NoopSleepManager::with_cause(
+///     WakeCause::Ext1(GpioWakeMask(1u64 << 4))
+/// );
+/// assert!(matches!(gpio_mock.last_wake_cause(), WakeCause::Ext1(_)));
+/// ```
+pub struct NoopSleepManager {
+    cause: WakeCause,
+}
+
+impl Default for NoopSleepManager {
+    fn default() -> Self {
+        Self {
+            cause: WakeCause::PowerOn,
+        }
+    }
+}
+
+impl NoopSleepManager {
+    /// Create a mock that returns the given `WakeCause` from `last_wake_cause()`.
+    pub fn with_cause(cause: WakeCause) -> Self {
+        Self { cause }
+    }
+}
 
 impl SleepManager for NoopSleepManager {
-    fn sleep(&mut self, _sources: &[WakeSource]) -> anyhow::Result<()> {
-        Ok(())
+    fn sleep(&mut self, sources: &[WakeSource]) -> anyhow::Result<()> {
+        validate_wake_sources(sources)
     }
 }
 
 impl WakeCauseSource for NoopSleepManager {
     fn last_wake_cause(&self) -> WakeCause {
-        WakeCause::PowerOn
+        self.cause
     }
 }
 
@@ -253,7 +325,7 @@ mod tests {
 
     #[test]
     fn noop_sleep_returns_ok() {
-        let mut mgr = NoopSleepManager;
+        let mut mgr = NoopSleepManager::default();
         assert!(mgr
             .sleep(&[WakeSource::Timer { duration_ms: 5000 }])
             .is_ok());
@@ -261,7 +333,7 @@ mod tests {
 
     #[test]
     fn noop_sleep_gpio_level_returns_ok() {
-        let mut mgr = NoopSleepManager;
+        let mut mgr = NoopSleepManager::default();
         assert!(mgr
             .sleep(&[WakeSource::GpioLevel {
                 pin_mask: 1u64 << 4,
@@ -272,14 +344,27 @@ mod tests {
 
     #[test]
     fn noop_sleep_empty_sources_returns_ok() {
-        let mut mgr = NoopSleepManager;
+        let mut mgr = NoopSleepManager::default();
         assert!(mgr.sleep(&[]).is_ok());
     }
 
     #[test]
     fn noop_wake_cause_is_power_on() {
-        let mgr = NoopSleepManager;
+        let mgr = NoopSleepManager::default();
         assert_eq!(mgr.last_wake_cause(), WakeCause::PowerOn);
+    }
+
+    #[test]
+    fn noop_sleep_manager_with_cause_returns_configured_cause() {
+        let mgr = NoopSleepManager::with_cause(WakeCause::Timer);
+        assert_eq!(mgr.last_wake_cause(), WakeCause::Timer);
+    }
+
+    #[test]
+    fn noop_sleep_manager_with_gpio_cause() {
+        let mask = GpioWakeMask(1u64 << 7);
+        let mgr = NoopSleepManager::with_cause(WakeCause::Ext1(mask));
+        assert_eq!(mgr.last_wake_cause(), WakeCause::Ext1(mask));
     }
 
     #[test]
@@ -329,6 +414,52 @@ mod tests {
     #[test]
     fn gpio_wake_level_variants_are_distinct() {
         assert_ne!(GpioWakeLevel::AnyHigh, GpioWakeLevel::AnyLow);
+    }
+
+    // --- validate_wake_sources tests ---
+
+    #[test]
+    fn validate_wake_sources_rejects_two_timers() {
+        let err = validate_wake_sources(&[
+            WakeSource::Timer { duration_ms: 1000 },
+            WakeSource::Timer { duration_ms: 2000 },
+        ])
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("at most one Timer"),
+            "unexpected: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_wake_sources_rejects_two_gpio_level() {
+        let err = validate_wake_sources(&[
+            WakeSource::GpioLevel {
+                pin_mask: 1u64 << 4,
+                level: GpioWakeLevel::AnyLow,
+            },
+            WakeSource::GpioLevel {
+                pin_mask: 1u64 << 7,
+                level: GpioWakeLevel::AnyHigh,
+            },
+        ])
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("combine multiple pins"),
+            "unexpected: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_wake_sources_accepts_mixed_valid_sources() {
+        assert!(validate_wake_sources(&[
+            WakeSource::Timer { duration_ms: 5000 },
+            WakeSource::GpioLevel {
+                pin_mask: 1u64 << 4,
+                level: GpioWakeLevel::AnyLow,
+            },
+        ])
+        .is_ok());
     }
 
     // --- validate_gpio_level_source tests ---

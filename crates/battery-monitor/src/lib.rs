@@ -9,6 +9,66 @@
 //! - [`EspAdcBatteryMonitor`] — reads battery voltage via ADC
 //! - [`EspSleepManager`] — enters deep sleep with configured wake sources
 //! - [`EspWakeCauseSource`] — reads the reason for the last wake
+//!
+//! # Quick start
+//!
+//! ## Host-side testing (no ESP toolchain required)
+//!
+//! Use [`NoopSleepManager`] and [`NoopBatteryMonitor`] to test logic that
+//! branches on wake cause or battery state — no hardware needed:
+//!
+//! ```
+//! use battery_monitor::{
+//!     BatteryMonitor, NoopBatteryMonitor,
+//!     NoopSleepManager, SleepManager, WakeCauseSource, WakeCause, WakeSource,
+//! };
+//!
+//! // Simulate a timer wake and check that consumer code handles it.
+//! let wake_src = NoopSleepManager::with_cause(WakeCause::Timer);
+//! assert_eq!(wake_src.last_wake_cause(), WakeCause::Timer);
+//!
+//! // Simulate a battery reading and verify the sufficiency check.
+//! let mut battery = NoopBatteryMonitor::on_battery(3700, 60);
+//! assert!(battery.read().is_sufficient(3600, 20));
+//!
+//! // Sleep configuration errors are surfaced just as on device.
+//! let mut mgr = NoopSleepManager::default();
+//! mgr.sleep(&[WakeSource::Timer { duration_ms: 60_000 }]).unwrap();
+//! ```
+//!
+//! ## Device firmware (requires `esp-idf` feature)
+//!
+//! ```rust,ignore
+//! use battery_monitor::{
+//!     BatteryConfig, EspAdcBatteryMonitor, BatteryMonitor,
+//!     EspWakeCauseSource, EspSleepManager,
+//!     SleepManager, WakeCauseSource, WakeCause, WakeSource,
+//! };
+//!
+//! fn main() -> anyhow::Result<()> {
+//!     // 1. Read wake cause first, before peripheral init.
+//!     // EspWakeCauseSource is a unit struct — construct it as a value, then call the trait method.
+//!     let wake_src = EspWakeCauseSource;
+//!     let cause = wake_src.last_wake_cause();
+//!     match cause {
+//!         WakeCause::PowerOn => log::info!("Cold boot"),
+//!         WakeCause::Timer   => log::info!("Woke from timer"),
+//!         other              => log::info!("Other wake: {:?}", other),
+//!     }
+//!
+//!     // 2. Check battery before transmitting.
+//!     // let mut battery = EspAdcBatteryMonitor::new(peripherals.adc1,
+//!     //                                             peripherals.gpio1,
+//!     //                                             BatteryConfig::heltec_v3())?;
+//!     // let status = battery.read();
+//!     // log::info!("Battery: {}", status);
+//!
+//!     // 3. Enter deep sleep — this call never returns on real hardware.
+//!     EspSleepManager::default()
+//!         .sleep(&[WakeSource::Timer { duration_ms: 60_000 }])?;
+//!     unreachable!("esp_deep_sleep_start() never returns");
+//! }
+//! ```
 
 pub mod config;
 pub mod sleep;
@@ -41,6 +101,67 @@ pub trait BatteryMonitor {
     fn read(&mut self) -> BatteryStatus;
 }
 
+/// A no-op battery monitor for host-side unit testing.
+///
+/// `BatteryMonitor::read` always returns the status configured at construction.
+/// Use the convenience constructors to target the three `PowerSource` branches.
+///
+/// # Examples
+///
+/// ```
+/// use battery_monitor::{BatteryMonitor, NoopBatteryMonitor};
+///
+/// fn needs_transmit(monitor: &mut impl BatteryMonitor) -> bool {
+///     monitor.read().is_sufficient(3600, 20)
+/// }
+///
+/// assert!(needs_transmit(&mut NoopBatteryMonitor::on_external()));
+/// assert!(!needs_transmit(&mut NoopBatteryMonitor::on_battery(3400, 10)));
+/// ```
+pub struct NoopBatteryMonitor {
+    status: BatteryStatus,
+}
+
+impl NoopBatteryMonitor {
+    /// Creates a mock that returns the given `status` on every `read()`.
+    pub fn new(status: BatteryStatus) -> Self {
+        Self { status }
+    }
+
+    /// Creates a mock in the `Battery` state with the given voltage and percentage.
+    pub fn on_battery(voltage_mv: u16, percentage: u8) -> Self {
+        Self::new(BatteryStatus {
+            voltage_mv,
+            percentage: Some(percentage),
+            power_source: PowerSource::Battery,
+        })
+    }
+
+    /// Creates a mock in the `External` (USB/charger) state.
+    pub fn on_external() -> Self {
+        Self::new(BatteryStatus {
+            voltage_mv: 5000,
+            percentage: None,
+            power_source: PowerSource::External,
+        })
+    }
+
+    /// Creates a mock in the `Unknown` state (ADC failed or unconfigured).
+    pub fn unknown() -> Self {
+        Self::new(BatteryStatus {
+            voltage_mv: 0,
+            percentage: None,
+            power_source: PowerSource::Unknown,
+        })
+    }
+}
+
+impl BatteryMonitor for NoopBatteryMonitor {
+    fn read(&mut self) -> BatteryStatus {
+        self.status
+    }
+}
+
 /// Power source detected by the battery monitor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PowerSource {
@@ -53,7 +174,7 @@ pub enum PowerSource {
 }
 
 /// Battery status snapshot.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct BatteryStatus {
     /// Battery voltage in millivolts (after voltage divider compensation).
     pub voltage_mv: u16,
@@ -273,5 +394,32 @@ mod tests {
         assert_eq!(status.voltage_mv, 3600);
         assert_eq!(status.power_source, PowerSource::Battery);
         assert_eq!(status.percentage, Some(50));
+    }
+
+    #[test]
+    fn noop_battery_monitor_on_battery_reads_correct_status() {
+        let mut mon = NoopBatteryMonitor::on_battery(3700, 60);
+        let status = mon.read();
+        assert_eq!(status.voltage_mv, 3700);
+        assert_eq!(status.percentage, Some(60));
+        assert_eq!(status.power_source, PowerSource::Battery);
+    }
+
+    #[test]
+    fn noop_battery_monitor_on_external_is_always_sufficient() {
+        let mut mon = NoopBatteryMonitor::on_external();
+        assert!(mon.read().is_sufficient(5000, 100));
+    }
+
+    #[test]
+    fn noop_battery_monitor_unknown_is_always_sufficient() {
+        let mut mon = NoopBatteryMonitor::unknown();
+        assert!(mon.read().is_sufficient(5000, 100));
+    }
+
+    #[test]
+    fn noop_battery_monitor_on_battery_insufficient() {
+        let mut mon = NoopBatteryMonitor::on_battery(3400, 10);
+        assert!(!mon.read().is_sufficient(3600, 20));
     }
 }

@@ -23,10 +23,11 @@ pub struct EspAdcBatteryMonitor<'a> {
 }
 
 impl<'a> EspAdcBatteryMonitor<'a> {
-    /// Create a new battery monitor for Heltec WiFi LoRa 32 V3.
+    /// Creates a new battery monitor using ADC1 / GPIO1.
     ///
-    /// Uses ADC1 channel 0 (GPIO1) with 11dB attenuation for the
-    /// full 0-3100mV measurement range.
+    /// 11 dB attenuation is selected for the 0–3100 mV measurement range, which
+    /// comfortably covers the 0–2100 mV raw signal produced by the 2:1 voltage
+    /// divider on Heltec V3 GPIO1 (4200 mV battery max → 2100 mV at ADC pin).
     pub fn new(
         adc1: impl Peripheral<P = ADC1> + 'a,
         battery_pin: impl Peripheral<P = Gpio1> + 'a,
