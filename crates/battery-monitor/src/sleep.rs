@@ -27,6 +27,12 @@
 ///
 /// Read this via [`WakeCauseSource::last_wake_cause`] at the start of `main()`
 /// to determine whether the device is recovering from a sleep cycle or starting fresh.
+///
+/// GPIO-related variants are distinct, so callers can tell exactly which wake
+/// mechanism fired without inspecting a potentially empty mask:
+/// - [`WakeCause::Ext1`] — EXT1 multi-pin wake; carries the fired-pin mask.
+/// - [`WakeCause::Ext0`] — EXT0 single-pin wake; no mask available.
+/// - [`WakeCause::Gpio`] — ESP32-S3 deep-sleep GPIO wake; no mask available.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WakeCause {
     /// Cold power-on or hardware reset — not a wake from sleep.
@@ -36,12 +42,75 @@ pub enum WakeCause {
     PowerOn,
     /// Woken by the configured sleep timer.
     Timer,
-    /// Woken by a GPIO signal (EXT0, EXT1, or deep-sleep GPIO wakeup).
+    /// Woken by an EXT1 GPIO signal (multiple RTC pins, ANY_HIGH or ANY_LOW).
+    ///
+    /// The payload contains the bitmask of pins that fired, read from
+    /// `esp_sleep_get_ext1_wakeup_status()`.
+    /// On ESP32-S3, only bits 0–21 (RTC GPIOs) are meaningful.
+    Ext1(GpioWakeMask),
+    /// Woken by an EXT0 GPIO signal (single RTC pin).
+    ///
+    /// The EXT1 status register is not used for EXT0 wakeup.
+    /// No fired-pin mask is available.
+    ///
+    /// EXT0 is configured via `esp_sleep_enable_ext0_wakeup()`, which is a
+    /// separate ESP-IDF API not currently exposed by this crate.
+    /// This variant is returned by [`WakeCauseSource::last_wake_cause`] when the
+    /// device wakes from an EXT0 source — for example, if EXT0 was configured
+    /// by firmware outside this library's API.
+    Ext0,
+    /// Woken by the ESP32-S3 deep-sleep GPIO wakeup source
+    /// (`esp_deep_sleep_enable_gpio_wakeup`).
+    ///
+    /// The EXT1 status register is not used for this wake source.
+    /// Call `esp_sleep_get_gpio_wakeup_status()` directly if a fired-pin mask
+    /// is needed.
     Gpio,
     /// Woken by a touch sensor.
     Touch,
     /// Woken by some other cause (ULP, UART, Wi-Fi, Bluetooth, etc.).
     Other,
+}
+
+/// Bitmask of GPIO pins that triggered an EXT1 wakeup.
+///
+/// Bit N is set when GPIO N fired.
+/// On ESP32-S3, only bits 0–21 (RTC GPIOs) are meaningful.
+/// Carried by [`WakeCause::Ext1`]; not used by [`WakeCause::Ext0`] or
+/// [`WakeCause::Gpio`], which have separate variants precisely because they
+/// have no fired-pin mask.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GpioWakeMask(pub u64);
+
+impl GpioWakeMask {
+    /// Returns `true` if the given pin number is set in this mask.
+    pub fn contains_pin(self, pin: u8) -> bool {
+        self.0 & (1u64 << pin) != 0
+    }
+}
+
+/// The logic level at which an EXT1 GPIO wake source triggers.
+///
+/// All pins in a [`WakeSource::GpioLevel`] mask share the same level.
+/// The semantics are "ANY": wakeup triggers when **any** of the configured
+/// pins reach the specified level.
+///
+/// Corresponds to `ESP_EXT1_WAKEUP_ANY_HIGH` / `ESP_EXT1_WAKEUP_ANY_LOW` in
+/// ESP-IDF v5.x.
+/// The deprecated `ESP_EXT1_WAKEUP_ALL_LOW` (all-pins-low) mode is not
+/// supported by this crate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GpioWakeLevel {
+    /// Wake when **any** pin in the mask goes high.
+    ///
+    /// Pair with an external pull-down resistor (pin pulled LOW at rest,
+    /// external device pulls HIGH to trigger).
+    AnyHigh,
+    /// Wake when **any** pin in the mask goes low.
+    ///
+    /// Pair with an external pull-up resistor (pin pulled HIGH at rest,
+    /// external device pulls LOW to trigger).
+    AnyLow,
 }
 
 /// A wake source to configure before entering sleep.
@@ -52,6 +121,73 @@ pub enum WakeSource {
         /// Wake delay in milliseconds.
         duration_ms: u64,
     },
+    /// Wake the device when one or more GPIO pins reach the configured level.
+    ///
+    /// Uses ESP-IDF EXT1 wakeup (`esp_sleep_enable_ext1_wakeup_io`).
+    /// Only RTC GPIOs 0–21 are valid on ESP32-S3.
+    /// Bits for out-of-range pins are rejected at configuration time.
+    ///
+    /// # Hardware requirement
+    ///
+    /// External pull resistors (10–100 kΩ) are **required** on every wake pin.
+    /// RTC internal pull-up/pull-down resistors are unavailable during deep sleep
+    /// when `RTC_PERIPH` is powered down (the default).
+    /// A floating pin will have an indeterminate HOLD state and may false-trigger or
+    /// fail to trigger — missing external resistors is a common field failure mode.
+    ///
+    /// Pull direction depends on the chosen level:
+    /// - [`GpioWakeLevel::AnyHigh`]: use an external pull-down (pin pulled LOW at rest).
+    /// - [`GpioWakeLevel::AnyLow`]: use an external pull-up (pin pulled HIGH at rest).
+    ///
+    /// # GPIO isolation
+    ///
+    /// When using GPIO wake sources, set `EspSleepManager { isolate_gpio: false }`.
+    /// The default `isolate_gpio: true` may prevent GPIO pins from triggering wakeup.
+    GpioLevel {
+        /// Bitmask of RTC GPIO pins; bit N = GPIO N.
+        ///
+        /// Must be non-zero and must not contain bits above position 21 on ESP32-S3.
+        pin_mask: u64,
+        /// Logic level at which a wake is triggered (ANY semantics — any pin in the
+        /// mask reaching this level triggers wake).
+        level: GpioWakeLevel,
+    },
+}
+
+/// Validates the `pin_mask` field of a [`WakeSource::GpioLevel`] source.
+///
+/// This is a pure function with no hardware or ESP-IDF dependency.
+/// It is called by `EspSleepManager::sleep()` before any FFI call, and is
+/// exposed here so the validation logic can be covered by host-side unit tests.
+///
+/// # Errors
+///
+/// - `pin_mask == 0` — at least one pin must be specified.
+/// - `pin_mask` contains bits above position 21 — only RTC GPIOs 0–21 are
+///   valid for EXT1 wakeup on ESP32-S3.
+///
+/// # Target specificity
+///
+/// The upper-bit check (`pin > 21`) is specific to the ESP32-S3 RTC GPIO
+/// range for EXT1.
+/// Other ESP32 variants (classic ESP32, C3, C6, H2) have different RTC GPIO
+/// sets and would require a different valid mask.
+/// This crate currently targets ESP32-S3 only (Heltec WiFi LoRa 32 V3).
+#[cfg_attr(not(feature = "esp-idf"), allow(dead_code))]
+pub(crate) fn validate_gpio_level_source(pin_mask: u64) -> anyhow::Result<()> {
+    if pin_mask == 0 {
+        anyhow::bail!("GpioLevel pin_mask must not be zero");
+    }
+    // Only RTC GPIOs 0–21 are valid for EXT1 on ESP32-S3.
+    let valid_mask: u64 = (1u64 << 22) - 1;
+    if pin_mask & !valid_mask != 0 {
+        anyhow::bail!(
+            "pin_mask 0x{:016x} contains bits outside RTC GPIO range 0–21 \
+             (ESP32-S3 EXT1 limit)",
+            pin_mask
+        );
+    }
+    Ok(())
 }
 
 /// Controls entry into a low-power sleep mode.
@@ -61,7 +197,7 @@ pub enum WakeSource {
 /// On ESP32 targets, `sleep()` calls `esp_deep_sleep_start()`, which never
 /// returns.
 /// The firmware restarts from the entry point at the next boot.
-/// On host (mock) targets the call is a no-op and returns `Ok(())`.
+/// On host (mock) targets, the call is a no-op and returns `Ok(())`.
 ///
 /// Use [`WakeCauseSource`] at the start of `main()` to determine why the
 /// device woke.
@@ -73,6 +209,7 @@ pub trait SleepManager {
     /// Returns an error if pre-sleep configuration fails.
     /// A failure here is operationally critical — do not continue running on
     /// battery if sleep cannot be entered, as the device will drain the battery.
+    #[must_use = "sleep configuration errors must be handled — ignoring them may drain the battery"]
     fn sleep(&mut self, sources: &[WakeSource]) -> anyhow::Result<()>;
 }
 
@@ -85,15 +222,16 @@ pub trait SleepManager {
 pub trait WakeCauseSource {
     /// Return the cause of the most recent wake from sleep.
     ///
-    /// Returns [`WakeCause::PowerOn`] on first boot (cold power-on) and whenever
+    /// Returns [`WakeCause::PowerOn`] on the first boot (cold power-on) and whenever
     /// the cause cannot be determined.
     fn last_wake_cause(&self) -> WakeCause;
 }
 
 /// A no-op sleep manager for host-side unit testing.
 ///
-/// [`SleepManager::sleep`] returns `Ok(())` immediately without entering any
+/// [`SleepManager::sleep`] it returns `Ok(())` immediately without entering any
 /// sleep mode.
+/// All [`WakeSource`] variants are accepted without validation.
 /// [`WakeCauseSource::last_wake_cause`] always returns [`WakeCause::PowerOn`].
 pub struct NoopSleepManager;
 
@@ -122,6 +260,17 @@ mod tests {
     }
 
     #[test]
+    fn noop_sleep_gpio_level_returns_ok() {
+        let mut mgr = NoopSleepManager;
+        assert!(mgr
+            .sleep(&[WakeSource::GpioLevel {
+                pin_mask: 1u64 << 4,
+                level: GpioWakeLevel::AnyLow,
+            }])
+            .is_ok());
+    }
+
+    #[test]
     fn noop_sleep_empty_sources_returns_ok() {
         let mut mgr = NoopSleepManager;
         assert!(mgr.sleep(&[]).is_ok());
@@ -136,7 +285,9 @@ mod tests {
     #[test]
     fn wake_cause_variants_are_distinct() {
         assert_ne!(WakeCause::PowerOn, WakeCause::Timer);
-        assert_ne!(WakeCause::Timer, WakeCause::Gpio);
+        assert_ne!(WakeCause::Timer, WakeCause::Ext1(GpioWakeMask(0)));
+        assert_ne!(WakeCause::Ext1(GpioWakeMask(0)), WakeCause::Ext0);
+        assert_ne!(WakeCause::Ext0, WakeCause::Gpio);
         assert_ne!(WakeCause::Gpio, WakeCause::Touch);
         assert_ne!(WakeCause::Touch, WakeCause::Other);
     }
@@ -153,7 +304,76 @@ mod tests {
         let src = WakeSource::Timer {
             duration_ms: 60_000,
         };
-        let WakeSource::Timer { duration_ms } = src;
+        let WakeSource::Timer { duration_ms } = src else {
+            panic!("unexpected variant");
+        };
         assert_eq!(duration_ms, 60_000);
+    }
+
+    #[test]
+    fn gpio_wake_mask_contains_pin() {
+        let mask = GpioWakeMask(1u64 << 4 | 1u64 << 7);
+        assert!(mask.contains_pin(4));
+        assert!(mask.contains_pin(7));
+        assert!(!mask.contains_pin(0));
+        assert!(!mask.contains_pin(21));
+    }
+
+    #[test]
+    fn gpio_wake_mask_is_copy() {
+        let a = GpioWakeMask(0b1010);
+        let b = a;
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn gpio_wake_level_variants_are_distinct() {
+        assert_ne!(GpioWakeLevel::AnyHigh, GpioWakeLevel::AnyLow);
+    }
+
+    // --- validate_gpio_level_source tests ---
+
+    #[test]
+    fn validate_gpio_level_source_rejects_zero_mask() {
+        let err = validate_gpio_level_source(0).unwrap_err();
+        assert!(
+            err.to_string().contains("must not be zero"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_gpio_level_source_rejects_bit_22() {
+        // Bit 22 is one past the ESP32-S3 RTC GPIO range (0–21).
+        let err = validate_gpio_level_source(1u64 << 22).unwrap_err();
+        assert!(
+            err.to_string().contains("outside RTC GPIO range"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_gpio_level_source_rejects_high_bits() {
+        let err = validate_gpio_level_source(1u64 << 63).unwrap_err();
+        assert!(
+            err.to_string().contains("outside RTC GPIO range"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_gpio_level_source_accepts_single_pin() {
+        assert!(validate_gpio_level_source(1u64 << 4).is_ok());
+    }
+
+    #[test]
+    fn validate_gpio_level_source_accepts_max_valid_pin() {
+        // Bit 21 is the highest valid RTC GPIO on ESP32-S3.
+        assert!(validate_gpio_level_source(1u64 << 21).is_ok());
+    }
+
+    #[test]
+    fn validate_gpio_level_source_accepts_multi_pin_mask() {
+        assert!(validate_gpio_level_source(1u64 << 4 | 1u64 << 7 | 1u64 << 21).is_ok());
     }
 }

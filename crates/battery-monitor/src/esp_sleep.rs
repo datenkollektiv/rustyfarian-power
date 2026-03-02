@@ -12,6 +12,23 @@
 //! When configuring GPIO wake sources, set `isolate_gpio: false` if you need
 //! explicit control over pin hold state around wake-capable pins.
 //!
+//! # GPIO wake sources and external pull resistors
+//!
+//! When using [`WakeSource::GpioLevel`], external pull resistors (10–100 kΩ)
+//! are **required** on every wake-capable GPIO pin.
+//!
+//! RTC internal pull-up/pull-down resistors are unavailable when `RTC_PERIPH`
+//! is powered down (the default for deep sleep).
+//! Pins left floating will have an indeterminate HOLD state and may false-trigger
+//! or fail to trigger — missing external resistors are a common field failure mode.
+//!
+//! Pull direction depends on the configured level:
+//! - `GpioWakeLevel::AnyHigh`: use an external pull-down (pin LOW at rest).
+//! - `GpioWakeLevel::AnyLow`: use an external pull-up (pin HIGH at rest).
+//!
+//! Additionally, set `EspSleepManager { isolate_gpio: false }` when using GPIO
+//! wake sources — GPIO isolation may prevent wake-capable pins from triggering.
+//!
 //! # Persisting state across deep sleep
 //!
 //! Deep sleep clears all RAM except the RTC slow memory.
@@ -51,7 +68,10 @@
 use anyhow::Context;
 use esp_idf_hal::sys;
 
-use crate::sleep::{SleepManager, WakeCause, WakeCauseSource, WakeSource};
+use crate::sleep::{
+    validate_gpio_level_source, GpioWakeLevel, GpioWakeMask, SleepManager, WakeCause,
+    WakeCauseSource, WakeSource,
+};
 
 /// Converts an `esp_err_t` return value into `anyhow::Result<()>`.
 fn check(err: sys::esp_err_t) -> anyhow::Result<()> {
@@ -118,6 +138,25 @@ impl SleepManager for EspSleepManager {
             );
         }
 
+        let gpio_level_count = sources
+            .iter()
+            .filter(|s| matches!(s, WakeSource::GpioLevel { .. }))
+            .count();
+        if gpio_level_count > 1 {
+            anyhow::bail!(
+                "at most one GpioLevel wake source is supported per sleep call; \
+                 combine multiple pins into a single pin_mask"
+            );
+        }
+
+        if gpio_level_count > 0 && self.isolate_gpio {
+            anyhow::bail!(
+                "GpioLevel wake source requires isolate_gpio: false; \
+                 GPIO isolation prevents wake-capable pins from triggering — \
+                 construct EspSleepManager {{ isolate_gpio: false }} when using GPIO wake sources"
+            );
+        }
+
         // Clear any wake sources left over from a previous sleep cycle so the
         // caller gets deterministic behaviour regardless of prior state.
         //
@@ -146,6 +185,33 @@ impl SleepManager for EspSleepManager {
                     }
                     log::info!("Sleep: timer wake configured for {}ms", duration_ms);
                 }
+                WakeSource::GpioLevel { pin_mask, level } => {
+                    // Delegate to the platform-independent validation helper.
+                    // The valid-bit check (0–21) is ESP32-S3-specific; see
+                    // `validate_gpio_level_source` in sleep.rs for the rationale.
+                    validate_gpio_level_source(*pin_mask)?;
+                    let mode = match level {
+                        GpioWakeLevel::AnyHigh => {
+                            sys::esp_sleep_ext1_wakeup_mode_t_ESP_EXT1_WAKEUP_ANY_HIGH
+                        }
+                        GpioWakeLevel::AnyLow => {
+                            sys::esp_sleep_ext1_wakeup_mode_t_ESP_EXT1_WAKEUP_ANY_LOW
+                        }
+                    };
+                    // SAFETY: esp_sleep_enable_ext1_wakeup_io() configures EXT1 wake
+                    // on RTC GPIOs. pin_mask has been validated to contain only bits
+                    // 0–21 and is non-zero. Must be called after disable-all and
+                    // before esp_deep_sleep_start().
+                    unsafe {
+                        check(sys::esp_sleep_enable_ext1_wakeup_io(*pin_mask, mode))
+                            .context("failed to configure GPIO EXT1 wakeup")?;
+                    }
+                    log::info!(
+                        "Sleep: EXT1 GPIO wake configured (mask: 0x{:x}, level: {:?})",
+                        pin_mask,
+                        level
+                    );
+                }
             }
         }
 
@@ -173,8 +239,13 @@ impl SleepManager for EspSleepManager {
 
 /// Reads the wakeup cause from the ESP-IDF wakeup cause register.
 ///
-/// Instantiate this at the very start of `main()`, before any peripheral
-/// initialisation that might clear wake-related hardware state.
+/// # When to call
+///
+/// Call [`last_wake_cause`][WakeCauseSource::last_wake_cause] as early as
+/// practical in `main()`, before peripheral initialisation.
+/// The EXT1 status register is hardware-preserved and survives until the next
+/// sleep entry, so calling it later usually works — but reading it early is
+/// the safest approach and the one documented by Espressif.
 ///
 /// # Cold boot behaviour
 ///
@@ -194,9 +265,29 @@ impl WakeCauseSource for EspWakeCauseSource {
         match cause {
             sys::esp_sleep_source_t_ESP_SLEEP_WAKEUP_UNDEFINED => WakeCause::PowerOn,
             sys::esp_sleep_source_t_ESP_SLEEP_WAKEUP_TIMER => WakeCause::Timer,
-            sys::esp_sleep_source_t_ESP_SLEEP_WAKEUP_EXT0
-            | sys::esp_sleep_source_t_ESP_SLEEP_WAKEUP_EXT1
-            | sys::esp_sleep_source_t_ESP_SLEEP_WAKEUP_GPIO => WakeCause::Gpio,
+            sys::esp_sleep_source_t_ESP_SLEEP_WAKEUP_EXT1 => {
+                // SAFETY: esp_sleep_get_ext1_wakeup_status() reads the EXT1
+                // fired-pin bitmask written by hardware before wake.
+                // Valid only when the wakeup cause is EXT1; reads a register only
+                // and does not modify any hardware state.
+                // Recommended to call early in main() before peripheral init,
+                // though the EXT1 register is preserved until the next sleep entry.
+                let mask = unsafe { sys::esp_sleep_get_ext1_wakeup_status() };
+                WakeCause::Ext1(GpioWakeMask(mask))
+            }
+            sys::esp_sleep_source_t_ESP_SLEEP_WAKEUP_EXT0 => {
+                // EXT0 uses a single RTC GPIO; the EXT1 status register is not
+                // populated. The configured pin is implicit from the wake source
+                // that was active at sleep entry.
+                WakeCause::Ext0
+            }
+            sys::esp_sleep_source_t_ESP_SLEEP_WAKEUP_GPIO => {
+                // ESP32-S3 deep-sleep GPIO wakeup (SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP).
+                // The EXT1 status register is not used for this source.
+                // Call esp_sleep_get_gpio_wakeup_status() directly if a fired-pin
+                // mask is needed.
+                WakeCause::Gpio
+            }
             sys::esp_sleep_source_t_ESP_SLEEP_WAKEUP_TOUCHPAD => WakeCause::Touch,
             _ => WakeCause::Other,
         }

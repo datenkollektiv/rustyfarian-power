@@ -20,7 +20,10 @@ pub mod esp_adc;
 pub mod esp_sleep;
 
 pub use config::BatteryConfig;
-pub use sleep::{NoopSleepManager, SleepManager, WakeCause, WakeCauseSource, WakeSource};
+pub use sleep::{
+    GpioWakeLevel, GpioWakeMask, NoopSleepManager, SleepManager, WakeCause, WakeCauseSource,
+    WakeSource,
+};
 
 #[cfg(feature = "esp-idf")]
 pub use esp_adc::EspAdcBatteryMonitor;

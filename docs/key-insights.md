@@ -50,6 +50,16 @@ Remove or update entries that are superseded.
 - **Sleep API (ESP-IDF v5.3.3):** Public API is in `esp_sleep.h` (component `esp_hw_support`).
   Key functions: `esp_sleep_enable_timer_wakeup(us)`, `esp_sleep_enable_ext1_wakeup_io(mask, mode)`, `esp_deep_sleep_enable_gpio_wakeup(mask, mode)`, `esp_sleep_pd_config(domain, option)`, `esp_deep_sleep_start()`, `esp_light_sleep_start()`, `esp_sleep_get_wakeup_cause()`.
   `esp_deep_sleep_start()` never returns; use `esp_deep_sleep_try_to_start()` if you need rejection detection.
+  Use `esp_sleep_enable_ext1_wakeup_io()` (v5.x preferred API) — not the deprecated `esp_sleep_enable_ext1_wakeup()`.
+- **EXT1 wakeup status functions:** Call `esp_sleep_get_ext1_wakeup_status()` when the wakeup cause is `ESP_SLEEP_WAKEUP_EXT1` to get the bitmask of fired pins.
+  For `ESP_SLEEP_WAKEUP_GPIO` (ESP32-S3 deep-sleep GPIO wake), use `esp_sleep_get_gpio_wakeup_status()` instead — the EXT1 status register is not populated.
+  Both functions return a `u64` bitmask (bit N = GPIO N).
+  The EXT1 register is preserved by hardware until the next sleep entry, so it can be read at any point after boot.
+  Recommended practice (per Espressif) is to read it early in `main()` before peripheral initialisation, and store the result — not because the register is likely to be cleared, but for clarity and defensive coding.
+- **GPIO wake sources (EXT1):** Only RTC GPIOs 0–21 are supported on ESP32-S3.
+  External pull resistors (10–100 kΩ) are mandatory on every wake GPIO; RTC internal pulls are unavailable during deep sleep when `RTC_PERIPH` is powered down.
+  Missing external resistors are a common field failure mode — floating pins may false-trigger or fail to trigger.
+  When using `WakeSource::GpioLevel`, set `EspSleepManager { isolate_gpio: false }` — GPIO isolation (the default) may prevent wake-capable pins from triggering.
 - **Power domain control:** `esp_sleep_pd_config(ESP_PD_DOMAIN_*, ESP_PD_OPTION_OFF/ON/AUTO)` controls RTC peripherals, RTC slow/fast memory, XTAL, CPU, VDDSDIO, and Modem domains during sleep.
   Powering down the MODEM domain (`ESP_PD_DOMAIN_MODEM`) in deep sleep is automatic when WiFi/BT are not in use.
 - **EXT1 mode deprecation note:** On ESP32-S3, `ESP_EXT1_WAKEUP_ALL_LOW` is deprecated — use `ESP_EXT1_WAKEUP_ANY_LOW` instead.
@@ -94,9 +104,9 @@ Remove or update entries that are superseded.
 - **Module layout for new traits:** New trait modules (`sleep.rs`, `radio_gate.rs`, `charging.rs`) are unconditionally compiled (no feature gate).
   ESP-IDF implementations (`esp_sleep.rs`, `esp_radio.rs`, `esp_charging.rs`) are feature-gated behind `esp-idf`.
   This mirrors the existing `lib.rs` / `esp_adc.rs` split.
-- **WakeSource pin mask vs typed list (open question):** `WakeSource::GpioLevel { pin_mask: u64 }` mirrors the ESP-IDF API but is weakly typed.
-  A `&[u8]` of pin numbers would be more misuse-resistant.
-  Decision deferred to the implementation phase; flag in API review.
+- **WakeSource::GpioLevel uses `pin_mask: u64` (decision record):** Mirrors the ESP-IDF `esp_sleep_enable_ext1_wakeup_io()` API directly; preserves `WakeSource: Copy` (consistent with `Timer { duration_ms: u64 }`).
+  Range validation (pins 0–21 only, non-zero mask) is enforced in `EspSleepManager::sleep()` before the FFI call with a clear error message.
+  `GpioWakeMask(u64)` on the read side provides a `contains_pin(u8) -> bool` helper so callers do not need raw bit manipulation.
 
 ## Known Gotchas
 
