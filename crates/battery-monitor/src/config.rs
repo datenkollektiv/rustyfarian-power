@@ -28,6 +28,8 @@ pub struct BatteryConfig {
 }
 
 impl Default for BatteryConfig {
+    /// Default values are calibrated for the Heltec WiFi LoRa 32 V3.
+    /// Use [`BatteryConfig::heltec_v3`] for a more self-documenting constructor on that board.
     fn default() -> Self {
         Self {
             divider_ratio: 2.0,
@@ -40,9 +42,14 @@ impl Default for BatteryConfig {
 }
 
 impl BatteryConfig {
-    /// Create config for Heltec WiFi LoRa 32 V3.
+    /// Battery configuration preset for the Heltec WiFi LoRa 32 V3.
     ///
-    /// Uses the default Li-ion values with a 2:1 voltage divider on GPIO1.
+    /// Uses the same values as [`BatteryConfig::default`] — the default was
+    /// calibrated against this board, so the preset is provided as an explicit
+    /// constructor for readability and future divergence.
+    /// If you target a different board, start with this preset and adjust
+    /// `divider_ratio`, `usb_detection_mv`, and voltage bounds to match your
+    /// hardware.
     pub fn heltec_v3() -> Self {
         Self::default()
     }

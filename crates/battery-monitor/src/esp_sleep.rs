@@ -48,7 +48,9 @@
 //!                       SleepManager, WakeSource};
 //!
 //! fn main() {
-//!     let cause = EspWakeCauseSource.last_wake_cause();
+//!     // EspWakeCauseSource is a unit struct — construct it as a value, then call the trait method.
+//!     let wake_src = EspWakeCauseSource;
+//!     let cause = wake_src.last_wake_cause();
 //!     match cause {
 //!         WakeCause::PowerOn => log::info!("Cold boot"),
 //!         WakeCause::Timer  => log::info!("Woke from timer"),
@@ -69,8 +71,8 @@ use anyhow::Context;
 use esp_idf_hal::sys;
 
 use crate::sleep::{
-    validate_gpio_level_source, GpioWakeLevel, GpioWakeMask, SleepManager, WakeCause,
-    WakeCauseSource, WakeSource,
+    validate_gpio_level_source, validate_wake_sources, GpioWakeLevel, GpioWakeMask, SleepManager,
+    WakeCause, WakeCauseSource, WakeSource,
 };
 
 /// Converts an `esp_err_t` return value into `anyhow::Result<()>`.
@@ -127,27 +129,12 @@ impl SleepManager for EspSleepManager {
     /// - Returns an error if any ESP-IDF wake-source configuration call fails.
     /// - The device does not enter sleep if an error is returned.
     fn sleep(&mut self, sources: &[WakeSource]) -> anyhow::Result<()> {
-        let timer_count = sources
-            .iter()
-            .filter(|s| matches!(s, WakeSource::Timer { .. }))
-            .count();
-        if timer_count > 1 {
-            anyhow::bail!(
-                "at most one Timer wake source is supported per sleep call; {} were provided",
-                timer_count
-            );
-        }
+        validate_wake_sources(sources)?;
 
         let gpio_level_count = sources
             .iter()
             .filter(|s| matches!(s, WakeSource::GpioLevel { .. }))
             .count();
-        if gpio_level_count > 1 {
-            anyhow::bail!(
-                "at most one GpioLevel wake source is supported per sleep call; \
-                 combine multiple pins into a single pin_mask"
-            );
-        }
 
         if gpio_level_count > 0 && self.isolate_gpio {
             anyhow::bail!(
