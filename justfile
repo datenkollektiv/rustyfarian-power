@@ -8,6 +8,7 @@
 
 host_target := `host=$(rustc -vV 2>/dev/null | grep '^host:' | awk '{print $2}'); if [ -z "$host" ]; then printf 'Error: Failed to determine rustc host target.\n' >&2; exit 1; fi; echo "$host"`
 host_flags  := "--no-default-features --target " + host_target
+doc_flags   := "--no-default-features --target " + host_target + " --no-deps"
 
 # list available recipes (default)
 _default:
@@ -59,11 +60,11 @@ fmt-check:
 
 # build rustdoc for platform-independent code
 doc:
-    cargo doc --no-default-features --target {{ host_target }} --no-deps
+    cargo doc {{ doc_flags }}
 
 # build and open docs in browser
 doc-open:
-    cargo doc --no-default-features --target {{ host_target }} --no-deps --open
+    cargo doc {{ doc_flags }} --open
 
 # check dependency licenses, advisories, and bans
 deny:
