@@ -18,6 +18,20 @@ Powers the rustyfarian ecosystem's battery-driven field deployments — from bat
 
 *Full vision, success signals, and open questions: [VISION.md](./VISION.md)*
 
+## Rustyfarian Philosophy
+
+This library embodies the principle of **extracting testable pure logic from hardware-specific code** —
+a pattern common in application development but rare in embedded Rust.
+
+- **Hardware-independent core:** Voltage curves, sleep validation, wake-cause mapping, and configuration logic live in `config.rs` and `sleep.rs` — no ESP-IDF dependency, always compiled, fully testable on the host.
+- **Thin ESP-IDF wrappers:** `esp_adc.rs` and `esp_sleep.rs` are minimal translation layers between Rust types and ESP-IDF FFI. Real logic stays in the core; the wrappers handle hardware lifecycle only.
+- **Trait-first design:** Every hardware interaction is behind a trait (`BatteryMonitor`, `SleepManager`, `WakeCauseSource`). Consumers program against the trait, not the concrete type — enabling mock substitution in tests and alternative implementations in the future.
+- **No-op mocks ship with the crate:** `NoopSleepManager` provides a complete, host-testable stand-in without any hardware. Consumer crates should use it in their own test suites, not invent their own mocks.
+- **Fail-fast on misconfiguration:** Power management is operationally critical — silently entering a broken sleep state drains the battery. Errors in wake-source configuration are surfaced immediately and loudly, never swallowed.
+- **Asymmetry encoded in the type system:** `esp_deep_sleep_start()` never returns, so `SleepManager::sleep()` and `WakeCauseSource::last_wake_cause()` are deliberately separate traits. Merging them would imply a round-trip that does not exist in hardware.
+
+The core modules (`config.rs`, `sleep.rs`) can be fully unit-tested on your laptop without an ESP32 or ESP toolchain.
+
 ## Features
 
 - Battery voltage reading via ADC with voltage divider compensation
@@ -75,13 +89,13 @@ just pre-commit
 
 ## Crate Structure
 
-| Module          | Description                                                                            |
-|:----------------|:---------------------------------------------------------------------------------------|
-| `lib.rs`        | Public API: `PowerSource`, `BatteryStatus`, `BatteryMonitor` trait, `is_sufficient()` |
-| `config.rs`     | `BatteryConfig` with voltage thresholds, `voltage_to_percent()`, `evaluate_reading()` |
-| `sleep.rs`      | `SleepManager`, `WakeCauseSource` traits; `WakeCause`, `WakeSource` enums; `NoopSleepManager` |
-| `esp_adc.rs`    | `EspAdcBatteryMonitor` — ESP-IDF ADC implementation (feature-gated behind `esp-idf`)  |
-| `esp_sleep.rs`  | `EspSleepManager`, `EspWakeCauseSource` — ESP-IDF deep sleep implementation (feature-gated) |
+| Module         | Description                                                                                   |
+|:---------------|:----------------------------------------------------------------------------------------------|
+| `lib.rs`       | Public API: `PowerSource`, `BatteryStatus`, `BatteryMonitor` trait, `is_sufficient()`         |
+| `config.rs`    | `BatteryConfig` with voltage thresholds, `voltage_to_percent()`, `evaluate_reading()`         |
+| `sleep.rs`     | `SleepManager`, `WakeCauseSource` traits; `WakeCause`, `WakeSource` enums; `NoopSleepManager` |
+| `esp_adc.rs`   | `EspAdcBatteryMonitor` — ESP-IDF ADC implementation (feature-gated behind `esp-idf`)          |
+| `esp_sleep.rs` | `EspSleepManager`, `EspWakeCauseSource` — ESP-IDF deep sleep implementation (feature-gated)   |
 
 ## License
 
