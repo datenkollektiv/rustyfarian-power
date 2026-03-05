@@ -1,7 +1,13 @@
 [build]
 target = "xtensa-esp32s3-espidf"
 
+# ESP32-S3 target (Heltec WiFi LoRa 32 V3)
 [target.xtensa-esp32s3-espidf]
+linker = "ldproxy"
+rustflags = ["--cfg", "espidf_time64"]
+
+# ESP32 target (Adafruit ESP32 Feather V2)
+[target.xtensa-esp32-espidf]
 linker = "ldproxy"
 rustflags = ["--cfg", "espidf_time64"]
 

@@ -54,6 +54,25 @@ impl BatteryConfig {
         Self::default()
     }
 
+    /// Battery configuration preset for the Adafruit ESP32 Feather V2.
+    ///
+    /// Targets the original ESP32 chip on the Adafruit Feather V2 board.
+    /// The battery voltage is measured on **GPIO35** (ADC1_CH7) after a
+    /// 100 kΩ + 100 kΩ voltage divider, giving a `divider_ratio` of 2.0.
+    /// Battery chemistry is Li-Po: 3000 mV empty, 4200 mV full.
+    /// When powered from USB without a battery attached, the ADC reads above
+    /// the Li-Po maximum voltage, so `usb_detection_mv` is set to 4300 mV —
+    /// the same threshold used by the Heltec V3 preset.
+    pub fn adafruit_feather_v2() -> Self {
+        Self {
+            divider_ratio: 2.0,
+            max_voltage_mv: 4200,
+            min_voltage_mv: 3000,
+            usb_detection_mv: 4300,
+            samples: 16,
+        }
+    }
+
     /// Calculate percentage from a battery voltage (millivolts).
     ///
     /// Uses linear interpolation between min and max voltage.
@@ -80,7 +99,7 @@ impl BatteryConfig {
 
         let power_source = if voltage_mv > self.usb_detection_mv {
             PowerSource::External
-        } else if voltage_mv < self.min_voltage_mv / 2 {
+        } else if voltage_mv < self.min_voltage_mv {
             PowerSource::Unknown
         } else {
             PowerSource::Battery

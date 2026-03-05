@@ -32,7 +32,7 @@
 /// mechanism fired without inspecting a potentially empty mask:
 /// - [`WakeCause::Ext1`] — EXT1 multi-pin wake; carries the fired-pin mask.
 /// - [`WakeCause::Ext0`] — EXT0 single-pin wake; no mask available.
-/// - [`WakeCause::Gpio`] — ESP32-S3 deep-sleep GPIO wake; no mask available.
+/// - [`WakeCause::Gpio`] — ESP32-S3 deep-sleep GPIO wake; mask available separately via `esp_sleep_get_gpio_wakeup_status()`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WakeCause {
     /// Cold power-on or hardware reset — not a wake from sleep.
@@ -110,6 +110,11 @@ pub enum GpioWakeLevel {
     ///
     /// Pair with an external pull-up resistor (pin pulled HIGH at rest,
     /// external device pulls LOW to trigger).
+    ///
+    /// **ESP32 (original) note:** `ESP_EXT1_WAKEUP_ANY_LOW` does not exist on
+    /// this chip; `ESP_EXT1_WAKEUP_ALL_LOW` (all configured pins must be low)
+    /// is used instead.
+    /// On ESP32-S3 and newer chips the true ANY_LOW semantics are used.
     AnyLow,
 }
 
@@ -172,19 +177,25 @@ pub enum WakeSource {
 /// range for EXT1.
 /// Other ESP32 variants (classic ESP32, C3, C6, H2) have different RTC GPIO
 /// sets and would require a different valid mask.
-/// This crate currently targets ESP32-S3 only (Heltec WiFi LoRa 32 V3).
+/// This crate targets ESP32-S3 (Heltec WiFi LoRa 32 V3) and ESP32 (Adafruit Feather V2).
 #[cfg_attr(not(feature = "esp-idf"), allow(dead_code))]
 pub(crate) fn validate_gpio_level_source(pin_mask: u64) -> anyhow::Result<()> {
     if pin_mask == 0 {
         anyhow::bail!("GpioLevel pin_mask must not be zero");
     }
-    // Only RTC GPIOs 0–21 are valid for EXT1 on ESP32-S3.
-    let valid_mask: u64 = (1u64 << 22) - 1;
+
+    #[cfg(esp32)]
+    let (valid_mask, chip_name, range_desc) = (0xFF0E00F015u64, "ESP32", "");
+    #[cfg(not(esp32))] // Default to S3 logic for S3 chip and for host tests
+    let (valid_mask, chip_name, range_desc) = ((1u64 << 22) - 1, "ESP32-S3", "0–21");
+
     if pin_mask & !valid_mask != 0 {
         anyhow::bail!(
-            "pin_mask 0x{:016x} contains bits outside RTC GPIO range 0–21 \
-             (ESP32-S3 EXT1 limit)",
-            pin_mask
+            "pin_mask 0x{:016x} contains bits outside RTC GPIO range {} \
+             ({} EXT1 limit)",
+            pin_mask,
+            range_desc,
+            chip_name
         );
     }
     Ok(())
