@@ -41,6 +41,19 @@ The core modules (`config.rs`, `sleep.rs`) can be fully unit-tested on your lapt
 - Deep sleep with timer wake and deterministic wake-cause detection
 - Hardware-independent core logic behind traits for full host-side testability
 
+## Examples
+
+Two hardware targets are supported.
+See [docs/hardware-setup.md](docs/hardware-setup.md) for wiring diagrams, ADC configuration, and power budgets.
+
+**Adafruit ESP32 Feather V2** (original ESP32):
+
+```shell
+just run idf_esp32_battery
+```
+
+Connect the Feather V2 before running — `espflash` will reject the binary if the wrong board is detected.
+
 ## Prerequisites
 
 This project cross-compiles for the `xtensa-esp32s3-espidf` target using Espressif's custom Rust toolchain (`esp` channel).
@@ -89,13 +102,13 @@ just pre-commit
 
 ## Crate Structure
 
-| Module         | Description                                                                                   |
-|:---------------|:----------------------------------------------------------------------------------------------|
-| `lib.rs`       | Public API: `PowerSource`, `BatteryStatus`, `BatteryMonitor` trait, `is_sufficient()`         |
-| `config.rs`    | `BatteryConfig` with voltage thresholds, `voltage_to_percent()`, `evaluate_reading()`         |
+| Module         | Description                                                                                        |
+|:---------------|:---------------------------------------------------------------------------------------------------|
+| `lib.rs`       | Public API: `PowerSource`, `BatteryStatus`, `BatteryMonitor` trait, `is_sufficient()`              |
+| `config.rs`    | `BatteryConfig` with voltage thresholds, `voltage_to_percent()`, `evaluate_reading()`              |
 | `sleep.rs`     | `SleepManager`, `WakeCauseSource` traits; `WakeCause`, `WakeSource` enums; `NoopSleepManager` mock |
-| `esp_adc.rs`   | `EspAdcBatteryMonitor` — ESP-IDF ADC implementation (feature-gated behind `esp-idf`)          |
-| `esp_sleep.rs` | `EspSleepManager`, `EspWakeCauseSource` — ESP-IDF deep sleep implementation (feature-gated)   |
+| `esp_adc.rs`   | `EspAdcBatteryMonitor` — ESP-IDF ADC implementation (feature-gated behind `esp-idf`)               |
+| `esp_sleep.rs` | `EspSleepManager`, `EspWakeCauseSource` — ESP-IDF deep sleep implementation (feature-gated)        |
 
 ## License
 

@@ -182,7 +182,18 @@ impl SleepManager for EspSleepManager {
                             sys::esp_sleep_ext1_wakeup_mode_t_ESP_EXT1_WAKEUP_ANY_HIGH
                         }
                         GpioWakeLevel::AnyLow => {
-                            sys::esp_sleep_ext1_wakeup_mode_t_ESP_EXT1_WAKEUP_ANY_LOW
+                            // ESP_EXT1_WAKEUP_ANY_LOW is only available on ESP32-S3 and
+                            // newer chips. The original ESP32 only exposes ALL_LOW (all
+                            // configured pins must be low simultaneously). The semantics
+                            // differ, but ALL_LOW is the closest available mode on ESP32.
+                            #[cfg(esp32)]
+                            {
+                                sys::esp_sleep_ext1_wakeup_mode_t_ESP_EXT1_WAKEUP_ALL_LOW
+                            }
+                            #[cfg(not(esp32))]
+                            {
+                                sys::esp_sleep_ext1_wakeup_mode_t_ESP_EXT1_WAKEUP_ANY_LOW
+                            }
                         }
                     };
                     // SAFETY: esp_sleep_enable_ext1_wakeup_io() configures EXT1 wake

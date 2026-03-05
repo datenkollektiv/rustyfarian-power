@@ -17,3 +17,10 @@ esp-idf = ["dep:esp-idf-hal"]
 anyhow.workspace = true
 log.workspace = true
 esp-idf-hal = { workspace = true, optional = true }
+
+[[example]]
+name = "idf_esp32_battery"
+required-features = ["esp-idf"]
+
+[build-dependencies]
+embuild = { version = "0.33", features = ["espidf"] }
