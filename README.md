@@ -102,13 +102,15 @@ just pre-commit
 
 ## Crate Structure
 
-| Module         | Description                                                                                        |
-|:---------------|:---------------------------------------------------------------------------------------------------|
-| `lib.rs`       | Public API: `PowerSource`, `BatteryStatus`, `BatteryMonitor` trait, `is_sufficient()`              |
-| `config.rs`    | `BatteryConfig` with voltage thresholds, `voltage_to_percent()`, `evaluate_reading()`              |
-| `sleep.rs`     | `SleepManager`, `WakeCauseSource` traits; `WakeCause`, `WakeSource` enums; `NoopSleepManager` mock |
-| `esp_adc.rs`   | `EspAdcBatteryMonitor` — ESP-IDF ADC implementation (feature-gated behind `esp-idf`)               |
-| `esp_sleep.rs` | `EspSleepManager`, `EspWakeCauseSource` — ESP-IDF deep sleep implementation (feature-gated)        |
+| Module            | Description                                                                                          |
+|:------------------|:-----------------------------------------------------------------------------------------------------|
+| `lib.rs`          | Public API: `PowerSource`, `BatteryStatus`, `BatteryMonitor` trait, `is_sufficient()`                |
+| `config.rs`       | `BatteryConfig` with voltage thresholds, `voltage_to_percent()`, `evaluate_reading()`                |
+| `sleep.rs`        | `SleepManager`, `WakeCauseSource` traits; `WakeCause`, `WakeSource` enums; `NoopSleepManager` mock   |
+| `charging.rs`     | `ChargingMonitor` trait; `ChargingState`, `ChargingSource` enums; `NoopChargingMonitor` mock         |
+| `esp_adc.rs`      | `EspAdcBatteryMonitor` — ESP-IDF ADC implementation (feature-gated behind `esp-idf`)                 |
+| `esp_sleep.rs`    | `EspSleepManager`, `EspWakeCauseSource` — ESP-IDF deep sleep implementation (feature-gated)          |
+| `esp_charging.rs` | `EspChargingMonitor` — MCP73831 charging state via STAT + VBUS pins (feature-gated behind `esp-idf`) |
 
 ## License
 
