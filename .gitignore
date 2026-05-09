@@ -6,4 +6,11 @@ Cargo.lock
 .claude/
 CLAUDE.md
 archive/
+review-queue/
 .idea/
+
+# Temporary scratch files — local only
+tmp/
+
+# Claude Code project-local memory — personal, not committed
+memory/
