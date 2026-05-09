@@ -9,6 +9,10 @@ This project has not yet adopted semantic versioning; entries are grouped by mil
 
 ## [Unreleased]
 
+### Added
+- `ChargingMonitor` trait and `ChargingState` enum — charge-state lifecycle as a concern orthogonal to `PowerSource` identity
+- Hardware wiring documentation for Heltec WiFi LoRa 32 V3 and Adafruit ESP32 Feather V2 (`docs/hardware-setup.md`)
+
 ### Changed
 - ROADMAP: marked Philosophy Compliance Sprint and Feather V2 charging monitor as done
 - ROADMAP: updated Milestone 4 to reflect what was shipped vs what remains
