@@ -9,6 +9,27 @@ Remove or update entries that are superseded.
 
 ---
 
+## CI and Build Validation
+
+- **GitHub Actions workflows live in `.github/workflows/`** with four files: `rust.yml` (CI: deny + check + test), `fmt.yml` (format check), `clippy.yml` (clippy), `audit.yml` (cargo-audit, runs on schedule + push).
+  Each workflow calls a `just` recipe (`just deny`/`check`/`test`/`fmt-check`/`clippy`/`audit`) via `extractions/setup-just@v2`, so the justfile is the single source of truth and CI cannot drift from local `just verify`/`just ci` (pattern adopted from rustyfarian-network PR #79).
+  Keep the four workflow files structurally consistent (checkout → toolchain → setup-just → cache → recipe); if the boilerplate grows, factor it into a reusable workflow rather than letting them diverge.
+  Host-side recipes already pass `--no-default-features --target <host>` (host detected inside the recipe via `scripts/host-target.sh`), avoiding the ESP-IDF cross-compile toolchain (not installed on GitHub-hosted runners).
+  **`RUSTUP_TOOLCHAIN: stable` must stay set in every workflow** — it overrides this repo's `rust-toolchain.toml` (`channel = "esp"`), which is not installed on CI.
+- **`deny.toml` is required for `just deny` / `just ci` to pass.**
+  Without it, `cargo-deny` defaults to an empty licence allowlist and rejects every dependency.
+  The allowlist for this repo is: `MIT`, `Apache-2.0`, `Apache-2.0 WITH LLVM-exception`, `BSD-3-Clause`, `ISC`, `Unlicense`, `Unicode-3.0`, `Zlib`.
+  No LGPL entry is needed: `r-efi` is `MIT OR Apache-2.0 OR LGPL-2.1-or-later` and cargo-deny accepts it via the OR semantics once MIT/Apache-2.0 are listed.
+  The `multiple-versions = "warn"` setting produces duplicate-crate warnings from the `embuild`/`esp-idf-sys` tree — these are expected and harmless.
+- **No cross-compilation in CI (no `espup`).**
+  The sibling repos (rustyfarian-ws2812, etc.) gate only host-testable code in CI.
+  This repo follows the same pattern: host-only check + test under `--no-default-features`.
+  Cross-compilation for `xtensa-esp32s3-espidf` must be done locally with `just check-all` / `just build-example <name>`.
+- **`just audit` generates a `Cargo.lock` if absent** (the lockfile is gitignored for this library) before running `cargo audit`; `just deny` needs no explicit lockfile step because `cargo deny` resolves the graph via `cargo metadata`.
+- **`rust-version = "1.88"` (MSRV) is set for family consistency, not a hard requirement.**
+  No code uses 1.88-specific features (the host logic needs ~1.82 for `Option::is_none_or`); 1.88 matches the sibling rustyfarian repos (e.g. rustyfarian-ws2812).
+  There is no MSRV-pinned CI job, so treat it as a declared floor — if you ever lower it, lower the siblings too.
+
 ## Hardware
 
 - **Target board:** Heltec Wi-Fi LoRa 32 V3, which uses the ESP32-S3 chip.

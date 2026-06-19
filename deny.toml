@@ -1,0 +1,41 @@
+[graph]
+targets = []
+all-features = false
+no-default-features = false
+
+[advisories]
+# No advisory ignores: all known advisories in this dependency graph either
+# have available fixes or do not affect the library's host-testable code.
+# Add entries here only for advisories with no available fix, with a comment
+# explaining the reason and a planned resolution date.
+ignore = []
+
+[licenses]
+# Licenses confirmed present in this workspace's dependency graph
+# (verified against Cargo.lock via `cargo deny list`, 2026-06-19):
+#   MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, BSD-3-Clause, ISC,
+#   Unlicense, Unicode-3.0, Zlib
+# r-efi is "MIT OR Apache-2.0 OR LGPL-2.1-or-later"; the OR means cargo-deny
+# accepts it because MIT and Apache-2.0 are in the allow list — no LGPL entry
+# needed here.
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-3-Clause",
+  "ISC",
+  "Unlicense",
+  "Unicode-3.0",
+  "Zlib",
+]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+
+[sources]
+unknown-registry = "warn"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

@@ -1,7 +1,42 @@
 # Rustyfarian Power Management
 
+[![CI](https://github.com/datenkollektiv/rustyfarian-power/actions/workflows/rust.yml/badge.svg)](https://github.com/datenkollektiv/rustyfarian-power/actions/workflows/rust.yml)
+[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](#license)
+[![Rust](https://img.shields.io/badge/rust-esp--toolchain-orange.svg)](https://www.rust-lang.org)
+[![cargo fmt](https://github.com/datenkollektiv/rustyfarian-power/actions/workflows/fmt.yml/badge.svg)](https://github.com/datenkollektiv/rustyfarian-power/actions/workflows/fmt.yml)
+[![cargo clippy](https://github.com/datenkollektiv/rustyfarian-power/actions/workflows/clippy.yml/badge.svg)](https://github.com/datenkollektiv/rustyfarian-power/actions/workflows/clippy.yml)
+[![cargo audit](https://github.com/datenkollektiv/rustyfarian-power/actions/workflows/audit.yml/badge.svg)](https://github.com/datenkollektiv/rustyfarian-power/actions/workflows/audit.yml)
+
 A Rust library for power management on ESP32 microcontrollers, targeting the **Heltec WiFi LoRa 32 V3**.
 Powers the rustyfarian ecosystem's battery-driven field deployments — from battery monitoring to deep sleep and radio power gating.
+
+> **Note:** Large parts of this library (and its documentation) were developed with the assistance of AI tools.
+> All generated code has been reviewed and curated by the maintainer.
+
+## Rustyfarian Family
+
+`rustyfarian-power` is one crate in the **rustyfarian** family — composable embedded-Rust libraries for
+battery-powered ESP32 field deployments (e.g. remote beehive monitoring over LoRaWAN).
+
+```mermaid
+graph TD
+    app["rustyfarian-rgb-clock<br/>(reference application)"]
+    net["rustyfarian-network<br/>Wi-Fi · MQTT · ESP-NOW · OTA"]
+    leds["rustyfarian-ws2812<br/>WS2812 / NeoPixel effects"]
+    pwr["rustyfarian-power<br/>battery · deep sleep · radio gating<br/>(this repo)"]
+    app --> net
+    app --> leds
+    net -.->|"planned: RadioPowerGate"| pwr
+```
+
+| Repo | Role |
+|:-----|:-----|
+| **rustyfarian-power** (this repo) | Battery monitoring, deep sleep, radio power gating |
+| [rustyfarian-network](https://github.com/datenkollektiv/rustyfarian-network) | Wi-Fi, MQTT, LoRa, ESP-NOW, OTA |
+| [rustyfarian-ws2812](https://github.com/datenkollektiv/rustyfarian-ws2812) | WS2812 / NeoPixel LED effects |
+| [rustyfarian-rgb-clock](https://github.com/datenkollektiv/rustyfarian-rgb-clock) | Reference application tying the libraries together |
+
+The `network → power` link (radio power gating via `RadioPowerGate`) is **planned**, not yet wired up — see [VISION.md](./VISION.md).
 
 ## Vision
 
@@ -134,4 +169,11 @@ just pre-commit
 
 ## License
 
-Licensed under either of [Apache License, Version 2.0](http://www.apache.org/licenses/LICENSE-2.0) or [MIT License](http://opensource.org/licenses/MIT), at your option.
+Licensed under either of
+
+- [Apache License, Version 2.0](LICENSE-APACHE)
+- [MIT License](LICENSE-MIT)
+
+at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.

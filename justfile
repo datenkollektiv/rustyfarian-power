@@ -132,6 +132,11 @@ ensure-bootloader chip:
 deny:
     cargo deny check
 
+# audit dependencies for known security advisories (RUSTSEC)
+audit:
+    [ -f Cargo.lock ] || cargo generate-lockfile
+    cargo audit
+
 # update dependencies
 update:
     cargo update
