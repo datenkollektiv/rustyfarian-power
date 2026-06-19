@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # build-example.sh — build an idf_{chip}_{name} example without flashing
-# Usage: scripts/build-example.sh <example>
+# Usage: scripts/build-example.sh <example> [idf_dir]
 #   example: idf_{chip}_{name}  e.g. idf_esp32_battery, idf_esp32s3_battery
+#   idf_dir: target directory for ESP-IDF builds (default: target/idf)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ $# -lt 1 ]; then
-    printf 'Usage: %s <example>\n  example: idf_{chip}_{name}  e.g. idf_esp32_battery\n' "$0" >&2
+    printf 'Usage: %s <example> [idf_dir]\n  example: idf_{chip}_{name}  e.g. idf_esp32_battery\n' "$0" >&2
     exit 2
 fi
 
 example="$1"
+idf_dir="${2:-target/idf}"
 prefix=$(printf '%s' "$example" | cut -d_ -f1)
 chip=$(printf '%s' "$example" | cut -d_ -f2)
 
@@ -32,6 +34,7 @@ esac
 setup_xtensa_toolchain
 
 printf 'Building %s for %s...\n' "$example" "$target"
+export CARGO_TARGET_DIR="$idf_dir"
 MCU="$mcu" cargo build --release \
     --target "$target" \
     --example "$example" \
