@@ -22,5 +22,9 @@ esp-idf-hal = { workspace = true, optional = true }
 name = "idf_esp32_battery"
 required-features = ["esp-idf"]
 
+[[example]]
+name = "idf_esp32s3_battery"
+required-features = ["esp-idf"]
+
 [build-dependencies]
 embuild = { version = "0.33", features = ["espidf"] }
