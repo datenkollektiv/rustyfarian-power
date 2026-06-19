@@ -10,25 +10,33 @@ use crate::{ChargingMonitor, ChargingSource, ChargingState};
 
 /// Charging monitor for boards with an MCP73831 charge controller.
 ///
-/// Reads two GPIO pins to resolve the four possible charging states:
+/// Reads a STAT pin and a USB-VBUS-detect pin to resolve the four charging states:
 ///
-/// | STAT (GPIO13) | VBUS (GPIO34) | [`ChargingState`]         |
-/// |---------------|---------------|---------------------------|
-/// | LOW           | HIGH          | `Charging { source }`     |
-/// | HIGH          | HIGH          | `Full`                    |
-/// | HIGH          | LOW           | `NoBattery`               |
-/// | LOW           | LOW           | `Unknown` (not expected)  |
+/// | STAT | VBUS | [`ChargingState`]         |
+/// |------|------|---------------------------|
+/// | LOW  | HIGH | `Charging { source }`     |
+/// | HIGH | HIGH | `Full`                    |
+/// | HIGH | LOW  | `NoBattery`               |
+/// | LOW  | LOW  | `Unknown` (not expected)  |
 ///
-/// # Adafruit ESP32 Feather V2 wiring
+/// # Required wiring
 ///
-/// - **STAT pin → GPIO13**: connected to the CHG LED via a series resistor.
-///   The board provides an external 4.7 kΩ pull-up to 3.3 V — configured as
-///   `Pull::Floating` so the internal pull-up is not enabled.
-///   `STAT` must satisfy `InputPin + OutputPin` because esp-idf-hal requires
-///   `OutputPin` for the `PinDriver::input` constructor on bidirectional GPIOs.
-/// - **VBUS pin → GPIO34**: a 100 kΩ + 100 kΩ voltage divider from USB 5 V.
-///   GPIO34 is an input-only strapping pin on the original ESP32.
-///   `Pull::Floating` is used so no pull resistor is requested on this pin.
+/// This monitor only works on a board that actually routes both signals to readable GPIOs:
+///
+/// - **STAT pin**: the MCP73831 STAT output (a tri-state logic output — LOW while charging,
+///   Hi-Z otherwise) brought to a GPIO with an external pull-up to 3.3 V. Configured as
+///   `Pull::Floating` so the internal pull-up is not enabled. `STAT` must satisfy
+///   `InputPin + OutputPin` because esp-idf-hal requires `OutputPin` for the
+///   `PinDriver::input` constructor on bidirectional GPIOs.
+/// - **VBUS pin**: a USB 5 V presence signal divided into the 0–3.3 V range and brought to a
+///   GPIO. Configured as `Pull::Floating` so no pull resistor is requested (this allows an
+///   input-only pin, such as GPIO34–39 on the original ESP32, to be used).
+///
+/// **Not usable on a stock Adafruit ESP32 Feather V2.** That board exposes neither signal on
+/// a GPIO — the MCP73831 STAT drives only the on-board CHG LED, GPIO13 is the user LED, and
+/// there is no VBUS-detect divider. This was confirmed on hardware (see the
+/// `idf_esp32_chargeprobe` example): GPIO13/GPIO34 read floating, not STAT/VBUS levels. On
+/// that board, infer charging indirectly from the battery voltage rising over time.
 ///
 /// # MCP73831 limitation
 ///

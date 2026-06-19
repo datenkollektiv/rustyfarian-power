@@ -78,7 +78,7 @@ impl BatteryConfig {
     ///
     /// Targets the original ESP32 chip on the Adafruit Feather V2 board.
     /// The battery voltage is measured on **GPIO35** (ADC1_CH7) after a
-    /// 100 kΩ + 100 kΩ voltage divider, giving a `divider_ratio` of 2.0.
+    /// 200 kΩ + 200 kΩ voltage divider, giving a `divider_ratio` of 2.0.
     /// Battery chemistry is Li-Po: 3000 mV empty, 4200 mV full.
     /// When powered from USB without a battery attached, the ADC reads above
     /// the Li-Po maximum voltage, so `usb_detection_mv` is set to 4300 mV —
