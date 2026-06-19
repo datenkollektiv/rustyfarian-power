@@ -1,5 +1,6 @@
 [build]
 target = "xtensa-esp32s3-espidf"
+target-dir = "target/ide"
 
 # ESP32-S3 target (Heltec WiFi LoRa 32 V3)
 [target.xtensa-esp32s3-espidf]
@@ -17,3 +18,8 @@ build-std = ["std", "panic_abort"]
 [env]
 MCU="esp32s3"
 ESP_IDF_VERSION = "v5.3.3"
+# Install/reuse the ESP-IDF toolchain in the global ~/.espressif location rather than a
+# per-workspace .embuild. Essential when CARGO_TARGET_DIR points at the RAM disk: it keeps
+# the multi-GB toolchain on persistent disk (shared with the other rustyfarian repos) and
+# off the small, ephemeral RAM disk, which only holds build artefacts.
+ESP_IDF_TOOLS_INSTALL_DIR = "global"

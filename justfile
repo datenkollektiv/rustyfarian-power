@@ -4,6 +4,9 @@
 # .cargo/config.toml, so host-side recipes pass --target explicitly to
 # override it and disable the esp-idf feature.
 #
+# ESP-IDF builds are isolated to target/idf (vs. host/IDE builds in target/ide).
+# An optional macOS RAM disk at /Volumes/RustBuilds accelerates incremental builds.
+#
 # Run `just setup-toolchain` and `just setup-cargo-config` for first-time setup.
 
 host_target := `scripts/host-target.sh`
@@ -11,6 +14,9 @@ host_flags  := "--no-default-features --target " + host_target
 doc_flags   := "--no-default-features --target " + host_target + " --no-deps"
 esp32s3_target := "xtensa-esp32s3-espidf"
 esp32_target   := "xtensa-esp32-espidf"
+
+ramdisk := "/Volumes/RustBuilds"
+idf_dir := if path_exists(ramdisk + "/targets/idf") == "true" { ramdisk + "/targets/idf/" + file_name(justfile_directory()) } else { "target/idf" }
 
 # list available recipes (default)
 _default:
@@ -24,16 +30,16 @@ check:
 
 # check all code including ESP-IDF hardware implementations (requires espup)
 check-all:
-    cargo check
+    CARGO_TARGET_DIR="{{ idf_dir }}" cargo check
 
 # check battery-monitor for the ESP32 target (Adafruit Feather V2, requires espup)
 check-esp32:
-    MCU=esp32 cargo check -p battery-monitor --target {{ esp32_target }}
+    MCU=esp32 CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p battery-monitor --target {{ esp32_target }}
 
 # verify device-side rustdoc snippets type-check for the ESP32 target (requires espup)
 # run this whenever touching rust,ignore doc snippets or esp-idf-gated code
 check-docs-esp32:
-    MCU=esp32 cargo check -p battery-monitor --target {{ esp32_target }} --features esp-idf
+    MCU=esp32 CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p battery-monitor --target {{ esp32_target }} --features esp-idf
 
 # build platform-independent code (no ESP toolchain required)
 build:
@@ -41,17 +47,17 @@ build:
 
 # build all code including ESP-IDF hardware implementations (requires espup)
 build-all:
-    cargo build
+    CARGO_TARGET_DIR="{{ idf_dir }}" cargo build
 
 # --- Examples -------------------------------------------------------------
 
 # build a named example without flashing — chip inferred from idf_{chip}_{name} prefix
 build-example example:
-    scripts/build-example.sh "{{ example }}"
+    CARGO_TARGET_DIR="{{ idf_dir }}" scripts/build-example.sh "{{ example }}" "{{ idf_dir }}"
 
 # build and flash a named example — chip inferred from idf_{chip}_{name} prefix
 flash example:
-    scripts/flash.sh "{{ example }}"
+    CARGO_TARGET_DIR="{{ idf_dir }}" scripts/flash.sh "{{ example }}" "{{ idf_dir }}"
 
 # build, flash, and open serial monitor — the human workflow
 run example: (flash example)
@@ -74,7 +80,7 @@ clippy:
 
 # run clippy on all code including ESP-IDF (requires espup)
 clippy-all:
-    cargo clippy -- -D warnings
+    CARGO_TARGET_DIR="{{ idf_dir }}" cargo clippy -- -D warnings
 
 # run host-side unit tests (no ESP toolchain required)
 test:
@@ -106,6 +112,20 @@ doc:
 doc-open:
     cargo doc {{ doc_flags }} --open
 
+# --- Build Environment ────────────────────────────────────────────────────
+
+# report development tooling status (Rust, esp toolchain, espflash, ESP-IDF, RAM disk)
+doctor:
+    @scripts/doctor.sh "{{ ramdisk }}" "{{ idf_dir }}"
+
+# manage the RAM disk: just ramdisk attach | detach
+ramdisk action:
+    @scripts/ramdisk.sh "{{action}}"
+
+# ensure the IDF-built v5.3.3 bootloader is cached for the given chip
+ensure-bootloader chip:
+    CARGO_TARGET_DIR="{{ idf_dir }}" scripts/ensure-bootloader.sh "{{chip}}" "{{idf_dir}}"
+
 # --- Maintenance ----------------------------------------------------------
 
 # check dependency licenses, advisories, and bans
@@ -116,9 +136,10 @@ deny:
 update:
     cargo update
 
-# clean build artifacts
+# clean build artifacts (target/ide, target/idf, and RAM disk if mounted)
 clean:
-    cargo clean
+    cargo clean --target-dir target/ide
+    cargo clean --target-dir {{ idf_dir }}
 
 # --- Composite ------------------------------------------------------------
 
