@@ -46,13 +46,33 @@ The core modules (`config.rs`, `sleep.rs`) can be fully unit-tested on your lapt
 Two hardware targets are supported.
 See [docs/hardware-setup.md](docs/hardware-setup.md) for wiring diagrams, ADC configuration, and power budgets.
 
-**Adafruit ESP32 Feather V2** (original ESP32):
+| Board                     | Chip     | Example binary        | Run command                    |
+|:--------------------------|:---------|:----------------------|:-------------------------------|
+| Heltec WiFi LoRa 32 V3.1  | ESP32-S3 | `idf_esp32s3_battery` | `just run idf_esp32s3_battery` |
+| Adafruit ESP32 Feather V2 | ESP32    | `idf_esp32_battery`   | `just run idf_esp32_battery`   |
+
+The chip is inferred from the `idf_{chip}_{name}` prefix.
+Connect the matching board before running — `espflash` will reject the binary if the wrong board is detected.
+
+**Heltec WiFi LoRa 32 V3** (ESP32-S3) — reads battery voltage on GPIO1 every 2 s:
+
+```shell
+just run idf_esp32s3_battery
+```
+
+Expected serial output:
+
+```text
+[INFO] Battery monitor initialized (divider: 5.55x, range: 3000-4200mV)
+Heltec V3.1 battery monitor — reading GPIO1 every 2 s
+Battery: 3842mV (70%)
+```
+
+**Adafruit ESP32 Feather V2** (original ESP32) — reads battery, charging state, and wake cause, then deep-sleeps for 60 s:
 
 ```shell
 just run idf_esp32_battery
 ```
-
-Connect the Feather V2 before running — `espflash` will reject the binary if the wrong board is detected.
 
 ## Prerequisites
 

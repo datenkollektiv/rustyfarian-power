@@ -28,8 +28,9 @@ pub struct BatteryConfig {
 }
 
 impl Default for BatteryConfig {
-    /// Default values are calibrated for the Heltec WiFi LoRa 32 V3.
-    /// Use [`BatteryConfig::heltec_v3`] for a more self-documenting constructor on that board.
+    /// Generic Li-Po defaults with a 2:1 divider assumption.
+    /// Use a board preset ([`BatteryConfig::heltec_v3`], [`BatteryConfig::adafruit_feather_v2`])
+    /// for hardware-calibrated values — those override `divider_ratio` for the specific board.
     fn default() -> Self {
         Self {
             divider_ratio: 2.0,
@@ -42,16 +43,35 @@ impl Default for BatteryConfig {
 }
 
 impl BatteryConfig {
-    /// Battery configuration preset for the Heltec WiFi LoRa 32 V3.
+    /// Battery configuration preset for the Heltec WiFi LoRa 32 V3 (measured on V3.1).
     ///
-    /// Uses the same values as [`BatteryConfig::default`] — the default was
-    /// calibrated against this board, so the preset is provided as an explicit
-    /// constructor for readability and future divergence.
-    /// If you target a different board, start with this preset and adjust
-    /// `divider_ratio`, `usb_detection_mv`, and voltage bounds to match your
-    /// hardware.
+    /// Battery voltage is read on **GPIO1** (ADC1_CH0) through an on-board divider
+    /// that is **always connected** — GPIO37/ADC_CTRL does *not* gate it on V3.1
+    /// (it may on other revisions; confirm against your board).
+    ///
+    /// `divider_ratio` is **5.55**, an *empirical* value: `metered_VBAT / raw_ADC_mV`
+    /// measured on hardware, not the textbook divider figure. It runs higher than the
+    /// physical (390 kΩ + 100 kΩ) / 100 kΩ ≈ 4.9 because the ~80 kΩ source impedance
+    /// loads the ESP-IDF one-shot ADC, which then reads ~11 % low. Because it folds in
+    /// that ADC loading, the ratio is specific to this crate's ADC setup — verify the
+    /// reported voltage against a multimeter and nudge `divider_ratio` if your unit differs.
+    ///
+    /// Recalibrate whenever the ADC attenuation, sampling config, board revision, or VBAT
+    /// sense path changes — the ratio absorbs all of those, so a stale value reads wrong.
+    ///
+    /// Quick procedure:
+    /// 1. Meter the real battery voltage at the cell (`metered_VBAT`).
+    /// 2. Read the raw pin millivolts before divider compensation (the `read_averaged_mv`
+    ///    debug log, or `BatteryStatus.voltage_mv / divider_ratio`).
+    /// 3. Set `divider_ratio = metered_VBAT / raw_pin_mV`.
     pub fn heltec_v3() -> Self {
-        Self::default()
+        Self {
+            divider_ratio: 5.55,
+            max_voltage_mv: 4200,
+            min_voltage_mv: 3000,
+            usb_detection_mv: 4300,
+            samples: 16,
+        }
     }
 
     /// Battery configuration preset for the Adafruit ESP32 Feather V2.

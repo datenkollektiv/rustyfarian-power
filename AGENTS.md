@@ -57,6 +57,13 @@ Run `just` with no arguments to list all recipes. Host-side tests use `--no-defa
 
 **`EspWakeCauseSource` is a unit struct:** `EspWakeCauseSource.last_wake_cause()` is both a constructor and a method call in one expression. Call it early in `main()`, before peripheral initialisation — the EXT1 status register is hardware-preserved until the next sleep entry.
 
+## Coding Principles
+
+- **State assumptions** before starting. If a task has multiple valid interpretations, present them rather than picking silently.
+- **Simplicity first.** Minimum code that solves the problem. No features beyond what was asked. No abstractions for single-use code. No error handling for impossible scenarios.
+- **Surgical changes.** Touch only what the task requires. Do not improve adjacent code, comments, or formatting. Every changed line should trace directly to the user's request.
+- When your changes create orphans (unused imports, variables, functions), remove them. Do not remove pre-existing dead code unless asked.
+
 ## Important Files
 
 - `crates/battery-monitor/src/lib.rs` — public API, trait definitions, Noop mocks, usage examples in doc comments
