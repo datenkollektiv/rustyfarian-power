@@ -213,7 +213,7 @@ impl BatteryStatus {
             PowerSource::External | PowerSource::Unknown => true,
             PowerSource::Battery => {
                 self.voltage_mv >= min_voltage_mv
-                    && self.percentage.map_or(true, |p| p >= min_percent)
+                    && self.percentage.is_none_or(|p| p >= min_percent)
             }
         }
     }

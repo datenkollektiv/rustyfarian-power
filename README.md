@@ -68,7 +68,7 @@ Heltec V3.1 battery monitor — reading GPIO1 every 2 s
 Battery: 3842mV (70%)
 ```
 
-**Adafruit ESP32 Feather V2** (original ESP32) — reads battery, charging state, and wake cause, then deep-sleeps for 60 s:
+**Adafruit ESP32 Feather V2** (original ESP32) — reads battery and wake cause, then deep-sleeps for 60 s:
 
 ```shell
 just run idf_esp32_battery

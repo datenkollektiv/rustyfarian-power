@@ -38,7 +38,31 @@ Read GPIO1 directly — no ADC_CTRL handling needed, which matches the repo's ex
 Separately, the ~80 kΩ divider source impedance loads the ESP-IDF oneshot ADC so it reads ~11 % low: the effective `divider_ratio` (metered VBAT ÷ ADC mV, ~5.5) runs higher than the textbook (390+100)/100 = 4.9. Calibrate the ratio against a meter, never compute it from the resistor values alone.
 Take the calibration pair at a **settled** voltage (USB unplugged, ~10 s): a charging cell reads inflated (≈4.0–4.2 V toward the charge ceiling) and isn't representative of its resting state-of-charge, which skews the ratio.
 
+**On the Heltec V3.1, a missing battery reads as a ~80 % battery whenever USB is connected — and it cannot be detected in software.**
+With USB power and no cell, the always-on divider sees the charger/BMS rail, so GPIO1 reads ~711–735 mV (×5.55 → ~3946–4079 mV) → reported as `Battery ~80 %`, not `No battery`.
+The charge controller is a **TP4054** whose open-drain CHRG status drives only the orange LED — schematic-confirmed (V3.0 and V3.1) not wired to any GPIO — and there is no USB/VBUS-detect pin, so no software presence signal exists (every pin map — ropg, arduino-esp32, ESPHome, Meshtastic — reads only the GPIO1 voltage; Meshtastic's >4.2 V inference is a known source of wrong USB/charge indicators).
+The only (weak) tell is instability: a real LiPo holds within a few mV per sample, the no-cell rail jumps ~130–180 mV.
+Fix: don't trust a battery reading taken on USB power; for real detection, hand-wire CHRG (or a VBUS divider) to a free GPIO (GPIO2/4/5/6/7/19/20/47/48).
+
 ---
+
+## Hardware — Adafruit ESP32 Feather V2
+
+**The stock Feather V2 exposes no charge-status (STAT) or USB-VBUS-detect signal on any readable GPIO — don't trust a pin map you can't trace on the schematic.**
+Our `EspChargingMonitor` was wired to GPIO13 (as MCP73831 STAT) and GPIO34 (as VBUS detect), producing a permanent `Charging: Unknown`.
+Those assignments were wrong: they match the **Unexpected Maker FeatherS2 Neo** ("VBUS detection on IO34"), a different board the pin map was apparently copied from.
+On the real Feather V2, the MCP73831 STAT drives only the on-board CHG LED, GPIO13 is the user LED, and GPIO35 (A13, 2×200 kΩ ÷2) is the only power-sense pin.
+Proof came from an analog probe (`idf_esp32_chargeprobe`, USB connected, ~3.95 V cell): GPIO35 ≈ 1973 mV (correct), GPIO34 ≈ 147 mV (a real VBUS divider would force ~2500 mV), GPIO13 ≈ 134 mV drifting (a 4.7 kΩ pull-up would force ~3300 mV).
+The decisive checks are state-independent — a pull-up or divider, if present, forces a specific voltage *now*, so you don't need to unplug USB (which would kill the serial console anyway) to disprove the wiring.
+Fix: read suspected pins as **analog millivolts**, not digital levels, when verifying wiring — a floating input-only pin reads a small leakage (~150 mV), nothing like a driven level.
+Also: MCP73831 STAT is **tri-state**, not open-drain (that's the MCP73832).
+Schematic-confirmed (EagleCAD rev F): the CHG-LED net is `VBUS → CHG LED → 5.1 kΩ → STAT`, STAT net has two nodes only, no ESP32 trace — the orange CHG LED is not on any GPIO. To read charge state you must hand-wire STAT to the free GPIO34 (A2).
+
+**On the Feather V2, a missing battery reads as a ~96 % FULL battery whenever USB is connected — there is no software way to tell them apart.**
+With no cell the MCP73831 holds the BAT net at its ~4.16 V CV regulation point, so the GPIO35 divider reads ~2081 mV (×2 = 4162 mV) — above the empty threshold and below USB-detect, so it classifies as `Battery ~96 %`.
+A real 4.16 V cell reads identically, and the only disambiguator (STAT) is not on a GPIO, so no threshold tweak can fix it.
+This is a bench artifact of USB + no battery: with no USB the BAT net sinks to ~0 mV and a missing cell correctly reads `No battery`.
+Fix: don't chase it with thresholds — document the behaviour, or tap STAT to GPIO34 for true presence detection.
 
 ## ESP-IDF / Rust on ESP32-S3
 

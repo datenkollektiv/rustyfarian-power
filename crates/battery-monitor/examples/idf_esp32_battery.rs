@@ -12,13 +12,34 @@
 //! ## Wiring
 //!
 //! No external wiring is needed.
-//! The Feather V2 routes the LiPo battery through an onboard 100 kΩ + 100 kΩ
+//! The Feather V2 routes the LiPo battery through an onboard 200 kΩ + 200 kΩ
 //! voltage divider to **GPIO35** (ADC1_CH7).
 //!
 //! ```text
-//! LiPo+ ──[100 kΩ]──┬──[100 kΩ]── GND
+//! LiPo+ ──[200 kΩ]──┬──[200 kΩ]── GND
 //!                   └──► GPIO35 (ADC1_CH7)
 //! ```
+//!
+//! ## No charge-status pin (and what that means for "no battery")
+//!
+//! The stock Feather V2 does **not** expose the MCP73831 charge status (STAT) or a
+//! USB-VBUS-detect signal on any readable GPIO. Confirmed against the board's EagleCAD
+//! schematic (rev F): STAT runs `VBUS → CHG LED → 5.1 kΩ → STAT` and connects to nothing
+//! else — the charger drives only the orange CHG LED, with no trace to the ESP32. GPIO13
+//! is the user LED. Charging is therefore not reported here.
+//!
+//! A direct consequence: **with USB connected, a missing battery cannot be detected in
+//! software.** The charger holds the BAT net at its ~4.16 V regulation point whether or
+//! not a cell is present, so GPIO35 reads ~2080 mV → the library reports a (false)
+//! ~4160 mV / 96 % "battery". A real cell at that voltage reads identically, and the only
+//! signal that distinguishes them (STAT / the CHG LED) is not on a GPIO.
+//!
+//! In actual battery-powered deployment (no USB) this ambiguity disappears: with no cell
+//! the BAT net sinks to ~0 V, so GPIO35 reads near 0 and the status is correctly
+//! `No battery`. The false-full reading is a bench artifact of USB + no battery.
+//!
+//! To get real charge/presence detection, wire the STAT side of the charge LED's 5.1 kΩ
+//! resistor to the otherwise-unconnected **GPIO34 (A2)** and use `EspChargingMonitor`.
 //!
 //! ## Run
 //!
@@ -31,17 +52,14 @@
 //! ```text
 //! Wake cause: PowerOn
 //! Battery: 3842mV (70%)
-//! Charging: Charging (USB)
 //! Entering deep sleep for 60 s
 //! ```
 //!
 //! The device then enters deep sleep for 60 seconds, reboots, and repeats.
-//! When the battery is full the charging line will read `Full`.
-//! When running on battery only (no USB) it will read `No battery` for the charging line.
 
 use battery_monitor::{
-    BatteryConfig, BatteryMonitor, ChargingMonitor, ChargingSource, EspAdcBatteryMonitor,
-    EspChargingMonitor, EspWakeCauseSource, WakeCause, WakeCauseSource,
+    BatteryConfig, BatteryMonitor, EspAdcBatteryMonitor, EspWakeCauseSource, WakeCause,
+    WakeCauseSource,
 };
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_hal::sys;
@@ -73,7 +91,7 @@ fn main() -> anyhow::Result<()> {
     let peripherals = Peripherals::take()?;
 
     // GPIO35 is ADC1_CH7 on the Adafruit ESP32 Feather V2.
-    // The onboard 100 kΩ + 100 kΩ divider halves the battery voltage before
+    // The onboard 200 kΩ + 200 kΩ divider halves the battery voltage before
     // the ADC pin; BatteryConfig::adafruit_feather_v2() captures divider_ratio: 2.0.
     let mut battery = EspAdcBatteryMonitor::new(
         peripherals.adc1,
@@ -81,31 +99,8 @@ fn main() -> anyhow::Result<()> {
         BatteryConfig::adafruit_feather_v2(),
     )?;
 
-    // GPIO34 is RTC_GPIO4 and may be left in the RTC domain after the boot ROM samples
-    // the strapping pins. Release it to the digital domain before configuring it as an input.
-    // SAFETY: gpio_num_t 34 is valid on the Adafruit ESP32 Feather V2.
-    // rtc_gpio_deinit is safe to call whether or not the pin is currently in RTC mode.
-    unsafe {
-        sys::rtc_gpio_deinit(34);
-    }
-
-    // GPIO13 — MCP73831 STAT pin (open-drain, board has external 4.7 kΩ pull-up).
-    // GPIO34 — USB VBUS detect (100 kΩ + 100 kΩ divider; input-only pin on ESP32).
-    let mut charging = EspChargingMonitor::new(
-        peripherals.pins.gpio13,
-        peripherals.pins.gpio34,
-        ChargingSource::Usb,
-    )?;
-
-    // Allow the MCP73831 STAT pin and voltage rails to settle after waking from deep sleep.
-    // The STAT pin can glitch LOW briefly during rail ramp-up, producing a spurious
-    // ChargingState::Unknown reading if sampled too early.
-    std::thread::sleep(std::time::Duration::from_millis(20));
-
     let status = battery.read();
-    let charging_state = charging.read_charging_state();
     println!("Battery: {}", status);
-    println!("Charging: {}", charging_state);
 
     println!("Entering deep sleep for 60 s");
 

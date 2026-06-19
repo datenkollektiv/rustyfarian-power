@@ -23,6 +23,10 @@ name = "idf_esp32_battery"
 required-features = ["esp-idf"]
 
 [[example]]
+name = "idf_esp32_chargeprobe"
+required-features = ["esp-idf"]
+
+[[example]]
 name = "idf_esp32s3_battery"
 required-features = ["esp-idf"]
 

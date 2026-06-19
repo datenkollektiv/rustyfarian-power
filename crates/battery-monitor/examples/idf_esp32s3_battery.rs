@@ -35,8 +35,15 @@
 //! Battery: 3842mV (70%)
 //! ```
 //!
-//! With USB connected and no battery, the reading sits above the USB-detection
-//! threshold and the status reads `External`.
+//! ## No battery + USB caveat
+//!
+//! With USB connected and no battery, GPIO1 still reads the charger/BMS rail through the
+//! always-on divider (~711–735 mV → ~3950–4080 mV), so the status reports a **phantom
+//! ~80 % `Battery`** (not `No battery`), and the reading is noticeably unstable. The
+//! Heltec V3 exposes no charge-status or battery-present GPIO — the TP4054's CHRG output
+//! drives only the orange LED (schematic-confirmed) — so this cannot be detected in
+//! software. In real battery-powered use (no USB) a missing cell just means the board is
+//! off, so this is a bench/USB artifact.
 //!
 //! ## Run
 //!
