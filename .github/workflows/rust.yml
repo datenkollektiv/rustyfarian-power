@@ -1,0 +1,37 @@
+name: CI
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: rust-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  CARGO_TERM_COLOR: always
+  RUSTUP_TOOLCHAIN: stable
+jobs:
+  check-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - name: Setup just
+        uses: extractions/setup-just@v2
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+      - name: Deny (licenses, advisories, bans)
+        run: just deny
+      - name: Check (platform-independent)
+        run: just check
+      - name: Test (platform-independent)
+        run: just test
