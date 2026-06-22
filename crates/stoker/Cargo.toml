@@ -1,0 +1,18 @@
+[package]
+name = "stoker"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Platform-agnostic battery monitoring, power-source detection, and deep-sleep validation for embedded projects"
+keywords = ["battery", "embedded", "power", "sleep", "esp32"]
+categories = ["embedded"]
+readme = "README.md"
+
+[dependencies]
+anyhow.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true

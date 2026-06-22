@@ -3,22 +3,20 @@
 //! Provides battery voltage reading, percentage estimation, power source
 //! detection (battery vs USB), and deep sleep management.
 //!
-//! # ESP-IDF (default feature)
+//! `stoker` is the pure, host-buildable core of the rustyfarian power stack: it
+//! has no ESP-IDF dependency and is fully testable on the host. The ESP-IDF
+//! hardware drivers (`EspAdcBatteryMonitor`, `EspSleepManager`,
+//! `EspWakeCauseSource`, `EspChargingMonitor`) live in the companion
+//! `rustyfarian-esp-idf-power` crate, which re-exports everything here so device
+//! firmware needs only a single import.
 //!
-//! The `esp-idf` feature provides hardware implementations:
-//! - [`EspAdcBatteryMonitor`] — reads battery voltage via ADC
-//! - [`EspSleepManager`] — enters deep sleep with configured wake sources
-//! - [`EspWakeCauseSource`] — reads the reason for the last wake
-//!
-//! # Quick start
-//!
-//! ## Host-side testing (no ESP toolchain required)
+//! # Quick start — host-side testing (no ESP toolchain required)
 //!
 //! Use [`NoopSleepManager`] and [`NoopBatteryMonitor`] to test logic that
 //! branches on wake cause or battery state — no hardware needed:
 //!
 //! ```
-//! use battery_monitor::{
+//! use stoker::{
 //!     BatteryMonitor, NoopBatteryMonitor,
 //!     NoopSleepManager, SleepManager, WakeCauseSource, WakeCause, WakeSource,
 //! };
@@ -35,55 +33,10 @@
 //! let mut mgr = NoopSleepManager::default();
 //! mgr.sleep(&[WakeSource::Timer { duration_ms: 60_000 }]).unwrap();
 //! ```
-//!
-//! ## Device firmware (requires `esp-idf` feature)
-//!
-//! The `esp-idf` types (`EspAdcBatteryMonitor`, `EspWakeCauseSource`, `EspSleepManager`)
-//! are only available when the crate is compiled for an ESP32 target with the default `esp-idf`
-//! feature enabled.
-//! They cannot be compiled on the host by default, so the snippet below is marked `ignore`.
-//! It is kept type-checkable for the ESP-IDF environment; run `just check-docs-esp32` to verify.
-//!
-//! ```rust,ignore
-//! // Ignored by host-side doctest runs.
-//! // Type-checks when compiled with `--features esp-idf` for an ESP32 target.
-//! use battery_monitor::{EspWakeCauseSource, WakeCauseSource};
-//!
-//! // `EspWakeCauseSource` is a unit struct; the type name is also a value expression.
-//! // Equivalent to: let s = EspWakeCauseSource; s.last_wake_cause()
-//! let cause = EspWakeCauseSource.last_wake_cause();
-//! let _ = cause;
-//! ```
-//!
-//! A complete, compiling example is in
-//! [`examples/idf_esp32_battery.rs`](https://github.com/datenkollektiv/rustyfarian-power/blob/main/crates/battery-monitor/examples/idf_esp32_battery.rs).
-//! It demonstrates wake-cause detection, battery ADC reading, charging state, and deep sleep
-//! on the Adafruit ESP32 Feather V2, and is verified to build against the `xtensa-esp32-espidf`
-//! target in CI.
-//!
-//! Key design notes for device-side usage:
-//!
-//! - `EspWakeCauseSource` is a **unit struct** — the type name is also a value expression.
-//!   `EspWakeCauseSource.last_wake_cause()` constructs the struct and calls the trait method
-//!   in one expression; it is equivalent to `let s = EspWakeCauseSource; s.last_wake_cause()`.
-//!   If `EspWakeCauseSource` ever stops being a unit struct, update all call sites to instantiate explicitly.
-//! - Call `last_wake_cause()` early in `main()`, before peripheral initialisation.
-//!   The EXT1 status register is hardware-preserved until the next sleep entry.
-//! - `EspSleepManager::sleep()` does not return on real hardware.
-//!   The next code to execute is the firmware entry point after the device wakes.
 
 pub mod charging;
 pub mod config;
 pub mod sleep;
-
-#[cfg(feature = "esp-idf")]
-pub mod esp_adc;
-
-#[cfg(feature = "esp-idf")]
-pub mod esp_charging;
-
-#[cfg(feature = "esp-idf")]
-pub mod esp_sleep;
 
 pub use charging::{ChargingMonitor, ChargingSource, ChargingState, NoopChargingMonitor};
 pub use config::BatteryConfig;
@@ -91,15 +44,6 @@ pub use sleep::{
     GpioWakeLevel, GpioWakeMask, NoopSleepManager, SleepManager, WakeCause, WakeCauseSource,
     WakeSource,
 };
-
-#[cfg(feature = "esp-idf")]
-pub use esp_adc::EspAdcBatteryMonitor;
-
-#[cfg(feature = "esp-idf")]
-pub use esp_charging::EspChargingMonitor;
-
-#[cfg(feature = "esp-idf")]
-pub use esp_sleep::{EspSleepManager, EspWakeCauseSource};
 
 /// Trait for reading battery status from hardware.
 ///
@@ -119,7 +63,7 @@ pub trait BatteryMonitor {
 /// # Examples
 ///
 /// ```
-/// use battery_monitor::{BatteryMonitor, NoopBatteryMonitor};
+/// use stoker::{BatteryMonitor, NoopBatteryMonitor};
 ///
 /// fn needs_transmit(monitor: &mut impl BatteryMonitor) -> bool {
 ///     monitor.read().is_sufficient(3600, 20)
@@ -173,7 +117,11 @@ impl BatteryMonitor for NoopBatteryMonitor {
 }
 
 /// Power source detected by the battery monitor.
+///
+/// `#[non_exhaustive]`: a `Solar` variant is planned for solar-assisted boards,
+/// so downstream `match`es must include a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum PowerSource {
     /// Running on battery power.
     Battery,
@@ -188,7 +136,7 @@ pub enum PowerSource {
     /// [`BatteryStatus`] displays this variant as `"No battery"` because an absent battery
     /// is the most frequent real-world cause.
     /// To distinguish hardware errors from absent batteries, enable `log::debug` for the
-    /// `battery_monitor` component to see the raw ADC value before divider compensation.
+    /// `rustyfarian_esp_idf_power` component to see the raw ADC value before divider compensation.
     Unknown,
 }
 

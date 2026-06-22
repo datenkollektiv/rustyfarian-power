@@ -4,7 +4,8 @@
 //! for detecting the charge trajectory of a connected LiPo battery.
 //!
 //! This module is hardware-independent and always compiled.
-//! The ESP-IDF hardware implementation lives in [`crate::esp_charging`].
+//! The ESP-IDF hardware implementation (`EspChargingMonitor`) lives in the
+//! companion `rustyfarian-esp-idf-power` crate.
 
 use core::fmt;
 
@@ -46,7 +47,7 @@ impl fmt::Display for ChargingSource {
 /// The MCP73831 STAT pin is open-drain.
 /// It cannot distinguish between charge complete, no battery, and no USB power —
 /// all three conditions read HIGH on the pin.
-/// [`crate::EspChargingMonitor`] cross-references a USB VBUS detect pin to resolve
+/// `EspChargingMonitor` (in `rustyfarian-esp-idf-power`) cross-references a USB VBUS detect pin to resolve
 /// the `Full` vs `NoBattery` ambiguity when USB is present.
 /// Distinguishing `Full` from `NoBattery` when USB is absent still requires
 /// correlating with the battery voltage from [`crate::BatteryMonitor`].
@@ -112,7 +113,7 @@ pub trait ChargingMonitor {
 /// # Examples
 ///
 /// ```
-/// use battery_monitor::{ChargingMonitor, NoopChargingMonitor, ChargingState, ChargingSource};
+/// use stoker::{ChargingMonitor, NoopChargingMonitor, ChargingState, ChargingSource};
 ///
 /// fn is_charging(monitor: &mut impl ChargingMonitor) -> bool {
 ///     matches!(monitor.read_charging_state(), ChargingState::Charging { .. })

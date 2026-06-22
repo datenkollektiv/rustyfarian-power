@@ -38,4 +38,4 @@ export CARGO_TARGET_DIR="$idf_dir"
 MCU="$mcu" cargo build --release \
     --target "$target" \
     --example "$example" \
-    -p battery-monitor
+    -p rustyfarian-esp-idf-power

@@ -34,7 +34,7 @@ Track this work in its own approved task (`docs/features/crate-split-power-v1.md
 
 ### 0.1 Split `battery-monitor` into two crates
 
-- [ ] Create `crates/stoker/` — move `config.rs`, `sleep.rs`, `charging.rs`, and the pure subset of `lib.rs` (traits + `Noop*` mocks). No `build.rs`.
+- [ ] Create `crates/stoker/` — move `config.rs`, `sleep.rs`, `charging.rs`, and the pure subset of `lib.rs` (traits + `Noop*` mocks). `stoker` keeps a **cfg-only** `build.rs` that emits `cfg(esp32)`/`cfg(esp32s3)` from `TARGET` (plus `rustc-check-cfg`) so `sleep.rs`'s `#[cfg(esp32)]` path resolves — a build script's cfgs do **not** propagate from the ESP-IDF crate to its `stoker` dependency. No `embuild`/linker step in `stoker`'s build script; that lives only in the ESP-IDF crate.
 - [ ] Create `crates/rustyfarian-esp-idf-power/` — move `esp_adc.rs`, `esp_sleep.rs`, `esp_charging.rs`, `build.rs`, and all three `idf_*` examples.
 - [ ] Promote `validate_gpio_level_source` and `validate_wake_sources` in `sleep.rs` from `pub(crate)` to `pub` (the only visibility change the split forces).
 - [ ] Rewrite `crate::…` paths in the three `esp_*.rs` files and the examples to `stoker::…`.

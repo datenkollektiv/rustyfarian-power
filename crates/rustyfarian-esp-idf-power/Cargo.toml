@@ -1,0 +1,30 @@
+[package]
+name = "rustyfarian-esp-idf-power"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "ESP-IDF (std) battery monitoring, charging detection, and deep-sleep drivers for ESP32 and ESP32-S3"
+keywords = ["esp32", "esp-idf", "battery", "power", "embedded"]
+categories = ["embedded", "hardware-support"]
+readme = "README.md"
+
+[lib]
+name = "rustyfarian_esp_idf_power"
+
+[dependencies]
+stoker.workspace = true
+anyhow.workspace = true
+log.workspace = true
+esp-idf-hal.workspace = true
+
+[build-dependencies]
+embuild.workspace = true
+
+# docs.rs cannot build the Xtensa ESP-IDF targets (no Espressif LLVM fork in the
+# sandbox); point it at the RISC-V ESP target, which docs.rs supports. A failed
+# docs.rs build is expected, not a regression — the README is the primary docs.
+[package.metadata.docs.rs]
+default-target = "riscv32imc-esp-espidf"

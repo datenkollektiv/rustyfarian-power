@@ -53,8 +53,8 @@
 
 use std::ffi::CString;
 
-use battery_monitor::{BatteryConfig, BatteryMonitor, EspAdcBatteryMonitor};
 use esp_idf_hal::peripherals::Peripherals;
+use rustyfarian_esp_idf_power::{BatteryConfig, BatteryMonitor, EspAdcBatteryMonitor};
 
 /// Print a line to the serial console via `esp_rom_printf`.
 ///

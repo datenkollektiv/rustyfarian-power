@@ -44,8 +44,8 @@
 //! Read the wake cause first, before any peripheral initialisation:
 //!
 //! ```rust,ignore
-//! use battery_monitor::{EspWakeCauseSource, EspSleepManager, WakeCause, WakeCauseSource,
-//!                       SleepManager, WakeSource};
+//! use rustyfarian_esp_idf_power::{EspWakeCauseSource, EspSleepManager, WakeCause, WakeCauseSource,
+//!                                 SleepManager, WakeSource};
 //!
 //! fn main() {
 //!     // EspWakeCauseSource is a unit struct — construct it as a value, then call the trait method.
@@ -70,7 +70,7 @@
 use anyhow::Context;
 use esp_idf_hal::sys;
 
-use crate::sleep::{
+use stoker::sleep::{
     validate_gpio_level_source, validate_wake_sources, GpioWakeLevel, GpioWakeMask, SleepManager,
     WakeCause, WakeCauseSource, WakeSource,
 };

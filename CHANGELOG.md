@@ -3,17 +3,27 @@
 All notable changes to this project will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-This project has not yet adopted semantic versioning; entries are grouped by milestone.
+Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.org/) (pre-1.0: minor bumps may carry breaking changes). Earlier entries are grouped by milestone.
 
 ---
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-06-21
+
+First publication to crates.io.
+
+### Changed
+- **Breaking / packaging:** split the single `battery-monitor` crate into two published crates — `stoker` (pure, host-buildable core: battery math, sleep validation, charging/wake types, `Noop*` mocks) and `rustyfarian-esp-idf-power` (ESP-IDF drivers: `EspAdcBatteryMonitor`, `EspSleepManager`, `EspWakeCauseSource`, `EspChargingMonitor`). Import paths change: `battery_monitor::X` → `stoker::X` (pure types) or `rustyfarian_esp_idf_power::X` (hardware types). The ESP-IDF crate re-exports `stoker`'s surface, so `use rustyfarian_esp_idf_power::*` covers both. The `esp-idf` Cargo feature is removed — the crate boundary replaces the feature gate.
+- `PowerSource` is now `#[non_exhaustive]` (a `Solar` variant is planned); downstream `match`es need a wildcard arm.
+- `validate_wake_sources` and `validate_gpio_level_source` are now `pub` (were `pub(crate)`), so the ESP-IDF crate can reuse the pure validation.
+
 ### Added
 - `ChargingMonitor` trait and `ChargingState` enum — charge-state lifecycle as a concern orthogonal to `PowerSource` identity
 - Hardware wiring documentation for Heltec WiFi LoRa 32 V3 and Adafruit ESP32 Feather V2 (`docs/hardware-setup.md`)
+- Per-crate `README.md` + dual `LICENSE-MIT`/`LICENSE-APACHE`; crates.io publishing metadata and `release-plan.md` / `scripts/release-validate.sh` / `just` release recipes
 
-### Changed
+### Changed (pre-release)
 - ROADMAP: marked Philosophy Compliance Sprint and Feather V2 charging monitor as done
 - ROADMAP: updated Milestone 4 to reflect what was shipped vs what remains
 - README: added `charging.rs` and `esp_charging.rs` to the crate structure table

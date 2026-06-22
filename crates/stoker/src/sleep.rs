@@ -20,8 +20,8 @@
 //!
 //! # ESP-IDF implementation
 //!
-//! Enable the `esp-idf` feature (default) to access `EspSleepManager` and
-//! `EspWakeCauseSource` in the `crate::esp_sleep` module.
+//! The `EspSleepManager` and `EspWakeCauseSource` hardware drivers live in the
+//! companion `rustyfarian-esp-idf-power` crate.
 
 /// The reason the device woke from sleep, or [`WakeCause::PowerOn`] on cold boot.
 ///
@@ -173,13 +173,20 @@ pub enum WakeSource {
 ///
 /// # Target specificity
 ///
-/// The upper-bit check (`pin > 21`) is specific to the ESP32-S3 RTC GPIO
-/// range for EXT1.
-/// Other ESP32 variants (classic ESP32, C3, C6, H2) have different RTC GPIO
-/// sets and would require a different valid mask.
-/// This crate targets ESP32-S3 (Heltec WiFi LoRa 32 V3) and ESP32 (Adafruit Feather V2).
-#[cfg_attr(not(feature = "esp-idf"), allow(dead_code))]
-pub(crate) fn validate_gpio_level_source(pin_mask: u64) -> anyhow::Result<()> {
+/// The valid RTC-GPIO mask is chip-specific and selected at compile time from
+/// the `esp32` cfg emitted by this crate's `build.rs` (from the target triple):
+/// the ESP32 mask for `xtensa-esp32-espidf`, the ESP32-S3 range (0–21) otherwise.
+/// Other ESP32 variants (C3, C6, H2) have different RTC GPIO sets and would
+/// require a different mask. This crate targets ESP32-S3 (Heltec WiFi LoRa 32 V3)
+/// and ESP32 (Adafruit Feather V2).
+///
+/// **Host/non-ESP builds use the ESP32-S3 mask by design.** No `esp32` cfg is set
+/// off-target, so host unit tests exercise the S3 range. This is deliberate, not a
+/// fallback bug: the function is only meaningfully invoked on-device, where
+/// `build.rs` sets the cfg matching the actual chip. Host tests therefore validate
+/// the S3 boundary logic; the ESP32 mask is covered by the on-target build
+/// (`just check-esp32`).
+pub fn validate_gpio_level_source(pin_mask: u64) -> anyhow::Result<()> {
     if pin_mask == 0 {
         anyhow::bail!("GpioLevel pin_mask must not be zero");
     }
@@ -211,7 +218,7 @@ pub(crate) fn validate_gpio_level_source(pin_mask: u64) -> anyhow::Result<()> {
 ///
 /// - More than one `WakeSource::Timer` — ESP-IDF supports only one timer source.
 /// - More than one `WakeSource::GpioLevel` — combine multiple pins into one mask.
-pub(crate) fn validate_wake_sources(sources: &[WakeSource]) -> anyhow::Result<()> {
+pub fn validate_wake_sources(sources: &[WakeSource]) -> anyhow::Result<()> {
     let timer_count = sources
         .iter()
         .filter(|s| matches!(s, WakeSource::Timer { .. }))
@@ -289,7 +296,7 @@ pub trait WakeCauseSource {
 /// branches in consumer code:
 ///
 /// ```
-/// use battery_monitor::{NoopSleepManager, WakeCause, WakeCauseSource, GpioWakeMask};
+/// use stoker::{NoopSleepManager, WakeCause, WakeCauseSource, GpioWakeMask};
 ///
 /// let mut mock = NoopSleepManager::with_cause(WakeCause::Timer);
 /// assert_eq!(mock.last_wake_cause(), WakeCause::Timer);

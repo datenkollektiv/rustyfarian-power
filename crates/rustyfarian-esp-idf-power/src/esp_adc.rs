@@ -12,7 +12,7 @@ use esp_idf_hal::adc::oneshot::{AdcChannelDriver, AdcDriver};
 use esp_idf_hal::adc::{AdcChannel, ADC1, ADCU1};
 use esp_idf_hal::gpio::ADCPin;
 
-use crate::{BatteryConfig, BatteryMonitor, BatteryStatus};
+use stoker::{BatteryConfig, BatteryMonitor, BatteryStatus};
 
 /// Battery monitor using ESP-IDF ADC oneshot driver.
 ///

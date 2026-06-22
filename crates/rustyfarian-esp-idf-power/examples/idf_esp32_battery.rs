@@ -57,12 +57,12 @@
 //!
 //! The device then enters deep sleep for 60 seconds, reboots, and repeats.
 
-use battery_monitor::{
+use esp_idf_hal::peripherals::Peripherals;
+use esp_idf_hal::sys;
+use rustyfarian_esp_idf_power::{
     BatteryConfig, BatteryMonitor, EspAdcBatteryMonitor, EspWakeCauseSource, WakeCause,
     WakeCauseSource,
 };
-use esp_idf_hal::peripherals::Peripherals;
-use esp_idf_hal::sys;
 
 fn main() -> anyhow::Result<()> {
     // SAFETY: link_patches satisfies ESP-IDF's requirement that ROM function
