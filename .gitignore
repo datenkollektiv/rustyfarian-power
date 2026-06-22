@@ -8,9 +8,13 @@ CLAUDE.md
 archive/
 review-queue/
 .idea/
+release/
+audit/
 
 # Temporary scratch files — local only
 tmp/
 
 # Claude Code project-local memory — personal, not committed
 memory/
+
+.envrc
