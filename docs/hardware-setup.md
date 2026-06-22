@@ -88,7 +88,7 @@ However, GPIO isolation may prevent wake-capable pins from triggering.
 When using `WakeSource::GpioLevel`, construct `EspSleepManager` with `isolate_gpio: false`:
 
 ```rust
-use battery_monitor::{EspSleepManager, SleepManager, WakeSource, GpioWakeLevel};
+use rustyfarian_esp_idf_power::{EspSleepManager, SleepManager, WakeSource, GpioWakeLevel};
 
 EspSleepManager { isolate_gpio: false }
     .sleep(&[WakeSource::GpioLevel {

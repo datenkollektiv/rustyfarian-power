@@ -55,11 +55,11 @@ Remove or update entries that are superseded.
 - **ESP-IDF version:** Pinned to v5.3.3 in `.cargo/config.toml` via `ESP_IDF_VERSION`.
   Do not float this; bindgen output changes with every ESP-IDF version.
 - **Linker and `ldproxy`:** `linker = "ldproxy"` is required in `.cargo/config.toml` for every Xtensa ESP-IDF target.
-  `battery-monitor/build.rs` calls `embuild::espidf::sysenv::output()`, which emits `--ldproxy-linker` and `--ldproxy-cwd` link args that are consumed by `ldproxy`.
+  `rustyfarian-esp-idf-power/build.rs` calls `embuild::espidf::sysenv::output()`, which emits `--ldproxy-linker` and `--ldproxy-cwd` link args that are consumed by `ldproxy`.
   Without it, those args are passed directly to `xtensa-esp-elf-gcc`, which rejects them with "unrecognized command-line option" and exits with code 101.
   Both `xtensa-esp32s3-espidf` and `xtensa-esp32-espidf` must have `linker = "ldproxy"` in `.cargo/config.toml`.
-- **Host tests:** Run with `cargo test -p battery-monitor` (no cross-compilation needed).
-  The `esp-idf` feature is excluded during host tests so they run without the ESP-IDF build tooling.
+- **Host tests:** Run with `cargo test -p stoker` (no cross-compilation needed).
+  `stoker` is the pure crate with no ESP-IDF dependency, so host tests run without the ESP-IDF build tooling. The ESP-IDF `rustyfarian-esp-idf-power` crate cannot build on the host at all.
 
 ## ESP32-S3 Sleep and Power Management
 
@@ -92,9 +92,9 @@ Remove or update entries that are superseded.
   `esp_sleep.rs` uses `#[cfg(esp32)]` to select the correct constant at compile time.
   The semantics differ (any vs all), but `ALL_LOW` is the closest available mode on original ESP32.
   This was confirmed by a compile failure against `xtensa-esp32-espidf` when adding Adafruit Feather V2 support.
-- **`cfg(esp32)` requires a `build.rs` in the crate:** `cargo:rustc-cfg` outputs from a build script only apply to that crate, not its dependents.
-  Even though `esp-idf-sys` emits `cargo:rustc-cfg=esp32`, that flag is not visible to `battery-monitor`.
-  `battery-monitor/build.rs` reads `TARGET` and emits `cargo:rustc-cfg=esp32` / `cargo:rustc-cfg=esp32s3` directly, along with `cargo:rustc-check-cfg` to silence the `unexpected_cfg` lint.
+- **`cfg(esp32)` requires a `build.rs` in *each* crate that reads it:** `cargo:rustc-cfg` outputs from a build script only apply to that crate, not its dependents.
+  Even though `esp-idf-sys` emits `cargo:rustc-cfg=esp32`, that flag is not visible to either workspace crate.
+  Both `stoker` and `rustyfarian-esp-idf-power` therefore carry a `build.rs` that reads `TARGET` and emits `cargo:rustc-cfg=esp32` / `cargo:rustc-cfg=esp32s3` directly, plus `cargo:rustc-check-cfg` to silence the `unexpected_cfgs` lint. `stoker` needs its own copy because `sleep.rs::validate_gpio_level_source` uses `#[cfg(esp32)]` — the crate-split does **not** let it inherit the cfg from the ESP-IDF crate's build script. `stoker`'s `build.rs` does the cfg emission only (no `embuild` linker step).
 - **GPIO isolation:** Call `esp_sleep_config_gpio_isolate()` and `esp_sleep_isolate_digital_gpio()` before deep sleep to prevent floating digital GPIO pins from leaking current.
   This is one of the most commonly missed optimizations on real boards.
 - **Deep sleep wake stub:** A minimal function marked `RTC_IRAM_ATTR` can execute immediately on wake before the full boot, useful for deciding whether to fully boot or return to sleep.
@@ -224,7 +224,7 @@ Remove or update entries that are superseded.
   Subsequent builds are fast due to the `.embuild` cache.
 - **Host tests require an explicit target flag.**
   `.cargo/config.toml` forces `target = "xtensa-esp32s3-espidf"` for all builds, so `cargo test` without `--target` tries to link with `ldproxy` and fails.
-  Always run host tests as: `cargo test -p battery-monitor --no-default-features --target aarch64-apple-darwin` (adjust the triple for non-Apple hosts).
+  Always run host tests as: `cargo test -p stoker --target aarch64-apple-darwin` (adjust the triple for non-Apple hosts). The `just` host recipes do this for you.
 - **`esp_sleep_config_gpio_isolate()` returns `void` in ESP-IDF v5.x**, not `esp_err_t`.
   Do not wrap it in an error check; call it directly and document the `SAFETY` comment.
   (The key-insights entry about calling this function before sleep is still correct — just no error check needed.)

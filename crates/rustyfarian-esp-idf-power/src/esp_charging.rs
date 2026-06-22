@@ -6,7 +6,7 @@
 use esp_idf_hal::gpio::{Input, InputPin, Level, OutputPin, PinDriver, Pull};
 use esp_idf_hal::sys::EspError;
 
-use crate::{ChargingMonitor, ChargingSource, ChargingState};
+use stoker::{ChargingMonitor, ChargingSource, ChargingState};
 
 /// Charging monitor for boards with an MCP73831 charge controller.
 ///

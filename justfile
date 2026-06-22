@@ -10,8 +10,10 @@
 # Run `just setup-toolchain` and `just setup-cargo-config` for first-time setup.
 
 host_target := `scripts/host-target.sh`
-host_flags  := "--no-default-features --target " + host_target
-doc_flags   := "--no-default-features --target " + host_target + " --no-deps"
+# host-side recipes target only the pure `stoker` crate; the ESP-IDF crate
+# cannot compile on the host (esp-idf-sys needs the Xtensa/ESP-IDF toolchain).
+host_flags  := "-p stoker --target " + host_target
+doc_flags   := "-p stoker --target " + host_target + " --no-deps"
 esp32s3_target := "xtensa-esp32s3-espidf"
 esp32_target   := "xtensa-esp32-espidf"
 
@@ -32,14 +34,14 @@ check:
 check-all:
     CARGO_TARGET_DIR="{{ idf_dir }}" cargo check
 
-# check battery-monitor for the ESP32 target (Adafruit Feather V2, requires espup)
+# check the ESP-IDF power crate for the ESP32 target (Adafruit Feather V2, requires espup)
 check-esp32:
-    MCU=esp32 CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p battery-monitor --target {{ esp32_target }}
+    MCU=esp32 CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p rustyfarian-esp-idf-power --target {{ esp32_target }}
 
 # verify device-side rustdoc snippets type-check for the ESP32 target (requires espup)
 # run this whenever touching rust,ignore doc snippets or esp-idf-gated code
 check-docs-esp32:
-    MCU=esp32 CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p battery-monitor --target {{ esp32_target }} --features esp-idf
+    MCU=esp32 CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p rustyfarian-esp-idf-power --target {{ esp32_target }}
 
 # build platform-independent code (no ESP toolchain required)
 build:

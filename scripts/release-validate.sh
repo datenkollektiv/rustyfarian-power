@@ -15,8 +15,8 @@ set -euo pipefail
 # CHANGELOG.md is updated (move [Unreleased] -> [X.Y.Z]) in the release commit
 # BEFORE running this and tagging — it is NOT a post-publish step.
 #
-# PREREQUISITE: the battery-monitor -> stoker + rustyfarian-esp-idf-power split
-# (release-plan.md, Phase 0) must be complete before this script can pass.
+# Validates the two published crates (stoker + rustyfarian-esp-idf-power) in
+# dependency order; see release-plan.md for the full publication sequence.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -39,6 +39,7 @@ verify_log="$(mktemp -t release-verify.XXXXXX)"
 dryrun_log="$(mktemp -t release-dryrun-stoker.XXXXXX)"
 deny_log="$(mktemp -t release-deny.XXXXXX)"
 audit_log="$(mktemp -t release-audit.XXXXXX)"
+meta_log="$(mktemp -t release-metadata.XXXXXX)"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Release Validation — 0.1.0 lockstep (stoker + rustyfarian-esp-idf-power)"
@@ -64,7 +65,13 @@ fi
 echo ""
 
 echo "[2/6] Verifying version consistency..."
-metadata=$(cargo metadata --format-version 1 2>/dev/null || true)
+# Fail loudly if metadata generation itself fails (manifest error, bad lockfile),
+# rather than swallowing it and reporting a confusing "version not found".
+if ! metadata=$(cargo metadata --format-version 1 2>"$meta_log"); then
+    echo "  ERROR: 'cargo metadata' failed — see below" >&2
+    tail -20 "$meta_log" >&2
+    exit 1
+fi
 stoker_ver=$(echo "$metadata" | jq -r '.packages[] | select(.name == "stoker") | .version')
 idf_ver=$(echo "$metadata" | jq -r '.packages[] | select(.name == "rustyfarian-esp-idf-power") | .version')
 if [ -z "$stoker_ver" ] || [ -z "$idf_ver" ]; then

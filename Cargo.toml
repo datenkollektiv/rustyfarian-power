@@ -3,6 +3,7 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.package]
+version = "0.1.0"
 authors = ["datenkollektiv"]
 edition = "2021"
 rust-version = "1.88"
@@ -10,6 +11,13 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/datenkollektiv/rustyfarian-power"
 
 [workspace.dependencies]
+# Workspace-internal
+stoker = { path = "crates/stoker", version = "0.1" }
+
+# External dependencies
 anyhow = "1"
 log = "0.4"
+
+# ESP-IDF dependencies
 esp-idf-hal = "0.46"
+embuild = { version = "0.33", features = ["espidf"] }

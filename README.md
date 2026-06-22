@@ -1,5 +1,9 @@
 # Rustyfarian Power Management
 
+<p align="center">
+  <img src="docs/steampunk-meets-future-in-power-lab.png" alt="stoker — battery &amp; power management. A steampunk boiler-room on the left (no_std / esp-hal) and a futuristic power-monitor dashboard on the right (std / esp-idf), with the rustyfarian stoker mascot tending the fire between them: &quot;One chip. Two universes.&quot;" width="720">
+</p>
+
 [![CI](https://github.com/datenkollektiv/rustyfarian-power/actions/workflows/rust.yml/badge.svg)](https://github.com/datenkollektiv/rustyfarian-power/actions/workflows/rust.yml)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](#license)
 [![Rust](https://img.shields.io/badge/rust-esp--toolchain-orange.svg)](https://www.rust-lang.org)
@@ -155,17 +159,16 @@ Format, check, lint, and test in one step:
 just pre-commit
 ```
 
-## Crate Structure
+## Crates
 
-| Module            | Description                                                                                          |
-|:------------------|:-----------------------------------------------------------------------------------------------------|
-| `lib.rs`          | Public API: `PowerSource`, `BatteryStatus`, `BatteryMonitor` trait, `is_sufficient()`                |
-| `config.rs`       | `BatteryConfig` with voltage thresholds, `voltage_to_percent()`, `evaluate_reading()`                |
-| `sleep.rs`        | `SleepManager`, `WakeCauseSource` traits; `WakeCause`, `WakeSource` enums; `NoopSleepManager` mock   |
-| `charging.rs`     | `ChargingMonitor` trait; `ChargingState`, `ChargingSource` enums; `NoopChargingMonitor` mock         |
-| `esp_adc.rs`      | `EspAdcBatteryMonitor` — ESP-IDF ADC implementation (feature-gated behind `esp-idf`)                 |
-| `esp_sleep.rs`    | `EspSleepManager`, `EspWakeCauseSource` — ESP-IDF deep sleep implementation (feature-gated)          |
-| `esp_charging.rs` | `EspChargingMonitor` — MCP73831 charging state via STAT + VBUS pins (feature-gated behind `esp-idf`) |
+This repository publishes two crates, one per tier (see [release-plan.md](release-plan.md)):
+
+| Crate | Tier | Contents |
+|:------|:-----|:---------|
+| [`stoker`](crates/stoker) | Pure / host-buildable | `BatteryConfig`, `BatteryStatus`, `PowerSource`, the `BatteryMonitor` / `ChargingMonitor` / `SleepManager` / `WakeCauseSource` traits, `ChargingState`, `WakeCause` / `WakeSource`, sleep validation, and the `Noop*` host mocks. No ESP-IDF dependency; fully host-testable. |
+| [`rustyfarian-esp-idf-power`](crates/rustyfarian-esp-idf-power) | ESP-IDF (std) | `EspAdcBatteryMonitor`, `EspSleepManager`, `EspWakeCauseSource`, `EspChargingMonitor`, plus the hardware examples. Re-exports `stoker`'s surface, so firmware imports from one crate. |
+
+The pure core uses the rustyfarian family's funfair naming (`stoker`, joining `bunting` / `pennant` / `ferriswheel` / `juggler`); the hardware tier uses the technical `rustyfarian-<hal>-<repo>` convention.
 
 ## License
 
