@@ -12,7 +12,7 @@ Remove or update entries that are superseded.
 ## CI and Build Validation
 
 - **GitHub Actions workflows live in `.github/workflows/`** with four files: `rust.yml` (CI: deny + check + test), `fmt.yml` (format check), `clippy.yml` (clippy), `audit.yml` (cargo-audit, runs on schedule + push).
-  Each workflow calls a `just` recipe (`just deny`/`check`/`test`/`fmt-check`/`clippy`/`audit`) via `extractions/setup-just@v2`, so the justfile is the single source of truth and CI cannot drift from local `just verify`/`just ci` (pattern adopted from rustyfarian-network PR #79).
+  Each workflow calls a `just` recipe (`just deny`/`check`/`test`/`fmt-check`/`clippy`/`audit`) via `extractions/setup-just@v4`, so the justfile is the single source of truth and CI cannot drift from local `just verify`/`just ci` (pattern adopted from rustyfarian-network PR #79).
   Keep the four workflow files structurally consistent (checkout → toolchain → setup-just → cache → recipe); if the boilerplate grows, factor it into a reusable workflow rather than letting them diverge.
   Host-side recipes already pass `--no-default-features --target <host>` (host detected inside the recipe via `scripts/host-target.sh`), avoiding the ESP-IDF cross-compile toolchain (not installed on GitHub-hosted runners).
   **`RUSTUP_TOOLCHAIN: stable` must stay set in every workflow** — it overrides this repo's `rust-toolchain.toml` (`channel = "esp"`), which is not installed on CI.
@@ -26,9 +26,12 @@ Remove or update entries that are superseded.
   This repo follows the same pattern: host-only check + test under `--no-default-features`.
   Cross-compilation for `xtensa-esp32s3-espidf` must be done locally with `just check-all` / `just build-example <name>`.
 - **`just audit` generates a `Cargo.lock` if absent** (the lockfile is gitignored for this library) before running `cargo audit`; `just deny` needs no explicit lockfile step because `cargo deny` resolves the graph via `cargo metadata`.
-- **`rust-version = "1.88"` (MSRV) is set for family consistency, not a hard requirement.**
-  No code uses 1.88-specific features (the host logic needs ~1.82 for `Option::is_none_or`); 1.88 matches the sibling rustyfarian repos (e.g. rustyfarian-ws2812).
-  There is no MSRV-pinned CI job, so treat it as a declared floor — if you ever lower it, lower the siblings too.
+- **MSRV is set for family consistency, not a hard requirement: `stoker` 1.88 (workspace floor), `rustyfarian-esp-idf-power` 1.95.**
+  No code uses 1.88-specific features (the host logic needs ~1.82 for `Option::is_none_or`), and the ESP-IDF stack (`esp-idf-hal 0.47`) needs only 1.82.
+  The ESP tier's 1.95 follows the family policy set in the September 2026 wave, where rustyfarian-ws2812 and rustyfarian-peripherals raised their ESP tier crates in step with `esp-hal 1.2`.
+  There is no MSRV-pinned CI job, so treat both as declared floors — change them in step with the siblings.
+- **Action runtimes: read `runs.using` in each action's `action.yml` at the tag in use.**
+  `actions/checkout@v4` and `extractions/setup-just@v2` were Node 20 (removed from runners 2026-09-23); `@v5` / `@v4` are node24 / composite. `Swatinem/rust-cache@v2` already resolves to node24.
 
 ## Hardware
 
@@ -180,6 +183,7 @@ Remove or update entries that are superseded.
 ## GPIO Configuration and Diagnosis
 
 - **`InputEn: 0` in ESP-IDF GPIO log is a cosmetic artifact, not a misconfiguration.**
+  (Historical — analysed on esp-idf-hal 0.45.2. Since 0.46 there is no `into_mode` chain and no intermediate `PinDriver` to drop: `PinDriver::input` goes straight to `new_gpio`, which in 0.47 (#585) calls `esp_rom_gpio_pad_select_gpio` and then `gpio_set_direction`. `Drop` still calls `gpio_reset_without_pull`. The `InputEn: 0` line may therefore no longer appear at construction; re-confirm on hardware before relying on the explanation below. Checked against the 0.47.0 sources on 2026-09-26.)
   When esp-idf-hal 0.45.2 constructs a `PinDriver` via `PinDriver::input()`, the call chain is:
   `input()` → `into_input()` → `into_mode(GPIO_MODE_INPUT)`.
   Inside `into_mode`, `drop(self)` is called first on the intermediate temporary `PinDriver`.

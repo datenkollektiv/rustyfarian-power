@@ -3,7 +3,10 @@ name = "rustyfarian-esp-idf-power"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
-rust-version.workspace = true
+# Above the workspace floor (1.88, which is `stoker`'s MSRV) by policy, in step
+# with the ESP tier crates of the sibling rustyfarian repos; the ESP-IDF stack
+# itself only needs 1.82.
+rust-version = "1.95"
 license.workspace = true
 repository.workspace = true
 description = "ESP-IDF (std) battery monitoring, charging detection, and deep-sleep drivers for ESP32 and ESP32-S3"

@@ -18,6 +18,8 @@ stoker = { path = "crates/stoker", version = "0.1" }
 anyhow = "1"
 log = "0.4"
 
-# ESP-IDF dependencies
-esp-idf-hal = "0.46"
-embuild = { version = "0.33", features = ["espidf"] }
+# ESP-IDF dependencies — September 2026 wave, in step with the sibling
+# rustyfarian repos. esp-idf-hal 0.47 pulls esp-idf-sys 0.38 (a `links` crate:
+# one version per downstream graph) and requires embuild >= 0.33.5.
+esp-idf-hal = "0.47"
+embuild = { version = "0.33.5", features = ["espidf"] }

@@ -17,7 +17,7 @@ use stoker::{BatteryConfig, BatteryMonitor, BatteryStatus};
 /// Battery monitor using ESP-IDF ADC oneshot driver.
 ///
 /// Generic over `GPIO`, which must be an ADC1-capable pin.
-/// In esp-idf-hal 0.46 the ADC1 relationship is expressed via
+/// In esp-idf-hal 0.46 and 0.47 the ADC1 relationship is expressed via
 /// `GPIO: ADCPin` with `GPIO::AdcChannel: AdcChannel<AdcUnit = ADCU1>`.
 /// Use [`BatteryConfig::heltec_v3()`] for the Heltec WiFi LoRa 32 V3 (GPIO1)
 /// or construct a custom [`BatteryConfig`] for other boards.
