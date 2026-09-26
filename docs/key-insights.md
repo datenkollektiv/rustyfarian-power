@@ -219,6 +219,14 @@ Remove or update entries that are superseded.
   Configure via `sdkconfig.defaults` (`CONFIG_LOG_DEFAULT_LEVEL=4` for INFO, `3` for WARN) or
   call `esp_log_level_set` for the component at runtime.
 
+## esp-hal tier (not implemented) — capability findings (2026-09-26)
+
+- **ADC and deep sleep are behind esp-hal's `unstable` feature, and the sleep API changed shape between releases:** esp-hal 1.1 had `Ext1WakeupSource`/`TimerWakeupSource`; 1.2.2 replaced them with `LowPower::sleep_deep() -> !` plus per-pin `Input::listen(Event::LowLevel)` arming and `set_wakeup_deadline(Instant)`. Expect churn every wave.
+- **`stoker`'s sleep/wake contract is IDF-shaped and does not port directly:** esp-hal has no caller-supplied `pin_mask`, no single EXT1 status bitmask (only per-pin `caused_wakeup()`, or the raw register), panics instead of returning `Result` when no wake source is armed, and isolates pads automatically. A bare-metal tier needs a trait redesign (ADR first), not just a new driver.
+- **`stoker` is not no_std-ready:** `anyhow` appears in public signatures (`SleepManager::sleep`, `validate_*`), there is no `no_std` attribute, and `build.rs` only matches `*-espidf` triples (a `*-none-elf` ESP32 build would silently get the S3 wake-pin mask).
+- **ADC and GPIO port easily:** calibrated mV on ESP32 (`AdcCalLine` only), S3/C3/C6 (`Line`/`Curve`; C6 also `Basic`); `Input` + `Pull` are stable.
+- **Joining means exact-pinning `esp-hal` in lockstep with network/ws2812/peripherals** (all `=1.2.2` since 2026-09-26), or apps combining the hal tiers will not resolve.
+
 ## Known Gotchas
 
 - Running `cargo build` without the `esp` toolchain active will fail with a linker error.

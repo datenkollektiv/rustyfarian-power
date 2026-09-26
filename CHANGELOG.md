@@ -10,14 +10,16 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 ## [Unreleased]
 
 ### Migration
-- **`rustyfarian-esp-idf-power` consumers must move to `esp-idf-hal 0.47`** — its types appear in the public API (`EspAdcBatteryMonitor`, `EspChargingMonitor`, `EspSleepManager`, `EspWakeCauseSource`), and `esp-idf-sys` allows only one version per graph. The next release is therefore a minor bump. `stoker` is unaffected.
-- `rustyfarian-esp-idf-power` now declares `rust-version = "1.95"` (family policy for the ESP tier crates; the ESP-IDF stack itself needs only 1.82). `stoker` stays at the 1.88 workspace floor.
+- **Breaking:** `rustyfarian-esp-idf-power` consumers must move to `esp-idf-hal 0.47` — its types are in the public API and `esp-idf-sys` allows one version per graph.
+- `rustyfarian-esp-idf-power` declares `rust-version = "1.95"` (ESP-tier family policy); `stoker` stays at the 1.88 workspace floor.
+- `stoker` has no changes; it moves to the new version only to keep the two crates in lockstep.
 
 ### Changed
-- **ESP-IDF stack — September 2026 wave (quarterly maintenance, 2026-09-26):** `esp-idf-hal` `0.46` → `0.47` (resolves `0.47.0`, bringing `esp-idf-sys 0.38.1`; `0.38.0` is yanked upstream) and `embuild` → `0.33.5`, the floor `esp-idf-hal 0.47` requires. No source changes were needed: the oneshot ADC module is byte-identical, and the `sleep` change is gated on ESP-IDF ≥ 6.0 (we stay on `v5.3.3`). Relevant upstream fix: `PinDriver` now routes the pad to the GPIO function before setting its direction (esp-idf-hal #585), on the `EspChargingMonitor` / example input path. Compile-verified on `xtensa-esp32s3-espidf` and `xtensa-esp32-espidf`.
-- **Dependency refresh clears two advisories:** `anyhow 1.0.104` (RUSTSEC-2026-0190, `Error::downcast_mut` unsoundness; not called here) and `crossbeam-epoch 0.9.21` (RUSTSEC-2026-0204, host-side `embuild` build dependency only). No `deny.toml` ignores are needed.
-- **CI:** `actions/checkout` `v4` → `v5` and `extractions/setup-just` `v2` → `v4`, off the Node 20 runtime GitHub removed on 2026-09-23 (verified from each tag's `action.yml`).
-- `just verify` now runs `cargo deny check`, matching its documentation and `just ci`; previously advisories surfaced only in `just ci` and CI.
+- ESP-IDF stack — September 2026 wave: `esp-idf-hal` `0.46` → `0.47` (`esp-idf-sys 0.38.1`) and `embuild` → `0.33.5`, with no source changes needed.
+- Picks up upstream `PinDriver` fix (esp-idf-hal #585) on the `EspChargingMonitor` input path.
+- Dependency refresh clears RUSTSEC-2026-0190 (`anyhow 1.0.104`) and RUSTSEC-2026-0204 (`crossbeam-epoch 0.9.21`, build-time only).
+- CI: `actions/checkout` `v5` and `extractions/setup-just` `v4`, off the removed Node 20 runtime.
+- `just verify` now runs `cargo deny check`, matching `just ci`.
 
 ## [0.1.0] - 2026-06-21
 

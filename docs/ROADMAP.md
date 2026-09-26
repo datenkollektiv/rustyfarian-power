@@ -34,8 +34,7 @@ timeline
               : Harden EspWakeCauseSource multi-source disambiguation
               : Calibration example — raw ADC readings with statistics
 
-    Mid term  : Rename crate battery-monitor to rustyfarian-power — do before radio gating work adds RadioPowerGate
-              : Radio power gating — GPIO-controlled MOSFET for SX1262 and OLED, SX1262 sleep sequencing via SPI
+    Mid term  : Radio power gating — GPIO-controlled MOSFET for SX1262 and OLED, SX1262 sleep sequencing via SPI
               : Heltec V3 EspChargingMonitor — blocked on schematic verification above
               : Extend BatteryMonitor trait for multi-cell battery packs
               : Contract test scaffold — shared test fn run against both NoopBatteryMonitor and EspAdcBatteryMonitor
