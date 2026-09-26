@@ -42,7 +42,7 @@ audit_log="$(mktemp -t release-audit.XXXXXX)"
 meta_log="$(mktemp -t release-metadata.XXXXXX)"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Release Validation — 0.1.0 lockstep (stoker + rustyfarian-esp-idf-power)"
+echo "Release Validation — 0.2.0 lockstep (stoker + rustyfarian-esp-idf-power)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
@@ -118,7 +118,7 @@ else
     tail -20 "$dryrun_log" >&2
     exit 1
 fi
-# rustyfarian-esp-idf-power depends on `stoker ^0.1`. A `cargo publish --dry-run`
+# rustyfarian-esp-idf-power depends on `stoker ^0.2`. A `cargo publish --dry-run`
 # for it resolves stoker against the crates.io index (the published manifest drops
 # the path), which only succeeds AFTER stoker is published — so a standalone dry-run
 # is not possible here. Its packaging/contents are validated above in [4/6] via
@@ -151,7 +151,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 echo "Publish via the just recipes, in staged dependency order (clean tree + CARGO_REGISTRY_TOKEN):"
 echo "  Stage 1: just release-publish-stoker         # wait ~2-5 min to index"
-echo "  Stage 2: just release-dry-run-idf            # now resolves stoker ^0.1 from the index"
+echo "  Stage 2: just release-dry-run-idf            # now resolves stoker ^0.2 from the index"
 echo "  Stage 3: just release-publish-idf            # cargo publish --target xtensa-esp32s3-espidf (esp toolchain)"
 echo ""
 echo "  rustyfarian-esp-idf-power verify-builds against its real cross-target"

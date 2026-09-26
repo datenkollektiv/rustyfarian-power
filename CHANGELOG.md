@@ -9,6 +9,10 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-26
+
+Downstream apps can now combine `rustyfarian-esp-idf-power` with the September 2026 sibling crates.
+
 ### Migration
 - **Breaking:** `rustyfarian-esp-idf-power` consumers must move to `esp-idf-hal 0.47` — its types are in the public API and `esp-idf-sys` allows one version per graph.
 - `rustyfarian-esp-idf-power` declares `rust-version = "1.95"` (ESP-tier family policy); `stoker` stays at the 1.88 workspace floor.

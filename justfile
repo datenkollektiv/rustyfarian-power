@@ -167,7 +167,7 @@ ci: fmt-check deny check clippy test
 # --- Release --------------------------------------------------------------
 #
 # Two crates publish in dependency order: stoker (pure, host-buildable) first,
-# then rustyfarian-esp-idf-power, which resolves stoker ^0.1 from crates.io once
+# then rustyfarian-esp-idf-power, which resolves stoker ^0.2 from crates.io once
 # it is live. The default toolchain is the esp channel, so plain `cargo` drives
 # the Xtensa fork — no `cargo +esp` needed.
 # See release-plan.md for the full staged sequence, credentials, and rollback.
@@ -178,7 +178,7 @@ release-help:
     @echo "  0. Phase 0 prerequisites merged: crate split + per-crate README/LICENSE + metadata"
     @echo "  1. just release-publish-validate   # preflight gate (no upload)"
     @echo "  2. just release-publish-stoker     # Stage 1: publish pure crate, then wait ~2-5 min to index"
-    @echo "  3. just release-dry-run-idf        # Stage 2: resolves stoker ^0.1 from crates.io"
+    @echo "  3. just release-dry-run-idf        # Stage 2: resolves stoker ^0.2 from crates.io"
     @echo "  4. just release-publish-idf        # Stage 3: publish ESP-IDF crate (xtensa-esp32s3-espidf)"
     @echo "  5. git tag -a v<version> && git push --tags, then cut the GitHub release"
 
@@ -191,7 +191,7 @@ release-dry-run-stoker:
     cargo publish --dry-run -p stoker --target {{ host_target }} --all-features
 
 # dry-run package rustyfarian-esp-idf-power against the ESP32-S3 target (no upload; requires espup)
-# NOTE: only succeeds AFTER stoker is published to crates.io (resolves stoker ^0.1 from the index)
+# NOTE: only succeeds AFTER stoker is published to crates.io (resolves stoker ^0.2 from the index)
 release-dry-run-idf:
     CARGO_TARGET_DIR="{{ idf_dir }}" cargo publish --dry-run -p rustyfarian-esp-idf-power --target {{ esp32s3_target }}
 
