@@ -153,9 +153,10 @@ clean:
 # full pre-commit verification: format, check, lint, test (modifies files — local use only)
 pre-commit: fmt check clippy test
 
-# non-modifying full verification: fails on any anomaly
+# non-modifying full verification (format check, deny, check, lint, test): fails on any anomaly
 verify:
     @cargo fmt -- --check || (printf '\nFormatting issues found — run `just pre-commit` to auto-fix.\n' >&2 && exit 1)
+    cargo deny check
     cargo check {{ host_flags }}
     cargo clippy {{ host_flags }} -- -D warnings
     cargo test {{ host_flags }}
