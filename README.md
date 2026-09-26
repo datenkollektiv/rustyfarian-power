@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/datenkollektiv/rustyfarian-power/actions/workflows/rust.yml/badge.svg)](https://github.com/datenkollektiv/rustyfarian-power/actions/workflows/rust.yml)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](#license)
-[![Rust](https://img.shields.io/badge/rust-esp--toolchain-orange.svg)](https://www.rust-lang.org)
+[![Rust](https://img.shields.io/badge/rust-1.88%2B%20stoker%20%7C%201.95%2B%20esp%20tier-orange.svg)](https://www.rust-lang.org)
 [![cargo fmt](https://github.com/datenkollektiv/rustyfarian-power/actions/workflows/fmt.yml/badge.svg)](https://github.com/datenkollektiv/rustyfarian-power/actions/workflows/fmt.yml)
 [![cargo clippy](https://github.com/datenkollektiv/rustyfarian-power/actions/workflows/clippy.yml/badge.svg)](https://github.com/datenkollektiv/rustyfarian-power/actions/workflows/clippy.yml)
 [![cargo audit](https://github.com/datenkollektiv/rustyfarian-power/actions/workflows/audit.yml/badge.svg)](https://github.com/datenkollektiv/rustyfarian-power/actions/workflows/audit.yml)
@@ -163,10 +163,12 @@ just pre-commit
 
 This repository publishes two crates, one per tier (see [release-plan.md](release-plan.md)):
 
-| Crate | Tier | Contents |
-|:------|:-----|:---------|
-| [`stoker`](crates/stoker) | Pure / host-buildable | `BatteryConfig`, `BatteryStatus`, `PowerSource`, the `BatteryMonitor` / `ChargingMonitor` / `SleepManager` / `WakeCauseSource` traits, `ChargingState`, `WakeCause` / `WakeSource`, sleep validation, and the `Noop*` host mocks. No ESP-IDF dependency; fully host-testable. |
-| [`rustyfarian-esp-idf-power`](crates/rustyfarian-esp-idf-power) | ESP-IDF (std) | `EspAdcBatteryMonitor`, `EspSleepManager`, `EspWakeCauseSource`, `EspChargingMonitor`, plus the hardware examples. Re-exports `stoker`'s surface, so firmware imports from one crate. |
+| Crate                                                           | Tier                  | Contents                                                                                                                                                                                                                                                                      | crates.io                                                                                                                         | Docs                                                                                                   |
+|:----------------------------------------------------------------|:----------------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------|
+| [`stoker`](crates/stoker)                                       | Pure / host-buildable | `BatteryConfig`, `BatteryStatus`, `PowerSource`, the `BatteryMonitor` / `ChargingMonitor` / `SleepManager` / `WakeCauseSource` traits, `ChargingState`, `WakeCause` / `WakeSource`, sleep validation, and the `Noop*` host mocks. No ESP-IDF dependency; fully host-testable. | [![crates.io](https://img.shields.io/crates/v/stoker.svg)](https://crates.io/crates/stoker)                                       | [![docs.rs](https://img.shields.io/docsrs/stoker)](https://docs.rs/stoker)                             |
+| [`rustyfarian-esp-idf-power`](crates/rustyfarian-esp-idf-power) | ESP-IDF (std)         | `EspAdcBatteryMonitor`, `EspSleepManager`, `EspWakeCauseSource`, `EspChargingMonitor`, plus the hardware examples. Re-exports `stoker`'s surface, so firmware imports from one crate.                                                                                         | [![crates.io](https://img.shields.io/crates/v/rustyfarian-esp-idf-power.svg)](https://crates.io/crates/rustyfarian-esp-idf-power) | [![readme](https://img.shields.io/badge/docs-readme-blue)](crates/rustyfarian-esp-idf-power/README.md) |
+
+> `rustyfarian-esp-idf-power` links to its crate README rather than docs.rs — `esp-idf-sys` cannot build in the docs.rs sandbox.
 
 The pure core uses the rustyfarian family's funfair naming (`stoker`, joining `bunting` / `pennant` / `ferriswheel` / `juggler`); the hardware tier uses the technical `rustyfarian-<hal>-<repo>` convention.
 
