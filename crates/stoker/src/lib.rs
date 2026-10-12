@@ -51,8 +51,8 @@ pub use config::BatteryConfig;
 pub use reset::{NoopResetReasonSource, ResetReason, ResetReasonSource};
 pub use retain::{Invalid, Retainable, Retained, RetainedCell, StoreError};
 pub use sleep::{
-    GpioWakeLevel, GpioWakeMask, NoopSleepManager, SleepError, SleepManager, WakeCause,
-    WakeCauseSource, WakeSource,
+    Error, GpioWakeLevel, GpioWakeMask, NoopSleepManager, SleepError, SleepErrorKind, SleepManager,
+    WakeCause, WakeCauseSource, WakeSource, MAX_TIMER_MS,
 };
 
 /// Trait for reading battery status from hardware.

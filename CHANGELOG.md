@@ -12,10 +12,74 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 ### Migration
 - **Breaking:** `stoker` is now `#![no_std]` unconditionally.
 - **Breaking:** `stoker::sleep::validate_gpio_level_source` and `stoker::sleep::validate_wake_sources` return `Result<(), stoker::SleepError>` instead of `anyhow::Result<()>`; the messages are available via `Display` and unchanged except for the out-of-range case, which now names the valid mask instead of a chip. `SleepError` is `Copy`, `#[non_exhaustive]` and implements `core::error::Error`, so `?` into `anyhow::Error` still works.
-- **Breaking:** `SleepManager` gains an associated `type Error: core::fmt::Debug`, and `sleep` returns `Result<(), Self::Error>`. Implementors add `type Error`; generic code bounds or names `S::Error`. `NoopSleepManager` uses `SleepError`; `EspSleepManager` uses `anyhow::Error`, so its call sites are unchanged.
+- **Breaking:** `SleepManager` gains an associated `type Error: stoker::sleep::Error` and a required `try_sleep(&mut self, sources) -> Result<(), Self::Error>`; `sleep` returns `Result<(), Self::Error>` (ADR-001). Implementors add `type Error` and `try_sleep`; there is deliberately no default, because one delegating to `sleep` would sleep through a held wake pin. Generic code bounded on `S::Error: Debug` keeps compiling (`Debug` is a supertrait) and can branch on `kind()`.
+- **Breaking, third-party implementors:** `type Error = anyhow::Error` no longer compiles, and the orphan rule forbids `impl stoker::sleep::Error for anyhow::Error`. Wrap it in a local newtype (`struct MyError(anyhow::Error)` deriving `Debug`) and implement `kind()` on that, usually returning `SleepErrorKind::Platform` or `Other`.
+
+  Before (0.2):
+
+  ```rust
+  impl SleepManager for MySleeper {
+      type Error = anyhow::Error;
+      fn sleep(&mut self, sources: &[WakeSource]) -> anyhow::Result<()> { /* ... */ }
+  }
+  ```
+
+  After (0.3):
+
+  ```rust
+  #[derive(Debug)]
+  pub struct MySleepError(pub anyhow::Error);
+
+  impl stoker::sleep::Error for MySleepError {
+      fn kind(&self) -> stoker::SleepErrorKind {
+          stoker::SleepErrorKind::Platform
+      }
+  }
+
+  impl SleepManager for MySleeper {
+      type Error = MySleepError;
+      fn sleep(&mut self, sources: &[WakeSource]) -> Result<(), MySleepError> {
+          stoker::sleep::validate_wake_sources(sources).map_err(|e| MySleepError(e.into()))?;
+          /* ... */
+      }
+      fn try_sleep(&mut self, sources: &[WakeSource]) -> Result<(), MySleepError> {
+          /* rejection-aware entry; return an error whose kind() is Rejected when refused */
+      }
+  }
+  ```
+
+  Simpler still, if the implementor has no SDK errors of its own: use `type Error = stoker::SleepError` and return `SleepError::Rejected` from `try_sleep`.
+
+  Consumers matching on the wake cause and calling `sleep` change like this:
+
+  ```rust
+  match cause {
+      WakeCause::Gpio(mask) if mask.contains_pin(4) => { /* PIR on GPIO4 */ }
+      WakeCause::Gpio(_) => { /* other pin, or mask unavailable on this chip */ }
+      _ => {}
+  }
+
+  match mgr.try_sleep(&sources) {
+      Err(e) if e.kind() == SleepErrorKind::Rejected => { /* wait for the pin to clear, retry */ }
+      Err(e) => log::error!("sleep config failed: {e:?}"),
+      Ok(()) => {}
+  }
+  ```
+
+  Calls of `sleep(&[])` that relied on "sleep until reset" must pass a wake source; there is no replacement.
+- **Breaking:** `EspSleepManager::Error` is the new `rustyfarian_esp_idf_power::EspSleepError` instead of `anyhow::Error`. It implements `core::error::Error`, so `?` into `anyhow::Error` still works; code that called `anyhow` methods on the error directly converts first.
+- **Breaking:** `sleep(&[])` (and `try_sleep(&[])`) returns `SleepError::NoWakeSource` instead of `Ok(())` / sleeping until reset, on `NoopSleepManager` and `EspSleepManager`; `validate_wake_sources(&[])` returns the same error.
+- **Breaking:** `Timer { duration_ms }` above `stoker::MAX_TIMER_MS` (`u32::MAX` ms, about 49.7 days) returns `SleepError::TimerTooLong` on both tiers.
+- **Breaking:** `WakeCause::Gpio` carries the fired-pin mask: `WakeCause::Gpio(GpioWakeMask)`. Matches on `WakeCause::Gpio` become `WakeCause::Gpio(mask)` or `WakeCause::Gpio(_)`.
+- `EspSleepManager` with `isolate_gpio: true` and a `GpioLevel` source returns `EspSleepError::Config(SleepError::IsolationConflict)` instead of an `anyhow` message; ESP-IDF failures are `EspSleepError::Idf { code, kind }` and log which call failed.
 
 ### Added
 - `rustyfarian-esp-hal-power` crate scaffold: the bare-metal (`no_std`, esp-hal `=1.2.2`, MSRV 1.95) hardware tier, with four mutually exclusive chip features (`esp32c3` default, `esp32c6`, `esp32`, `esp32s3`) enforced by `compile_error!`, plus `unstable` and `rt`; re-exports `stoker`. No drivers yet; the sleep module lands first.
+- `stoker::sleep::Error` (`Debug` + `kind()`, the embedded-hal 1.0 shape, no `core::error::Error` bound) and `SleepErrorKind` (`InvalidConfig`, `Unsupported`, `Rejected`, `Platform`, `Other`; `#[non_exhaustive]`, `Copy`), both re-exported at the crate root; `SleepError` implements it.
+- `stoker::SleepError` variants for the 0.3.0 contract: `NoWakeSource`, `Rejected`, `TimerTooShort { duration_ms, min_ms }`, `TimerTooLong { duration_ms, max_ms }`, `PinNotBound { pin }`, `ForeignWakePin { pin }`, `UartBusy { uart }` (kind `Platform`), `IsolationConflict`.
+- `SleepManager::try_sleep`: rejection-aware deep sleep. `EspSleepManager` implements it over `esp_deep_sleep_try_to_start()` and reports a rejection as `EspSleepError::Idf` with `kind() == Rejected`, mapped by call site because `ESP_ERR_SLEEP_REJECT` aliases `ESP_ERR_INVALID_STATE`. `NoopSleepManager::rejecting()` returns `SleepError::Rejected` from `try_sleep`, so retry paths are host-testable.
+- `stoker::MAX_TIMER_MS`; `stoker::sleep` wake-pin mask constants `ESP32_WAKE_PIN_MASK`, `ESP32S3_WAKE_PIN_MASK`, `ESP32C3_WAKE_PIN_MASK` (`0x3F`) and `ESP32C6_WAKE_PIN_MASK` (`0xFF`), plus `validate_gpio_level_source_against(pin_mask, valid_mask)` for tiers that pick the chip mask themselves.
+- `EspWakeCauseSource` fills `WakeCause::Gpio(mask)` from `esp_sleep_get_gpio_wakeup_status()` on chips with deep-sleep GPIO wakeup (C3/C6); on ESP32 and ESP32-S3 the mask is empty.
 - `stoker::SleepError`: `GpioMaskZero`, `GpioMaskOutOfRange { pin_mask, valid_mask }`, `MultipleTimers { count }`, `MultipleGpioLevel`; carrying `valid_mask` keeps the variant stable when the C3/C6 masks land.
 - `stoker::retain`: `Retained<const N: usize>`, a `no_std`, allocation-free RTC retention envelope (magic, schema version, length, CRC-32) with `empty()`, `load::<T>(ResetReason) -> Result<T, Invalid>` and `store(&T) -> Result<(), StoreError>`; `Retainable` (`VERSION`, `SIZE`, `write`, `read`) with impls for the fixed-width integers; `Invalid` (`PowerOn`, `Brownout`, `Magic`, `Version`, `Length`, `Checksum`, `Payload`) and `StoreError` (`Length`, `Payload`). `load` refuses records after `PowerOn` and `Brownout`; other resets trust the checksum. `store` clears the magic first and writes it last, so a torn store fails the magic check.
 - `stoker::retain::RetainedCell<N>`: the `Sync` cell to place a `Retained` record in a `static` in an RTC section (no `static mut`, no reference to the memory ever handed out). It holds the record as `MaybeUninit` and copies it with volatile accesses, so a `NOLOAD` section is read as the bits it holds; `load` checks the `ResetReason` before touching memory; `store` invalidates, writes the record, then writes the magic, each volatile, with a memory fence after the last write; `invalidate()` clears the magic; `new()` is zeroed so every non-`NOLOAD` read is well defined. Not synchronised (no CAS on riscv32imc, no dependencies): use from one execution context or inside the tier's critical section.
@@ -25,7 +89,10 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 - Workspace: `default-members` keeps the hal tier out of the host and ESP-IDF builds (bare `cargo`, `check-all`, `build-all`, `clippy-all`); new `just` recipes `check-hal`, `check-hal-c3`, `clippy-hal`, `clean-hal`, `release-dry-run-hal` and `release-publish-hal` build into `target/hal` with `-Zbuild-std=core,alloc`.
 - `stoker` drops its `anyhow` dependency and now has no dependencies.
 - `stoker::sleep` module docs point at `Retained` instead of the `#[link_section = ".rtc.data"] static mut` recipe.
-- `rustyfarian-esp-idf-power` re-exports `SleepError`.
+- `rustyfarian-esp-idf-power` re-exports `SleepError`, the sleep `Error` trait, `SleepErrorKind` and `MAX_TIMER_MS`, and exports `EspSleepError`.
+- `GpioWakeMask::contains_pin` returns `false` for `pin >= 64` instead of overflowing the shift.
+- `EspSleepManager` validates every `GpioLevel` mask before the first ESP-IDF call, so a validation error leaves the wake configuration untouched.
+- Docs: the deep-sleep GPIO wakeup (`esp_deep_sleep_enable_gpio_wakeup`) is a C3/C6 feature, not S3 as previously stated.
 
 ## [0.2.0] - 2026-09-26
 
