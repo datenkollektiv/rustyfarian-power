@@ -6,7 +6,7 @@ desk-work: available
 # Feature: esp-hal Parity (ADC + Charging) v1
 
 New `rustyfarian-esp-hal-power` crate gives the bare-metal tier battery monitoring and charging detection, matching the esp-idf tier.
-Deep sleep and wake cause are out of scope here; they need a `stoker` trait redesign (ADR first) and live in `esp-hal-sleep-tier-v1.md`, which now lands first in the hal crate.
+Deep sleep and wake cause are out of scope here; their `stoker` trait redesign is [ADR-001](../adr/001-hal-neutral-sleep-contract.md) and they live in `esp-hal-sleep-tier-v1.md`, which now lands first in the hal crate.
 Capability findings: `docs/key-insights.md` § esp-hal tier.
 
 ## Decisions
@@ -52,3 +52,4 @@ Capability findings: `docs/key-insights.md` § esp-hal tier.
 - 2026-10-12 — Updated: sleep module pulled forward to its own doc; build.rs mask question answered by the C3 wake feature
 - 2026-10-12 — `stoker` is `#![no_std]`, `anyhow` replaced by `SleepError`; `SleepManager` got `type Error` (amends the error-enum decision)
 - 2026-10-12 — Scaffold landed: crate, chip features, `default-members`, `check-hal`/`clippy-hal`/`clean-hal` + release recipes into `target/hal`; sleep module next (esp-hal-sleep-tier-v1)
+- 2026-10-12 — ADR-001 (HAL-neutral sleep contract) written and linked; the hal crate carries the compile-only pin-borrow spike until the sleep module replaces it

@@ -50,3 +50,4 @@ rt = ["esp-hal/rt"]
 [dependencies]
 stoker = { workspace = true }
 esp-hal = { workspace = true }
+critical-section = { workspace = true }

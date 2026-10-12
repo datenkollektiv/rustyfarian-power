@@ -54,3 +54,7 @@ compile_error!(
 
 #[doc(inline)]
 pub use stoker::*;
+
+// ADR-001 compile-only spike (not exported, C3 only); removed when the sleep module lands.
+#[cfg(feature = "esp32c3")]
+mod spike_pin_borrow;
