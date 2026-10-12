@@ -118,6 +118,12 @@ Remove or update entries that are superseded.
 - **Sleep/wake asymmetry:** On ESP32, `esp_deep_sleep_start()` never returns.
   This means `WakeCause` cannot be returned from a `sleep()` call — it must be read at the next boot via a separate `WakeCauseSource` trait.
   Always keep `SleepManager` and `WakeCauseSource` as two distinct traits; merging them implies a round-trip that does not exist in hardware.
+- **Resets and sleep are separate traits (since 2026-10-12):** `ResetReasonSource` answers "how did the last reset happen?" while `WakeCauseSource` folds every non-sleep reset into `WakeCause::PowerOn`.
+  `Retained::load` needs the reset reason because RTC memory is arbitrary after power-on and may be partially written after a brownout, so both are refused regardless of checksum.
+- **RTC retention envelope (`stoker::retain`, since 2026-10-12):** `Retained<N>` is integers plus a byte array only, so any bit pattern is a valid value; the checksum is table-less CRC-32 over the little-endian header and the first `len` payload bytes, and payloads serialise through `Retainable::write`/`read` so padding is never checksummed.
+  `N >= T::SIZE` is runtime-only (`Invalid::Length`) — stable Rust cannot use `T::SIZE` in an array type, so slice with `get`/`get_mut`, never index.
+  The tier cells placing it in `.rtc_noinit` / `.rtc_fast.persistent` must read through `MaybeUninit` or volatile access: a `NOLOAD` static's initialiser is never applied and the compiler may otherwise constant-fold it.
+  `#[derive(Default)]` is not available on `[u8; N]` for arbitrary `N`; use the `const fn empty()`.
 - **Radio power gating — who implements the trait:** `rustyfarian-power` defines and implements `RadioPowerGate`; `rustyfarian-network` holds a reference to it.
   Dependencies must flow downward: application -> network -> power.
   The power crate must never import `rustyfarian-network`.
@@ -223,6 +229,7 @@ Remove or update entries that are superseded.
 
 - **ADC and deep sleep are behind esp-hal's `unstable` feature, and the sleep API changed shape between releases:** esp-hal 1.1 had `Ext1WakeupSource`/`TimerWakeupSource`; 1.2.2 replaced them with `LowPower::sleep_deep() -> !` plus per-pin `Input::listen(Event::LowLevel)` arming and `set_wakeup_deadline(Instant)`. Expect churn every wave.
 - **`stoker`'s sleep/wake contract is IDF-shaped and does not port directly:** esp-hal has no caller-supplied `pin_mask`, no single EXT1 status bitmask (only per-pin `caused_wakeup()`, or the raw register), panics instead of returning `Result` when no wake source is armed, and isolates pads automatically. A bare-metal tier needs a trait redesign (ADR first), not just a new driver.
+- **esp-hal's `#[ram(unstable(rtc_fast, persistent))]` asserts `esp_hal::Persistable` on the static's type at compile time:** the orphan rule forbids implementing it for `stoker::RetainedCell`, so the hal tier wraps the cell in its own newtype and `unsafe impl Persistable` for that.
 - **`stoker` is `#![no_std]` with no dependencies (since 2026-10-12):** validators return `SleepError`; `SleepManager` has an associated `type Error` so the IDF impl keeps `anyhow` (a `From<SleepError> for anyhow::Error` impl is neither possible — orphan rule — nor needed: anyhow's blanket `From<E: core::error::Error + Send + Sync>` makes `?` work). Still open: `build.rs` only matches `*-espidf` triples, so a `*-none-elf` ESP32 build would silently get the S3 wake-pin mask.
 - **ADC and GPIO port easily:** calibrated mV on ESP32 (`AdcCalLine` only), S3/C3/C6 (`Line`/`Curve`; C6 also `Basic`); `Input` + `Pull` are stable.
 - **Joining means exact-pinning `esp-hal` in lockstep with network/ws2812/peripherals** (all `=1.2.2` since 2026-09-26), or apps combining the hal tiers will not resolve.
