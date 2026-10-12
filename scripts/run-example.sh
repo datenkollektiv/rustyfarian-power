@@ -2,7 +2,7 @@
 set -euo pipefail
 # run-example.sh — build and flash an idf_{chip}_{name} example
 # Usage: scripts/run-example.sh <example> [idf_dir]
-#   example: idf_{chip}_{name}  e.g. idf_esp32_battery, idf_esp32s3_battery
+#   example: idf_{chip}_{name}  e.g. idf_esp32_battery, idf_esp32s3_battery, idf_c3_deep_sleep_gpio
 #   idf_dir: target directory for ESP-IDF builds (default: target/idf)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,8 +25,13 @@ chip=$(printf '%s' "$example" | cut -d_ -f2)
 case "$chip" in
     esp32)   target="xtensa-esp32-espidf"   ;;
     esp32s3) target="xtensa-esp32s3-espidf" ;;
-    *) printf 'Unknown chip "%s" in example "%s". Supported: esp32, esp32s3\n' "$chip" "$example" >&2; exit 1 ;;
+    c3)      target="riscv32imc-esp-espidf" ;;
+    *) printf 'Unknown chip "%s" in example "%s". Supported: esp32, esp32s3, c3\n' "$chip" "$example" >&2; exit 1 ;;
 esac
+
+# espflash names the chip esp32c3; the example prefix says c3.
+flash_chip="$chip"
+[ "$chip" = "c3" ] && flash_chip="esp32c3"
 
 # Ensure the IDF-built v5.3.3 bootloader is cached.
 "$SCRIPT_DIR/ensure-bootloader.sh" "$chip" "$idf_dir"
@@ -37,8 +42,8 @@ bl=$(find_idf_bootloader "$target" "$idf_dir")
 if [ -z "$bl" ]; then
     printf 'Warning: IDF-built bootloader not found; using espflash default (may fail on page-size mismatch)\n' >&2
     printf 'Flashing %s...\n' "$example"
-    espflash flash --chip "$chip" --ignore-app-descriptor "$idf_dir/$target/release/examples/$example"
+    espflash flash --chip "$flash_chip" --ignore-app-descriptor "$idf_dir/$target/release/examples/$example"
 else
     printf 'Flashing %s with bootloader %s...\n' "$example" "$bl"
-    espflash flash --chip "$chip" --bootloader "$bl" --ignore-app-descriptor "$idf_dir/$target/release/examples/$example"
+    espflash flash --chip "$flash_chip" --bootloader "$bl" --ignore-app-descriptor "$idf_dir/$target/release/examples/$example"
 fi

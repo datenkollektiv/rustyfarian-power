@@ -36,20 +36,33 @@ Verified 2026-10-12 against ESP-IDF v5.3.3 headers: `SOC_GPIO_SUPPORT_DEEPSLEEP_
 ## Open Questions
 - [ ] Do GPIO isolation and a held wake pin coexist on the C3, or must wake-mask pins be excluded from isolation (bench on the C3 DevKitM-1)?
 - [x] Which `stoker` error variants cover `ESP_ERR_SLEEP_REJECT` versus configuration failures? `SleepError::Rejected` (kind `Rejected`) by call site; everything else `InvalidConfig` or `Platform` (ADR-001 § 3).
-- [ ] Does CI need `-Z build-std` for `riscv32imc-esp-espidf` the way rustyfarian-network's job does?
+- [x] Does CI need `-Z build-std` for `riscv32imc-esp-espidf` the way rustyfarian-network's job does? Yes: `build-std` comes from `.cargo/config.toml`, so the `check-c3` job installs the `esp` toolchain (`esp-rs/xtensa-toolchain`) and overrides `RUSTUP_TOOLCHAIN` per job. The job has not run yet; it first runs on the push.
 
 ## State
 - [x] Design approved
 - [x] `stoker`: chip mask constants, `validate_gpio_level_source_against`, `Gpio(mask)`, `try_sleep` on trait and `NoopSleepManager`
-- [ ] IDF tier: C3/C2 GPIO wake path, stale-mask handling, `Gpio(mask)` mapping, isolation rule per chip
-- [ ] `just check-c3` recipe, `.cargo/config.toml.dist` target, CI job
-- [ ] Example `idf_c3_deep_sleep_gpio` wakes on GPIO4, shows one rejected `try_sleep`, sleeps again; documents GPIO4 = MTMS (JTAG) and the pull against the wake level
-- [ ] Bench case `wake-pin-held-at-entry` on the C3 DevKitM-1: PIR held HIGH when `try_sleep` is called, expect `Err` with `kind() == Rejected` (ADR-001 § 5)
+- [x] IDF tier: C3/C2 GPIO wake path, stale-mask handling, `Gpio(mask)` mapping, isolation rule per chip
+- [x] `just check-c3` recipe, `.cargo/config.toml.dist` target, CI job
+- [x] Example `idf_c3_deep_sleep_gpio` wakes on GPIO4, shows one rejected `try_sleep`, sleeps again; documents GPIO4 = MTMS (JTAG) and the pull against the wake level
+- [ ] Bench case `wake-pin-held-at-entry` on the C3 DevKitM-1: PIR held HIGH when `try_sleep` is called, expect `Err` with `kind() == Rejected` (ADR-001 § 5); steps in [c3-idf-pir-bench-steps-v1](../bench/c3-idf-pir-bench-steps-v1.md), not observed yet
 - [x] S3 claim fixed in `sleep.rs`, `esp_sleep.rs`, `docs/key-insights.md`
-- [ ] Tests passing (`just verify`, `just check-c3`)
-- [ ] CHANGELOG `[Unreleased]`: Added (C3 wake, `try_sleep`) and Breaking (`WakeCause::Gpio(GpioWakeMask)`)
+- [x] Tests passing (`just verify`, `just check-c3`)
+- [x] CHANGELOG `[Unreleased]`: Added (C3 wake, `try_sleep`) and Breaking (`WakeCause::Gpio(GpioWakeMask)`)
 
 ## Session Log
 - 2026-10-12 — Feature doc created via /feature dialog from the spookhouse request
 - 2026-10-12 — ADR-001 settles `try_sleep` as a required method, the reject error, wake-pin validity by chip constant, the GPIO4/JTAG note, the named bench case and the slept-time scope
 - 2026-10-12 — `stoker` part landed (gap 1 of the C3 bench plan): `try_sleep`, `NoopSleepManager::rejecting()`, `Gpio(GpioWakeMask)`, chip masks incl. C3 `0x3F`; IDF tier got `try_sleep` and the `Gpio(mask)` read (cfg `esp_idf_soc_gpio_support_deepsleep_wakeup`), not yet the C3 wake path
+- 2026-10-12 — IDF C3/C2 wake path landed. It is selected by `cfg(all(esp_idf_soc_gpio_support_deepsleep_wakeup, not(esp_idf_soc_pm_support_ext1_wakeup)))`; C6 stays on EXT1.
+  The mask is validated against `ESP32C3_WAKE_PIN_MASK` before any SDK call, and the pins are armed with `esp_deep_sleep_enable_gpio_wakeup`.
+  Stale pins: `gpio_deep_sleep_wakeup_disable` runs on every unused GPIO0-5. The SDK's own `s_config.gpio_wakeup_mask` cannot be cleared through the public API (documented, plus the HIGH→LOW trigger-mode no-op).
+  Isolation rule: `IsolationConflict` stays on every chip until bench I4, documented per chip.
+  `WakeCause::Ext1` mapping cfg-gated off C2/C3 (missing symbol broke the link).
+  `check-c3` recipe, `.cargo/config.toml.dist` target, CI job, example `idf_c3_deep_sleep_gpio`, `c3` support in the flash scripts, and a PIR runbook were added.
+  Gates: `just verify`, `check-c3`, `check-all`, `check-esp32`, `clippy-all` and `build-example idf_c3_deep_sleep_gpio` all exit 0. C3 clippy, the CI job and the hardware were not run.
+- 2026-10-12 — Bench P0 with the real PIR (W1, W2, H1, H4): not observed.
+- 2026-10-12 — Review of `4d8de80`: the example now configures GPIO4 as an input with a pull-down and keeps the driver alive, fails the build on an out-of-range `C3_SLEEP_TIMER_MS`, falls back to a timer-only sleep instead of a restart loop, and prints per-attempt `BENCH` lines only with `C3_BENCH_LOG`.
+  `check-c3` now also checks the example, and the CI job builds and links it (ldproxy on).
+  Bench case I6 `gpio-level-high-to-low` names the SDK trigger-mode bug; the IDF tier rejects that transition only if I6 shows wrong behaviour.
+- 2026-10-12 — Review of `bf680cb`: stale-pin cleanup now disarms only pins whose `RTC_CNTL_GPIO_WAKEUP_REG` enable bit is set, because `gpio_deep_sleep_wakeup_disable` also re-enables sleep-select and would override an application's `gpio_sleep_sel_dis()` on unrelated pins (bench I7).
+  I6 now uses a controlled stimulus with an inactive HIGH phase before the `AnyLow` attempt and a separate pull-direction measurement; the example's expected-output block is labelled as `C3_BENCH_LOG=1` output.

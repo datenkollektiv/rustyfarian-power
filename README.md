@@ -82,13 +82,14 @@ The core modules (`config.rs`, `sleep.rs`) can be fully unit-tested on your lapt
 
 ## Examples
 
-Two hardware targets are supported.
+Three hardware targets are supported.
 See [docs/hardware-setup.md](docs/hardware-setup.md) for wiring diagrams, ADC configuration, and power budgets.
 
 | Board                     | Chip     | Example binary        | Run command                    |
 |:--------------------------|:---------|:----------------------|:-------------------------------|
 | Heltec WiFi LoRa 32 V3.1  | ESP32-S3 | `idf_esp32s3_battery` | `just run idf_esp32s3_battery` |
 | Adafruit ESP32 Feather V2 | ESP32    | `idf_esp32_battery`   | `just run idf_esp32_battery`   |
+| ESP32-C3-DevKitM-1        | ESP32-C3 | `idf_c3_deep_sleep_gpio` | `just run idf_c3_deep_sleep_gpio` |
 
 The chip is inferred from the `idf_{chip}_{name}` prefix.
 Connect the matching board before running — `espflash` will reject the binary if the wrong board is detected.
@@ -111,6 +112,12 @@ Battery: 3842mV (70%)
 
 ```shell
 just run idf_esp32_battery
+```
+
+**ESP32-C3-DevKitM-1** (ESP32-C3) — deep-sleeps until an HC-SR501 PIR on GPIO4 or a 60 s timer wakes it; wiring is in the example's doc comment:
+
+```shell
+just run idf_c3_deep_sleep_gpio
 ```
 
 ## Prerequisites

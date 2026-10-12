@@ -12,6 +12,11 @@ rustflags = ["--cfg", "espidf_time64"]
 linker = "ldproxy"
 rustflags = ["--cfg", "espidf_time64"]
 
+# ESP32-C3 target (ESP32-C3-DevKitM-1; riscv32imc, no atomics)
+[target.riscv32imc-esp-espidf]
+linker = "ldproxy"
+rustflags = ["--cfg", "espidf_time64"]
+
 [unstable]
 build-std = ["std", "panic_abort"]
 
