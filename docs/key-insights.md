@@ -225,8 +225,12 @@ Remove or update entries that are superseded.
   Configure via `sdkconfig.defaults` (`CONFIG_LOG_DEFAULT_LEVEL=4` for INFO, `3` for WARN) or
   call `esp_log_level_set` for the component at runtime.
 
-## esp-hal tier (not implemented) — capability findings (2026-09-26)
+## esp-hal tier — capability findings (2026-09-26) and scaffold (2026-10-12)
 
+- **The `rustyfarian-esp-hal-power` crate exists as a scaffold (2026-10-12):** `default-members` in the workspace `Cargo.toml` excludes it, so bare `cargo` and the `*-all` recipes never compile it, and the host gates only build `stoker`.
+  Build it with the `*-hal` recipes (`check-hal`, `check-hal-c3`, `clippy-hal`), which write into `target/hal`.
+- **Hal recipes run on the pinned `esp` toolchain with `-Zbuild-std=core,alloc`:** the flag overrides the config's `build-std = ["std", "panic_abort"]`, because std does not build for `*-none-elf` (it fails in gimli).
+  The riscv32 none-elf targets come from `rust-src`, so no `rustup target add` is needed.
 - **ADC and deep sleep are behind esp-hal's `unstable` feature, and the sleep API changed shape between releases:** esp-hal 1.1 had `Ext1WakeupSource`/`TimerWakeupSource`; 1.2.2 replaced them with `LowPower::sleep_deep() -> !` plus per-pin `Input::listen(Event::LowLevel)` arming and `set_wakeup_deadline(Instant)`. Expect churn every wave.
 - **`stoker`'s sleep/wake contract is IDF-shaped and does not port directly:** esp-hal has no caller-supplied `pin_mask`, no single EXT1 status bitmask (only per-pin `caused_wakeup()`, or the raw register), panics instead of returning `Result` when no wake source is armed, and isolates pads automatically. A bare-metal tier needs a trait redesign (ADR first), not just a new driver.
 - **esp-hal's `#[ram(unstable(rtc_fast, persistent))]` asserts `esp_hal::Persistable` on the static's type at compile time:** the orphan rule forbids implementing it for `stoker::RetainedCell`, so the hal tier wraps the cell in its own newtype and `unsafe impl Persistable` for that.

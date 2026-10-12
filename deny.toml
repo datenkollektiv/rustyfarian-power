@@ -8,7 +8,18 @@ no-default-features = false
 # have available fixes or do not affect the library's host-testable code.
 # Add entries here only for advisories with no available fix, with a comment
 # explaining the reason and a planned resolution date.
-ignore = []
+ignore = [
+    # `paste` is unmaintained (RUSTSEC-2024-0436). Pulled in by `rustyfarian-esp-hal-power`
+    # via the exact-pinned `esp-hal 1.2.2`, which depends on it directly (and via `riscv`).
+    # Proc-macro crate, no unsafe runtime code; no safe upgrade. The sibling rustyfarian
+    # repos ignore it for the same reason. Review by 2026-12-31 or at the next esp-hal wave.
+    "RUSTSEC-2024-0436",
+    # `unsafe-libyaml` is unmaintained (RUSTSEC-2024-0449). Chain: `rustyfarian-esp-hal-power`
+    # -> `esp-hal 1.2.2` -> `esp-config 0.8.0` -> `serde_yaml` -> `unsafe-libyaml`. `esp-config`
+    # parses its build-time YAML config; no safe upgrade is available. Review by 2026-12-31
+    # or at the next esp-hal wave.
+    "RUSTSEC-2024-0449",
+]
 
 [licenses]
 # Licenses confirmed present in this workspace's dependency graph

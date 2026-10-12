@@ -5,6 +5,7 @@
 # override it and disable the esp-idf feature.
 #
 # ESP-IDF builds are isolated to target/idf (vs. host/IDE builds in target/ide).
+# Bare-metal (esp-hal) builds are isolated to target/hal.
 # An optional macOS RAM disk at /Volumes/RustBuilds accelerates incremental builds.
 #
 # Run `just setup-toolchain` and `just setup-cargo-config` for first-time setup.
@@ -16,9 +17,20 @@ host_flags  := "-p stoker --target " + host_target
 doc_flags   := "-p stoker --target " + host_target + " --no-deps"
 esp32s3_target := "xtensa-esp32s3-espidf"
 esp32_target   := "xtensa-esp32-espidf"
+hal_crate        := "-p rustyfarian-esp-hal-power"
+hal_c3_target    := "riscv32imc-unknown-none-elf"
+hal_c6_target    := "riscv32imac-unknown-none-elf"
+hal_esp32_target := "xtensa-esp32-none-elf"
+hal_s3_target    := "xtensa-esp32s3-none-elf"
+# The esp-hal tier is no_std: `-Zbuild-std=core,alloc` on the command line overrides the
+# workspace `[unstable] build-std = ["std", "panic_abort"]` in .cargo/config.toml, which
+# cannot build for *-none-elf targets (fails in gimli).
+hal_std := "-Zbuild-std=core,alloc"
 
 ramdisk := "/Volumes/RustBuilds"
 idf_dir := if path_exists(ramdisk + "/targets/idf") == "true" { ramdisk + "/targets/idf/" + file_name(justfile_directory()) } else { "target/idf" }
+# bare-metal builds use a separate target dir so they do not thrash the IDF cache
+hal_dir := if path_exists(ramdisk + "/targets/hal") == "true" { ramdisk + "/targets/hal/" + file_name(justfile_directory()) } else { "target/hal" }
 
 # list available recipes (default)
 _default:
@@ -42,6 +54,17 @@ check-esp32:
 # run this whenever touching rust,ignore doc snippets or esp-idf-gated code
 check-docs-esp32:
     MCU=esp32 CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p rustyfarian-esp-idf-power --target {{ esp32_target }}
+
+# check the esp-hal crate for all four chips (C3, C6, ESP32, S3; esp toolchain, no espup)
+check-hal:
+    cargo check {{ hal_std }} {{ hal_crate }} --target {{ hal_c3_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32c3,unstable
+    cargo check {{ hal_std }} {{ hal_crate }} --target {{ hal_c6_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32c6,unstable
+    cargo check {{ hal_std }} {{ hal_crate }} --target {{ hal_esp32_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32,unstable
+    cargo check {{ hal_std }} {{ hal_crate }} --target {{ hal_s3_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32s3,unstable
+
+# check the esp-hal crate for the ESP32-C3 only (fast; esp toolchain, no espup)
+check-hal-c3:
+    cargo check {{ hal_std }} {{ hal_crate }} --target {{ hal_c3_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32c3,unstable
 
 # build platform-independent code (no ESP toolchain required)
 build:
@@ -83,6 +106,13 @@ clippy:
 # run clippy on all code including ESP-IDF (requires espup)
 clippy-all:
     CARGO_TARGET_DIR="{{ idf_dir }}" cargo clippy -- -D warnings
+
+# run clippy on the esp-hal crate for all four chips (C3, C6, ESP32, S3; esp toolchain, no espup)
+clippy-hal:
+    cargo clippy {{ hal_std }} {{ hal_crate }} --target {{ hal_c3_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32c3,unstable -- -D warnings
+    cargo clippy {{ hal_std }} {{ hal_crate }} --target {{ hal_c6_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32c6,unstable -- -D warnings
+    cargo clippy {{ hal_std }} {{ hal_crate }} --target {{ hal_esp32_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32,unstable -- -D warnings
+    cargo clippy {{ hal_std }} {{ hal_crate }} --target {{ hal_s3_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32s3,unstable -- -D warnings
 
 # run host-side unit tests (no ESP toolchain required)
 test:
@@ -143,10 +173,15 @@ audit:
 update:
     cargo update
 
-# clean build artifacts (target/ide, target/idf, and RAM disk if mounted)
+# clean only the bare-metal (esp-hal) target dir; keeps the ESP-IDF cache
+clean-hal:
+    cargo clean --target-dir {{ hal_dir }}
+
+# clean build artifacts (target/ide, target/idf, target/hal, and RAM disk if mounted)
 clean:
     cargo clean --target-dir target/ide
     cargo clean --target-dir {{ idf_dir }}
+    cargo clean --target-dir {{ hal_dir }}
 
 # --- Composite ------------------------------------------------------------
 
@@ -166,10 +201,11 @@ ci: fmt-check deny check clippy test
 
 # --- Release --------------------------------------------------------------
 #
-# Two crates publish in dependency order: stoker (pure, host-buildable) first,
-# then rustyfarian-esp-idf-power, which resolves stoker ^0.2 from crates.io once
-# it is live. The default toolchain is the esp channel, so plain `cargo` drives
-# the Xtensa fork — no `cargo +esp` needed.
+# Three crates publish in dependency order: stoker (pure, host-buildable) first,
+# then the two tiers, rustyfarian-esp-idf-power and rustyfarian-esp-hal-power,
+# which resolve stoker ^0.2 from crates.io once it is live. The default
+# toolchain is the esp channel, so plain `cargo` drives the Xtensa fork — no
+# `cargo +esp` needed.
 # See release-plan.md for the full staged sequence, credentials, and rollback.
 
 # show the staged release flow at a glance (full detail in release-plan.md)
@@ -180,7 +216,9 @@ release-help:
     @echo "  2. just release-publish-stoker     # Stage 1: publish pure crate, then wait ~2-5 min to index"
     @echo "  3. just release-dry-run-idf        # Stage 2: resolves stoker ^0.2 from crates.io"
     @echo "  4. just release-publish-idf        # Stage 3: publish ESP-IDF crate (xtensa-esp32s3-espidf)"
-    @echo "  5. git tag -a v<version> && git push --tags, then cut the GitHub release"
+    @echo "  5. just release-dry-run-hal        # Stage 4: esp-hal crate (riscv32imc-unknown-none-elf, -Zbuild-std=core,alloc)"
+    @echo "  6. just release-publish-hal        # Stage 5: publish esp-hal crate"
+    @echo "  7. git tag -a v<version> && git push --tags, then cut the GitHub release"
 
 # pre-flight release validation (clean-tree guard, version lockstep, verify, package contents, stoker dry-run, deny, audit) — see release-plan.md
 release-publish-validate:
@@ -195,6 +233,11 @@ release-dry-run-stoker:
 release-dry-run-idf:
     CARGO_TARGET_DIR="{{ idf_dir }}" cargo publish --dry-run -p rustyfarian-esp-idf-power --target {{ esp32s3_target }}
 
+# dry-run package rustyfarian-esp-hal-power against the ESP32-C3 target (no upload; esp toolchain, no espup)
+# NOTE: only succeeds AFTER stoker is published to crates.io (resolves stoker ^0.2 from the index)
+release-dry-run-hal:
+    cargo publish --dry-run {{ hal_std }} -p rustyfarian-esp-hal-power --target {{ hal_c3_target }} --target-dir {{ hal_dir }}
+
 # Stage 1 — publish stoker (pure) to crates.io
 [confirm]
 release-publish-stoker:
@@ -204,6 +247,11 @@ release-publish-stoker:
 [confirm]
 release-publish-idf:
     CARGO_TARGET_DIR="{{ idf_dir }}" cargo publish -p rustyfarian-esp-idf-power --target {{ esp32s3_target }}
+
+# Stage 4 — publish rustyfarian-esp-hal-power to crates.io (esp toolchain; run after stoker is indexed)
+[confirm]
+release-publish-hal:
+    cargo publish {{ hal_std }} -p rustyfarian-esp-hal-power --target {{ hal_c3_target }} --target-dir {{ hal_dir }}
 
 # --- Setup ----------------------------------------------------------------
 
