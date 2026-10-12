@@ -6,13 +6,14 @@ desk-work: available
 # Feature: esp-hal Parity (ADC + Charging) v1
 
 New `rustyfarian-esp-hal-power` crate gives the bare-metal tier battery monitoring and charging detection, matching the esp-idf tier.
-Deep sleep and wake cause are out of scope here; they need a `stoker` trait redesign (ADR first) and get their own v2 doc.
+Deep sleep and wake cause are out of scope here; they need a `stoker` trait redesign (ADR first) and live in `esp-hal-sleep-tier-v1.md`, which now lands first in the hal crate.
 Capability findings: `docs/key-insights.md` § esp-hal tier.
 
 ## Decisions
 |                                      Decision | Reason                                             | Rejected Alternative              |
 |----------------------------------------------:|:---------------------------------------------------|:----------------------------------|
 | Stage: ADC + charging in v1, sleep/wake in v2 | Sleep contract is IDF-shaped and needs an ADR      | Full parity in one feature        |
+|    Sleep module ships before ADC (2026-10-12) | Spookhouse C3 deadline; see esp-hal-sleep-tier-v1  | ADC + charging first              |
 |         New crate `rustyfarian-esp-hal-power` | Matches ws2812/network/peripherals tier layout     | Feature flag on the IDF crate     |
 | `stoker` becomes `#![no_std]` unconditionally | One API shape for both tiers                       | `std` feature keeping `anyhow`    |
 |   Replace `anyhow` with a `stoker` error enum | `anyhow` blocks no_std; IDF crate maps at its edge | Associated `type Error` per trait |
@@ -32,7 +33,7 @@ Capability findings: `docs/key-insights.md` § esp-hal tier.
 - [ ] Is async a separate `AsyncBatteryMonitor` trait in `stoker`, or inherent async methods on the hal driver, and does esp-hal 1.2.2 offer async ADC at all?
 - [ ] Which battery-equipped C3/C6 boards get `BatteryConfig` presets and hardware validation, or are they compile-only?
 - [ ] Which esp-hal calibration scheme per chip matches the IDF tier's mV readings within tolerance?
-- [ ] How should `stoker`'s `build.rs` derive the wake-pin mask for `*-none-elf` triples (it currently falls through to the S3 mask)?
+- [x] How should `stoker`'s `build.rs` derive the wake-pin mask for `*-none-elf` triples — caller-supplied mask with chip constants, decided in `c3-gpio-deep-sleep-wake-v1.md`.
 
 ## State
 - [x] Design approved
@@ -47,3 +48,4 @@ Capability findings: `docs/key-insights.md` § esp-hal tier.
 
 ## Session Log
 - 2026-09-26 — Feature doc created via /feature dialog
+- 2026-10-12 — Updated: sleep module pulled forward to its own doc; build.rs mask question answered by the C3 wake feature
