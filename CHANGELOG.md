@@ -16,9 +16,13 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 
 ### Added
 - `stoker::SleepError`: `GpioMaskZero`, `GpioMaskOutOfRange { pin_mask, valid_mask }`, `MultipleTimers { count }`, `MultipleGpioLevel`; carrying `valid_mask` keeps the variant stable when the C3/C6 masks land.
+- `stoker::retain`: `Retained<const N: usize>`, a `no_std`, allocation-free RTC retention envelope (magic, schema version, length, CRC-32) with `empty()`, `load::<T>(ResetReason) -> Result<T, Invalid>` and `store(&T) -> Result<(), StoreError>`; `Retainable` (`VERSION`, `SIZE`, `write`, `read`) with impls for the fixed-width integers; `Invalid` (`PowerOn`, `Brownout`, `Magic`, `Version`, `Length`, `Checksum`, `Payload`) and `StoreError` (`Length`, `Payload`). `load` refuses records after `PowerOn` and `Brownout`; other resets trust the checksum. `store` clears the magic first and writes it last, so a torn store fails the magic check.
+- `stoker::retain::RetainedCell<N>`: the `Sync` cell to place a `Retained` record in a `static` in an RTC section (no `static mut`, no reference to the memory ever handed out). It holds the record as `MaybeUninit` and copies it with volatile accesses, so a `NOLOAD` section is read as the bits it holds; `load` checks the `ResetReason` before touching memory; `store` invalidates, writes the record, then writes the magic, each volatile, with a memory fence after the last write; `invalidate()` clears the magic; `new()` is zeroed so every non-`NOLOAD` read is well defined. Not synchronised (no CAS on riscv32imc, no dependencies): use from one execution context or inside the tier's critical section.
+- `stoker::reset`: `ResetReason` (`PowerOn`, `Brownout`, `DeepSleep`, `Software`, `Panic`, `Watchdog`, `Other`; `#[non_exhaustive]`), `ResetReasonSource` and `NoopResetReasonSource`, mirroring `WakeCauseSource`. `Panic` separates the panic handler's reset from a clean `Software` reset; `load` trusts the checksum after both.
 
 ### Changed
 - `stoker` drops its `anyhow` dependency and now has no dependencies.
+- `stoker::sleep` module docs point at `Retained` instead of the `#[link_section = ".rtc.data"] static mut` recipe.
 - `rustyfarian-esp-idf-power` re-exports `SleepError`.
 
 ## [0.2.0] - 2026-09-26

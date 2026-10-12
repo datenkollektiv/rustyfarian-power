@@ -42,10 +42,14 @@ extern crate std;
 
 pub mod charging;
 pub mod config;
+pub mod reset;
+pub mod retain;
 pub mod sleep;
 
 pub use charging::{ChargingMonitor, ChargingSource, ChargingState, NoopChargingMonitor};
 pub use config::BatteryConfig;
+pub use reset::{NoopResetReasonSource, ResetReason, ResetReasonSource};
+pub use retain::{Invalid, Retainable, Retained, RetainedCell, StoreError};
 pub use sleep::{
     GpioWakeLevel, GpioWakeMask, NoopSleepManager, SleepError, SleepManager, WakeCause,
     WakeCauseSource, WakeSource,

@@ -10,13 +10,10 @@
 //!
 //! # Persisting state across deep sleep
 //!
-//! Deep sleep clears all RAM except the RTC slow memory.
-//! To persist a value across a sleep/wake cycle, place it in the RTC domain:
-//!
-//! ```rust,ignore
-//! #[link_section = ".rtc.data"]
-//! static mut BOOT_COUNT: u32 = 0;
-//! ```
+//! Deep sleep clears all RAM except the RTC domain.
+//! To persist a value across a sleep/wake cycle, place a
+//! [`crate::Retained`] record in RTC memory and validate it on every boot with
+//! [`crate::ResetReasonSource`]; see the [`crate::retain`] module docs.
 //!
 //! # ESP-IDF implementation
 //!
