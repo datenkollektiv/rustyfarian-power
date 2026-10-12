@@ -26,8 +26,11 @@ fn main() {
     println!("cargo:rustc-check-cfg=cfg(esp32)");
     println!("cargo:rustc-check-cfg=cfg(esp32s3)");
     // Emitted by esp-idf-sys and relayed by `sysenv::output()` on chips with
-    // deep-sleep GPIO wakeup (ESP32-C3/C6); gates `esp_sleep_get_gpio_wakeup_status`.
+    // deep-sleep GPIO wakeup (ESP32-C2/C3/C6); gates `esp_sleep_get_gpio_wakeup_status`.
     println!("cargo:rustc-check-cfg=cfg(esp_idf_soc_gpio_support_deepsleep_wakeup)");
+    // Emitted on chips with EXT1 wakeup (ESP32, ESP32-S3, ESP32-C6); together with
+    // the cfg above it selects the C2/C3 deep-sleep GPIO wake path.
+    println!("cargo:rustc-check-cfg=cfg(esp_idf_soc_pm_support_ext1_wakeup)");
 
     let target = std::env::var("TARGET").unwrap_or_default();
     match target.as_str() {

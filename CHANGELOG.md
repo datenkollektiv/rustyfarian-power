@@ -74,6 +74,11 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 - `EspSleepManager` with `isolate_gpio: true` and a `GpioLevel` source returns `EspSleepError::Config(SleepError::IsolationConflict)` instead of an `anyhow` message; ESP-IDF failures are `EspSleepError::Idf { code, kind }` and log which call failed.
 
 ### Added
+- ESP32-C3/C2 deep-sleep GPIO wake in `EspSleepManager` via `esp_deep_sleep_enable_gpio_wakeup`: `GpioLevel` masks are validated against `ESP32C3_WAKE_PIN_MASK` (`0x3F`) before any SDK call, and stale wake pins from an earlier attempt are cleared before arming.
+- Example `idf_c3_deep_sleep_gpio` (ESP32-C3-DevKitM-1, HC-SR501 PIR on GPIO4): GPIO plus timer wake, a `try_sleep` retry loop that survives a held PIR output, and `BENCH` log lines for the bench plan; `C3_SLEEP_TIMER_MS` overrides the timer at build time.
+- `scripts/build-example.sh`, `run-example.sh` and `ensure-bootloader.sh` accept the `c3` chip (`idf_c3_*` examples, target `riscv32imc-esp-espidf`); the Xtensa GCC setup is skipped for it.
+- `just check-c3`, the C3 target in `.cargo/config.toml.dist`, and a `check-c3` CI job.
+- Bench runbook `docs/bench/c3-idf-pir-bench-steps-v1.md` for the P0 cases a real PIR can drive.
 - `rustyfarian-esp-hal-power` crate scaffold: the bare-metal (`no_std`, esp-hal `=1.2.2`, MSRV 1.95) hardware tier, with four mutually exclusive chip features (`esp32c3` default, `esp32c6`, `esp32`, `esp32s3`) enforced by `compile_error!`, plus `unstable` and `rt`; re-exports `stoker`. No drivers yet; the sleep module lands first.
 - `stoker::sleep::Error` (`Debug` + `kind()`, the embedded-hal 1.0 shape, no `core::error::Error` bound) and `SleepErrorKind` (`InvalidConfig`, `Unsupported`, `Rejected`, `Platform`, `Other`; `#[non_exhaustive]`, `Copy`), both re-exported at the crate root; `SleepError` implements it.
 - `stoker::SleepError` variants for the 0.3.0 contract: `NoWakeSource`, `Rejected`, `TimerTooShort { duration_ms, min_ms }`, `TimerTooLong { duration_ms, max_ms }`, `PinNotBound { pin }`, `ForeignWakePin { pin }`, `UartBusy { uart }` (kind `Platform`), `IsolationConflict`.

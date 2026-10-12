@@ -35,3 +35,31 @@ jobs:
         run: just check
       - name: Test (platform-independent)
         run: just test
+  # Needs the esp toolchain, not stable: `.cargo/config.toml` sets build-std for
+  # the *-espidf targets, which stable cannot do. The job-level RUSTUP_TOOLCHAIN
+  # overrides the workflow-level `stable`. The example build links, which `check`
+  # cannot verify (a missing SDK symbol only fails at link time), so ldproxy is needed.
+  check-c3:
+    runs-on: ubuntu-latest
+    env:
+      RUSTUP_TOOLCHAIN: esp
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Setup ESP-RS toolchain
+        uses: esp-rs/xtensa-toolchain@v1.7.0
+        with:
+          default: true
+          ldproxy: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+      - name: Setup cargo config
+        run: cp .cargo/config.toml.dist .cargo/config.toml
+      - name: Setup just
+        uses: extractions/setup-just@v4
+      - name: Check ESP32-C3 (ESP-IDF tier)
+        run: just check-c3
+      - name: Build and link the C3 example
+        run: just build-example idf_c3_deep_sleep_gpio

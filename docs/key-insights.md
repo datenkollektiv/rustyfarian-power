@@ -69,7 +69,7 @@ Remove or update entries that are superseded.
 - **Deep sleep current:** The ESP32-S3 datasheet specifies ~7 µA in deep sleep (RTC domain only, all others off).
   Real-world Heltec V3 boards measure significantly higher (50–150 µA) due to the LDO regulator, charge controller, and LoRa radio quiescent draw.
   The chip-only number is not achievable in practice on this board without hardware modifications.
-- **Wake-up sources in deep sleep (ESP32-S3):** Timer (`esp_sleep_enable_timer_wakeup`), EXT0 (single RTC GPIO, GPIOs 0–21), EXT1 (multiple RTC GPIOs 0–21, ANY_LOW or ANY_HIGH), Touch sensor, ULP FSM co-processor, and no GPIO deep sleep wakeup (`esp_deep_sleep_enable_gpio_wakeup` needs `SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP`, which is C3/C6 only in IDF v5.3.3; `esp_sleep_get_gpio_wakeup_status` has no S3/ESP32 binding).
+- **Wake-up sources in deep sleep (ESP32-S3):** Timer (`esp_sleep_enable_timer_wakeup`), EXT0 (single RTC GPIO, GPIOs 0–21), EXT1 (multiple RTC GPIOs 0–21, ANY_LOW or ANY_HIGH), Touch sensor, ULP FSM co-processor, and no GPIO deep sleep wakeup (`esp_deep_sleep_enable_gpio_wakeup` needs `SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP`, which is C2/C3/C6 only in IDF v5.3.3; `esp_sleep_get_gpio_wakeup_status` has no S3/ESP32 binding).
   Timer wakeup is the primary source for a LoRaWAN duty-cycle sensor.
   EXT1 or GPIO wakeup are useful for alarm / interrupt-driven sensors (e.g., rain gauge tip, door sensor).
 - **ULP coprocessor:** ESP32-S3 has a ULP FSM coprocessor (`SOC_ULP_FSM_SUPPORTED = 1`, `SOC_ULP_HAS_ADC = 1`).
@@ -88,6 +88,12 @@ Remove or update entries that are superseded.
   External pull resistors (10–100 kΩ) are mandatory on every wake GPIO; RTC internal pulls are unavailable during deep sleep when `RTC_PERIPH` is powered down.
   Missing external resistors are a common field failure mode — floating pins may false-trigger or fail to trigger.
   When using `WakeSource::GpioLevel`, set `EspSleepManager { isolate_gpio: false }` — GPIO isolation (the default) may prevent wake-capable pins from triggering.
+- **GPIO wake sources (C2/C3, deep-sleep GPIO wake, IDF v5.3.3):** selected in `esp_sleep.rs` by `cfg(all(esp_idf_soc_gpio_support_deepsleep_wakeup, not(esp_idf_soc_pm_support_ext1_wakeup)))`; esp-idf-sys emits these SOC cfgs and `embuild::espidf::sysenv::output()` relays them. C6 has both and stays on EXT1.
+  Valid pins are GPIO0-5 (`0x3F`) on C3 and C2.
+  `esp_sleep_disable_wakeup_source(ALL)` only clears `RTC_GPIO_TRIG_EN`; the per-pin hardware enable and the SDK's `s_config.gpio_wakeup_mask` survive, so the manager calls `gpio_deep_sleep_wakeup_disable` on every unused pin whose `RTC_CNTL_GPIO_WAKEUP_REG` enable bit is set (never on unarmed pins: the call also re-enables sleep-select). The SDK mask itself has no public clear, so an earlier-armed pin still gets hold + internal pull at later GPIO-wake entries in the same boot (it can no longer wake).
+  SDK bug: switching a pin from HIGH to LOW leaves its trigger-mode bit set (`&= ~(0 << idx)`), so it keeps the internal pull-down during sleep; a reset clears it.
+  The IDF enables the internal pull against the wake level at entry by default (`CONFIG_ESP_SLEEP_GPIO_ENABLE_INTERNAL_RESISTORS=y`), and after a rejected `try_sleep` the wake pin stays held (`gpio_hold_en`).
+  The C3 reject mask includes GPIO, so a held wake pin makes `try_sleep` return `Rejected` (expected; bench H1 not yet observed).
 - **Power domain control:** `esp_sleep_pd_config(ESP_PD_DOMAIN_*, ESP_PD_OPTION_OFF/ON/AUTO)` controls RTC peripherals, RTC slow/fast memory, XTAL, CPU, VDDSDIO, and Modem domains during sleep.
   Powering down the MODEM domain (`ESP_PD_DOMAIN_MODEM`) in deep sleep is automatic when WiFi/BT are not in use.
 - **EXT1 mode chip difference — `ANY_LOW` vs `ALL_LOW`:** `ESP_EXT1_WAKEUP_ANY_LOW` does not exist on the original ESP32; only `ESP_EXT1_WAKEUP_ALL_LOW` is available (all configured pins must be low simultaneously).

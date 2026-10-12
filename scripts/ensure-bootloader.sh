@@ -2,7 +2,7 @@
 set -euo pipefail
 # ensure-bootloader.sh — ensure IDF-built v5.3.3 bootloader is cached
 # Usage: scripts/ensure-bootloader.sh <chip> [idf_dir]
-#   chip: esp32 | esp32s3
+#   chip: esp32 | esp32s3 | c3
 #
 # espflash 4.x bundles an ESP-IDF v5.5.1 bootloader that rejects v5.3.3 IDF
 # binaries (32 KB MMU page mismatch). The v5.3.3 bootloader built by esp-idf-sys
@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib.sh"
 
 if [ $# -lt 1 ]; then
-    printf 'Usage: %s <chip> [idf_dir]\n  chip: esp32 | esp32s3\n' "$0" >&2
+    printf 'Usage: %s <chip> [idf_dir]\n  chip: esp32 | esp32s3 | c3\n' "$0" >&2
     exit 2
 fi
 
@@ -30,8 +30,12 @@ case "$chip" in
         idf_target="xtensa-esp32s3-espidf"
         idf_example="idf_esp32s3_battery"
         ;;
+    c3)
+        idf_target="riscv32imc-esp-espidf"
+        idf_example="idf_c3_deep_sleep_gpio"
+        ;;
     *)
-        printf 'Error: Unknown chip "%s". Supported: esp32, esp32s3\n' "$chip" >&2
+        printf 'Error: Unknown chip "%s". Supported: esp32, esp32s3, c3\n' "$chip" >&2
         exit 1
         ;;
 esac

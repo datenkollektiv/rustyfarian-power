@@ -17,6 +17,7 @@ host_flags  := "-p stoker --target " + host_target
 doc_flags   := "-p stoker --target " + host_target + " --no-deps"
 esp32s3_target := "xtensa-esp32s3-espidf"
 esp32_target   := "xtensa-esp32-espidf"
+c3_target      := "riscv32imc-esp-espidf"
 hal_crate        := "-p rustyfarian-esp-hal-power"
 hal_c3_target    := "riscv32imc-unknown-none-elf"
 hal_c6_target    := "riscv32imac-unknown-none-elf"
@@ -49,6 +50,10 @@ check-all:
 # check the ESP-IDF power crate for the ESP32 target (Adafruit Feather V2, requires espup)
 check-esp32:
     MCU=esp32 CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p rustyfarian-esp-idf-power --target {{ esp32_target }}
+
+# check the ESP-IDF power crate and its C3 example for the ESP32-C3 target (ESP32-C3-DevKitM-1, requires espup)
+check-c3:
+    MCU=esp32c3 CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p rustyfarian-esp-idf-power --target {{ c3_target }} --lib --example idf_c3_deep_sleep_gpio
 
 # verify device-side rustdoc snippets type-check for the ESP32 target (requires espup)
 # run this whenever touching rust,ignore doc snippets or esp-idf-gated code

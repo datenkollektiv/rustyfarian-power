@@ -192,15 +192,19 @@ pub enum WakeSource {
     },
     /// Wake the device when one or more GPIO pins reach the configured level.
     ///
-    /// Uses ESP-IDF EXT1 wakeup (`esp_sleep_enable_ext1_wakeup_io`).
+    /// On the ESP-IDF tier this uses EXT1 wakeup (`esp_sleep_enable_ext1_wakeup_io`)
+    /// on ESP32, ESP32-S3 and ESP32-C6, and deep-sleep GPIO wakeup
+    /// (`esp_deep_sleep_enable_gpio_wakeup`, GPIO0-5) on ESP32-C2 and ESP32-C3.
     /// Only RTC GPIOs 0–21 are valid on ESP32-S3.
     /// Bits for out-of-range pins are rejected at configuration time.
     ///
     /// # Hardware requirement
     ///
-    /// External pull resistors (10–100 kΩ) are **required** on every wake pin.
-    /// RTC internal pull-up/pull-down resistors are unavailable during deep sleep
-    /// when `RTC_PERIPH` is powered down (the default).
+    /// External pull resistors (10–100 kΩ) are **required** on every EXT1 wake pin
+    /// (ESP32, ESP32-S3, ESP32-C6) and recommended on ESP32-C2/C3.
+    /// On EXT1 chips the RTC internal pull-up/pull-down resistors are unavailable during
+    /// deep sleep when `RTC_PERIPH` is powered down (the default).
+    /// On ESP32-C2/C3 ESP-IDF enables the internal pull against the wake level at sleep entry.
     /// A floating pin will have an indeterminate HOLD state and may false-trigger or
     /// fail to trigger — missing external resistors is a common field failure mode.
     ///
