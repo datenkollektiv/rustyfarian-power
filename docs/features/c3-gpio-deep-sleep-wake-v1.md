@@ -29,7 +29,7 @@ Verified 2026-10-12 against ESP-IDF v5.3.3 headers: `SOC_GPIO_SUPPORT_DEEPSLEEP_
 
 ## Open Questions
 - [ ] Do GPIO isolation and a held wake pin coexist on the C3, or must wake-mask pins be excluded from isolation (bench on the C3 DevKitM-1)?
-- [ ] Which `stoker` error variants cover `ESP_ERR_SLEEP_REJECT` versus configuration failures?
+- [ ] Which `stoker` error variants cover `ESP_ERR_SLEEP_REJECT` versus configuration failures? (`kind()` mapping: embedded-hal-error-convention-v1)
 - [ ] Does CI need `-Z build-std` for `riscv32imc-esp-espidf` the way rustyfarian-network's job does?
 
 ## State

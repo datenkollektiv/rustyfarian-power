@@ -34,6 +34,12 @@
 //! mgr.sleep(&[WakeSource::Timer { duration_ms: 60_000 }]).unwrap();
 //! ```
 
+#![no_std]
+
+#[cfg(test)]
+#[macro_use]
+extern crate std;
+
 pub mod charging;
 pub mod config;
 pub mod sleep;
@@ -41,8 +47,8 @@ pub mod sleep;
 pub use charging::{ChargingMonitor, ChargingSource, ChargingState, NoopChargingMonitor};
 pub use config::BatteryConfig;
 pub use sleep::{
-    GpioWakeLevel, GpioWakeMask, NoopSleepManager, SleepManager, WakeCause, WakeCauseSource,
-    WakeSource,
+    GpioWakeLevel, GpioWakeMask, NoopSleepManager, SleepError, SleepManager, WakeCause,
+    WakeCauseSource, WakeSource,
 };
 
 /// Trait for reading battery status from hardware.

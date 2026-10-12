@@ -10,15 +10,16 @@ Deep sleep and wake cause are out of scope here; they need a `stoker` trait rede
 Capability findings: `docs/key-insights.md` § esp-hal tier.
 
 ## Decisions
-|                                      Decision | Reason                                             | Rejected Alternative              |
-|----------------------------------------------:|:---------------------------------------------------|:----------------------------------|
-| Stage: ADC + charging in v1, sleep/wake in v2 | Sleep contract is IDF-shaped and needs an ADR      | Full parity in one feature        |
-|    Sleep module ships before ADC (2026-10-12) | Spookhouse C3 deadline; see esp-hal-sleep-tier-v1  | ADC + charging first              |
-|         New crate `rustyfarian-esp-hal-power` | Matches ws2812/network/peripherals tier layout     | Feature flag on the IDF crate     |
-| `stoker` becomes `#![no_std]` unconditionally | One API shape for both tiers                       | `std` feature keeping `anyhow`    |
-|   Replace `anyhow` with a `stoker` error enum | `anyhow` blocks no_std; IDF crate maps at its edge | Associated `type Error` per trait |
-|    Chips: C3, C6, ESP32, S3 via chip features | Same four chip features as the sibling hal crates  | ESP32 + S3 only                   |
-|          Blocking API plus an `async` feature | Mirrors ws2812/network (esp-rtos + embassy)        | Blocking only                     |
+|                                      Decision | Reason                                                               | Rejected Alternative                 |
+|----------------------------------------------:|:---------------------------------------------------------------------|:-------------------------------------|
+| Stage: ADC + charging in v1, sleep/wake in v2 | Sleep contract is IDF-shaped and needs an ADR                        | Full parity in one feature           |
+|    Sleep module ships before ADC (2026-10-12) | Spookhouse C3 deadline; see esp-hal-sleep-tier-v1                    | ADC + charging first                 |
+|         New crate `rustyfarian-esp-hal-power` | Matches ws2812/network/peripherals tier layout                       | Feature flag on the IDF crate        |
+| `stoker` becomes `#![no_std]` unconditionally | One API shape for both tiers                                         | `std` feature keeping `anyhow`       |
+|   Replace `anyhow` with a `stoker` error enum | `anyhow` blocks no_std; IDF crate maps at its edge                   | Associated `type Error` per trait    |
+| `SleepManager` gets `type Error` (2026-10-12) | IDF impl must surface platform errors; enum stays the portable error | Fixed `SleepError` with IDF variants |
+|    Chips: C3, C6, ESP32, S3 via chip features | Same four chip features as the sibling hal crates                    | ESP32 + S3 only                      |
+|          Blocking API plus an `async` feature | Mirrors ws2812/network (esp-rtos + embassy)                          | Blocking only                        |
 
 ## Constraints
 - `esp-*` crates are exact-pinned (`esp-hal =1.2.2`) in lockstep with the sibling repos.
@@ -37,7 +38,7 @@ Capability findings: `docs/key-insights.md` § esp-hal tier.
 
 ## State
 - [x] Design approved
-- [ ] `stoker` no_std + error enum (IDF crate migrated)
+- [x] `stoker` no_std + error enum (IDF crate migrated)
 - [ ] `rustyfarian-esp-hal-power` scaffold, `just` hal recipes, `target/hal`
 - [ ] ADC battery monitor + charging monitor (blocking)
 - [ ] `async` feature
@@ -49,3 +50,4 @@ Capability findings: `docs/key-insights.md` § esp-hal tier.
 ## Session Log
 - 2026-09-26 — Feature doc created via /feature dialog
 - 2026-10-12 — Updated: sleep module pulled forward to its own doc; build.rs mask question answered by the C3 wake feature
+- 2026-10-12 — `stoker` is `#![no_std]`, `anyhow` replaced by `SleepError`; `SleepManager` got `type Error` (amends the error-enum decision)

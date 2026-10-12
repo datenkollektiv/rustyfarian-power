@@ -12,10 +12,10 @@ It is built for low-power firmware loops: read battery state, decide whether to 
 
 Two-crate Cargo workspace (`members = ["crates/*"]`), split by a **crate boundary** — not a feature flag. The pure/hardware separation is what lets the core build and test on the host with no ESP toolchain.
 
-**`crates/stoker`** — platform-agnostic core, host-buildable, depends only on `anyhow`:
+**`crates/stoker`** — platform-agnostic core, host-buildable, `#![no_std]` with no dependencies:
 - `lib.rs` — `BatteryMonitor` trait, `PowerSource`, `BatteryStatus`, `NoopBatteryMonitor`
 - `config.rs` — `BatteryConfig` with board presets (`heltec_v3()`, `adafruit_feather_v2()`) and `evaluate_reading()` — all voltage/percentage logic
-- `sleep.rs` — `SleepManager` + `WakeCauseSource` traits, `WakeCause`/`WakeSource` enums, `validate_wake_sources()` / `validate_gpio_level_source()`, `NoopSleepManager`
+- `sleep.rs` — `SleepManager` (associated `type Error`) + `WakeCauseSource` traits, `WakeCause`/`WakeSource` enums, `SleepError`, `validate_wake_sources()` / `validate_gpio_level_source()`, `NoopSleepManager`
 - `charging.rs` — `ChargingMonitor` trait, `ChargingState`, `ChargingSource`, `NoopChargingMonitor`
 
 **`crates/rustyfarian-esp-idf-power`** — ESP-IDF (std) hardware tier; cannot compile on the host (needs the Xtensa/ESP-IDF toolchain):
@@ -51,7 +51,7 @@ Run `just` with no arguments to list all recipes. Building the ESP32 (Feather V2
 
 **Board presets:** Start from `BatteryConfig::heltec_v3()` or `adafruit_feather_v2()` — each encodes a calibrated divider ratio and ADC setup. `heltec_v3`'s `divider_ratio` is empirical (folds in ADC loading), not the textbook figure.
 
-**Error handling:** `anyhow::Result` with `.context()`; no `.unwrap()` outside tests. Log via `log::info!/warn!/error!`.
+**Error handling:** `stoker` returns typed `core::error::Error` enums (`SleepError`); `rustyfarian-esp-idf-power` uses `anyhow::Result` with `.context()`; no `.unwrap()` outside tests. Log via `log::info!/warn!/error!`.
 
 **`is_sufficient` fallback:** `BatteryStatus::is_sufficient()` intentionally returns `true` for `External` and `Unknown` — never block operations when battery state is unclear.
 

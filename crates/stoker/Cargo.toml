@@ -11,8 +11,5 @@ keywords = ["battery", "embedded", "power", "sleep", "esp32"]
 categories = ["embedded"]
 readme = "README.md"
 
-[dependencies]
-anyhow.workspace = true
-
 [package.metadata.docs.rs]
 all-features = true

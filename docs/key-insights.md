@@ -114,7 +114,7 @@ Remove or update entries that are superseded.
 
 - **BatteryMonitor infallible convention:** `BatteryMonitor::read` returns `BatteryStatus` (not `Result`) by absorbing ADC errors into `PowerSource::Unknown`.
   New traits that read best-effort status (e.g., `ChargingMonitor::read_charging_state`) should follow the same convention for consistency.
-  Traits whose failure is operationally critical (e.g., `SleepManager::sleep`, `RadioPowerGate::power_on`) should return `anyhow::Result`.
+  Traits whose failure is operationally critical (e.g., `SleepManager::sleep`, or the planned radio power gate's `power_on`) return `Result<(), Self::Error>` with a typed `stoker` error for the pure implementation; `anyhow` is confined to the ESP-IDF tier, which maps at its edge (since 2026-10-12).
 - **Sleep/wake asymmetry:** On ESP32, `esp_deep_sleep_start()` never returns.
   This means `WakeCause` cannot be returned from a `sleep()` call — it must be read at the next boot via a separate `WakeCauseSource` trait.
   Always keep `SleepManager` and `WakeCauseSource` as two distinct traits; merging them implies a round-trip that does not exist in hardware.
@@ -223,7 +223,7 @@ Remove or update entries that are superseded.
 
 - **ADC and deep sleep are behind esp-hal's `unstable` feature, and the sleep API changed shape between releases:** esp-hal 1.1 had `Ext1WakeupSource`/`TimerWakeupSource`; 1.2.2 replaced them with `LowPower::sleep_deep() -> !` plus per-pin `Input::listen(Event::LowLevel)` arming and `set_wakeup_deadline(Instant)`. Expect churn every wave.
 - **`stoker`'s sleep/wake contract is IDF-shaped and does not port directly:** esp-hal has no caller-supplied `pin_mask`, no single EXT1 status bitmask (only per-pin `caused_wakeup()`, or the raw register), panics instead of returning `Result` when no wake source is armed, and isolates pads automatically. A bare-metal tier needs a trait redesign (ADR first), not just a new driver.
-- **`stoker` is not no_std-ready:** `anyhow` appears in public signatures (`SleepManager::sleep`, `validate_*`), there is no `no_std` attribute, and `build.rs` only matches `*-espidf` triples (a `*-none-elf` ESP32 build would silently get the S3 wake-pin mask).
+- **`stoker` is `#![no_std]` with no dependencies (since 2026-10-12):** validators return `SleepError`; `SleepManager` has an associated `type Error` so the IDF impl keeps `anyhow` (a `From<SleepError> for anyhow::Error` impl is neither possible — orphan rule — nor needed: anyhow's blanket `From<E: core::error::Error + Send + Sync>` makes `?` work). Still open: `build.rs` only matches `*-espidf` triples, so a `*-none-elf` ESP32 build would silently get the S3 wake-pin mask.
 - **ADC and GPIO port easily:** calibrated mV on ESP32 (`AdcCalLine` only), S3/C3/C6 (`Line`/`Curve`; C6 also `Basic`); `Input` + `Pull` are stable.
 - **Joining means exact-pinning `esp-hal` in lockstep with network/ws2812/peripherals** (all `=1.2.2` since 2026-09-26), or apps combining the hal tiers will not resolve.
 
