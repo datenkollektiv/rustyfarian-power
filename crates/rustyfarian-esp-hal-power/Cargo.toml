@@ -1,0 +1,52 @@
+[package]
+name = "rustyfarian-esp-hal-power"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+# Above the workspace floor (1.88, which is `stoker`'s MSRV): esp-hal 1.2
+# declares rust-version 1.95. Cargo enforces `rust-version` against the active
+# toolchain; the pinned `esp` toolchain reports 1.95.0-nightly, which satisfies
+# it (Cargo ignores the `-nightly` suffix when comparing). A toolchain below
+# that fails with "not supported by the following package".
+rust-version = "1.95"
+license.workspace = true
+repository.workspace = true
+description = "Bare-metal (esp-hal) battery monitoring, charging detection, and deep-sleep drivers for ESP32-C3, ESP32-C6, ESP32, and ESP32-S3 — the no_std hardware tier of the rustyfarian power stack"
+keywords = ["esp32", "esp-hal", "battery", "power", "no-std"]
+categories = ["embedded", "hardware-support", "no-std"]
+readme = "README.md"
+
+[lib]
+name = "rustyfarian_esp_hal_power"
+
+# docs.rs for a bare-metal crate needs a no_std target and exactly one chip
+# feature; the ESP32-C3 (RISC-V, broadest support) is the documented default.
+[package.metadata.docs.rs]
+default-target = "riscv32imc-unknown-none-elf"
+features = ["esp32c3"]
+
+[features]
+# Project policy: "ESP32-C3 first" — C3 is the reference chip, so a bare
+# `cargo build`/`cargo doc` picks a working chip without extra flags. The chip
+# features are mutually exclusive (enforced by `compile_error!` in lib.rs):
+# consumers of a non-C3 chip use `--no-default-features --features <chip>` (as
+# the `*-hal` just recipes do). `unstable` is bundled because esp-hal gates ADC
+# and the sleep API behind it.
+default = ["esp32c3", "unstable"]
+
+# ── Chip features ────────────────────────────────────────────────────────────
+#
+# Each selects the matching chip in esp-hal. Exactly one must be enabled.
+esp32c3 = ["esp-hal/esp32c3"] # RISC-V, riscv32imc-unknown-none-elf
+esp32c6 = ["esp-hal/esp32c6"] # RISC-V, riscv32imac-unknown-none-elf
+esp32 = ["esp-hal/esp32"] # Xtensa LX6, xtensa-esp32-none-elf
+esp32s3 = ["esp-hal/esp32s3"] # Xtensa LX7, xtensa-esp32s3-none-elf
+
+# esp-hal gates ADC and the sleep API behind `unstable`; `rt` pulls in the
+# runtime/interrupt vectoring that firmware binaries need.
+unstable = ["esp-hal/unstable"]
+rt = ["esp-hal/rt"]
+
+[dependencies]
+stoker = { workspace = true }
+esp-hal = { workspace = true }

@@ -15,12 +15,13 @@ set -euo pipefail
 # CHANGELOG.md is updated (move [Unreleased] -> [X.Y.Z]) in the release commit
 # BEFORE running this and tagging — it is NOT a post-publish step.
 #
-# Validates the two published crates (stoker + rustyfarian-esp-idf-power) in
-# dependency order; see release-plan.md for the full publication sequence.
+# Validates the three published crates (stoker + the two tiers,
+# rustyfarian-esp-idf-power and rustyfarian-esp-hal-power) in dependency order;
+# see release-plan.md for the full publication sequence.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-CRATES=(stoker rustyfarian-esp-idf-power)
+CRATES=(stoker rustyfarian-esp-idf-power rustyfarian-esp-hal-power)
 
 # Required tooling — fail fast and clearly rather than mid-step.
 for tool in jq just cargo git; do
@@ -42,7 +43,7 @@ audit_log="$(mktemp -t release-audit.XXXXXX)"
 meta_log="$(mktemp -t release-metadata.XXXXXX)"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Release Validation — 0.2.0 lockstep (stoker + rustyfarian-esp-idf-power)"
+echo "Release Validation — 0.2.0 lockstep (stoker + esp-idf-power + esp-hal-power)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
@@ -74,15 +75,16 @@ if ! metadata=$(cargo metadata --format-version 1 2>"$meta_log"); then
 fi
 stoker_ver=$(echo "$metadata" | jq -r '.packages[] | select(.name == "stoker") | .version')
 idf_ver=$(echo "$metadata" | jq -r '.packages[] | select(.name == "rustyfarian-esp-idf-power") | .version')
-if [ -z "$stoker_ver" ] || [ -z "$idf_ver" ]; then
+hal_ver=$(echo "$metadata" | jq -r '.packages[] | select(.name == "rustyfarian-esp-hal-power") | .version')
+if [ -z "$stoker_ver" ] || [ -z "$idf_ver" ] || [ -z "$hal_ver" ]; then
     echo "  ERROR: could not resolve crate versions — is the crate split complete? (release-plan.md Phase 0)" >&2
     exit 1
 fi
-if [ "$stoker_ver" != "$idf_ver" ]; then
-    echo "  ERROR: version mismatch — stoker=$stoker_ver idf=$idf_ver" >&2
+if [ "$stoker_ver" != "$idf_ver" ] || [ "$stoker_ver" != "$hal_ver" ]; then
+    echo "  ERROR: version mismatch — stoker=$stoker_ver idf=$idf_ver hal=$hal_ver" >&2
     exit 1
 fi
-echo "  OK — both crates at version $stoker_ver"
+echo "  OK — all three crates at version $stoker_ver"
 echo ""
 
 echo "[3/6] Running 'just verify'..."

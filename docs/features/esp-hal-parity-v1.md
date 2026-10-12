@@ -39,7 +39,7 @@ Capability findings: `docs/key-insights.md` § esp-hal tier.
 ## State
 - [x] Design approved
 - [x] `stoker` no_std + error enum (IDF crate migrated)
-- [ ] `rustyfarian-esp-hal-power` scaffold, `just` hal recipes, `target/hal`
+- [x] `rustyfarian-esp-hal-power` scaffold, `just` hal recipes, `target/hal`
 - [ ] ADC battery monitor + charging monitor (blocking)
 - [ ] `async` feature
 - [ ] Examples build for all four chips
@@ -51,3 +51,4 @@ Capability findings: `docs/key-insights.md` § esp-hal tier.
 - 2026-09-26 — Feature doc created via /feature dialog
 - 2026-10-12 — Updated: sleep module pulled forward to its own doc; build.rs mask question answered by the C3 wake feature
 - 2026-10-12 — `stoker` is `#![no_std]`, `anyhow` replaced by `SleepError`; `SleepManager` got `type Error` (amends the error-enum decision)
+- 2026-10-12 — Scaffold landed: crate, chip features, `default-members`, `check-hal`/`clippy-hal`/`clean-hal` + release recipes into `target/hal`; sleep module next (esp-hal-sleep-tier-v1)

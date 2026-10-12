@@ -1,6 +1,10 @@
 [workspace]
 resolver = "2"
 members = ["crates/*"]
+# The esp-hal tier (`rustyfarian-esp-hal-power`) only builds for `*-none-elf`
+# targets, via the `*-hal` just recipes. Keeping it out of the default members
+# keeps it out of bare `cargo check/build/clippy` (the `*-all` recipes).
+default-members = ["crates/stoker", "crates/rustyfarian-esp-idf-power"]
 
 [workspace.package]
 version = "0.2.0"
@@ -23,3 +27,9 @@ log = "0.4"
 # one version per downstream graph) and requires embuild >= 0.33.5.
 esp-idf-hal = "0.47"
 embuild = { version = "0.33.5", features = ["espidf"] }
+
+# Bare-metal (esp-hal) dependencies — exact pin, in lockstep with the sibling
+# rustyfarian repos (ws2812, network, peripherals are all `=1.2.2`); apps that
+# combine the hal tiers will not resolve otherwise. esp-hal 1.2 declares
+# rust-version 1.95.
+esp-hal = { version = "=1.2.2" }
