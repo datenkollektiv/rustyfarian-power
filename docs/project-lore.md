@@ -71,6 +71,16 @@ The board's primary console is UART0 with `CONFIG_ESP_CONSOLE_SECONDARY_USB_SERI
 The original ESP32 (Feather V2) has no second console, so `println!` happens to work there — which masks the problem until the first S3 example.
 Fix: in examples, route output through `esp_idf_hal::sys::esp_rom_printf` (e.g. a tiny `log::Log` impl forwarding to it) — no `esp-idf-svc` dependency needed. This is also why the library's `log::debug!`/`warn!` diagnostics are invisible by default: nothing installs a `log` logger.
 
+## ESP-IDF tier — ESP32-C3 deep sleep (IDF v5.3.3)
+
+**On the ESP32-C3, `esp_deep_sleep_try_to_start` with a GPIO wake pin already at its wake level does NOT return `ESP_ERR_SLEEP_REJECT`; the chip sleeps and wakes about 20 ms later.**
+`RTC_GPIO_TRIG_EN` is in the C3 `RTC_SLEEP_REJECT_MASK` and the IDF writes it to `RTC_CNTL_SLP_REJECT_CONF_REG`, so the source reads as if a held pin is rejected.
+On hardware it is not: with an HC-SR501 on GPIO4 held HIGH, every entry woke at once with `cause=Gpio mask=0x10` (bench H1, 2026-10-12, 248 of 250 entries; the other 2 slept normally, the PIR likely released between the read and entry), with no reject log and no `Err` returned.
+A stuck-HIGH sensor therefore boot-loops at about 2.5 Hz instead of spinning in a `try_sleep` retry loop.
+The hardware reason is not confirmed; the deep-sleep GPIO wake on the C3 may latch after the reject window closes.
+Fix: `EspSleepManager::try_sleep` on C2/C3 reads the wake pins right before sleep entry and returns `Rejected` itself.
+The read needs the pin configured as an input (`FUN_IE`; arming does not set it) and an external bias, and a pin that changes after the read still wakes the chip at once.
+
 ---
 
 ## esp-hal tier (esp-hal 1.2.2)

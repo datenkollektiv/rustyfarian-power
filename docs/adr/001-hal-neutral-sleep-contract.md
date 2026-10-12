@@ -253,6 +253,9 @@ Rejected alternatives:
   Both examples document that a PIR on GPIO4 is fine for firmware and disables JTAG debugging while it runs.
 - **Wake pin already at its wake level.** Named bench case `wake-pin-held-at-entry` in both tiers' hardware validation.
   Expected on both: `try_sleep` returns `Err` with `kind() == Rejected` (IDF: `ESP_ERR_SLEEP_REJECT`; esp-hal: `sleep_deep_with_rejection` returns, because the reject mask is the enabled-source mask, `rtc_cntl/sleep/mod.rs:197`).
+  Bench H1 (2026-10-12) showed the C3 hardware does not reject a held GPIO wake pin: it sleeps and wakes about 20 ms later.
+  The IDF tier therefore reads the input-enabled wake pins right before sleep entry and returns `Rejected` itself; the esp-hal tier uses the same reject hardware and will likely need the same pre-check.
+  Re-run on the bench with the pre-check (2026-10-13): 5 of 5 held wakes returned `Rejected` and the boot loop is gone.
   A second named case, `wake-cause-survives-rejection`, checks whether `caused_wakeup()` and `wakeup_cause()` still report the boot wake after one rejection on esp-hal; the code reading says they do not.
 - **Slept time.** Out of scope for `stoker` and both tiers in 0.3.0.
   Recipe: esp-hal `Rtc::time_since_power_up()` (the RTC timer runs through deep sleep and every reset except power-up, `rtc_cntl/mod.rs:257-264`), IDF `esp_rtc_get_time_us()`; the firmware stores the pre-sleep stamp in the RTC retention envelope and subtracts after the wake.

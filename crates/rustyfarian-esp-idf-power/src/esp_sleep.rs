@@ -34,6 +34,10 @@
 //! [`SleepManager::try_sleep`] enters deep sleep via `esp_deep_sleep_try_to_start()`
 //! and returns [`EspSleepError::Idf`] with `kind() == SleepErrorKind::Rejected` when a
 //! wake source is already asserted, for example a PIR wake pin held at its wake level.
+//! The ESP32-C2/C3 hardware does not reject a held GPIO wake pin; it sleeps and wakes
+//! again at once. There `try_sleep` reads the wake pins right before sleep entry and
+//! returns the same `Rejected` error itself; the pins must be configured as inputs for
+//! the read. EXT1 chips rely on the hardware reject (not yet confirmed on hardware).
 //! [`SleepManager::sleep`] keeps `esp_deep_sleep_start()`, which sleeps and wakes again
 //! at once in that case.
 //!
@@ -438,6 +442,68 @@ fn disarm_unused_gpio_wake_pins(sources: &[WakeSource]) -> Result<(), EspSleepEr
     Ok(())
 }
 
+/// IO_MUX register of each C2/C3 deep-sleep wake pin, GPIO0-5 (same offsets on both chips).
+#[cfg(all(
+    esp_idf_soc_gpio_support_deepsleep_wakeup,
+    not(esp_idf_soc_pm_support_ext1_wakeup)
+))]
+const WAKE_PIN_IO_MUX_REGS: [u32; 6] = [
+    sys::PERIPHS_IO_MUX_XTAL_32K_P_U,
+    sys::PERIPHS_IO_MUX_XTAL_32K_N_U,
+    sys::PERIPHS_IO_MUX_GPIO2_U,
+    sys::PERIPHS_IO_MUX_GPIO3_U,
+    sys::PERIPHS_IO_MUX_MTMS_U,
+    sys::PERIPHS_IO_MUX_MTDI_U,
+];
+
+/// Returns `true` when a C2/C3 `GpioLevel` wake pin is already at its wake level.
+///
+/// The C2/C3 hardware does not reject deep sleep for such a pin: the chip sleeps and
+/// wakes again at once (bench H1), so [`try_sleep`][SleepManager::try_sleep] reads the
+/// pins itself. Only pins with the pad input enable set are read, because
+/// `gpio_get_level` returns 0 for a pad without it; a pin without input enable is
+/// skipped with a warning.
+#[cfg(all(
+    esp_idf_soc_gpio_support_deepsleep_wakeup,
+    not(esp_idf_soc_pm_support_ext1_wakeup)
+))]
+fn gpio_wake_pins_asserted(sources: &[WakeSource]) -> bool {
+    // validate_wake_sources allows at most one GpioLevel source.
+    let Some((pin_mask, level)) = sources.iter().find_map(|source| match source {
+        WakeSource::GpioLevel { pin_mask, level } => Some((*pin_mask, *level)),
+        WakeSource::Timer { .. } => None,
+    }) else {
+        return false;
+    };
+    let wake_level = match level {
+        GpioWakeLevel::AnyHigh => 1,
+        GpioWakeLevel::AnyLow => 0,
+    };
+    for (pin, &mux_reg) in WAKE_PIN_IO_MUX_REGS.iter().enumerate() {
+        if pin_mask & (1u64 << pin) == 0 {
+            continue;
+        }
+        // SAFETY: mux_reg is the always-mapped IO_MUX register of GPIO0-5 on C2/C3
+        // (io_mux_reg.h); a volatile 32-bit read has no side effects. The input enable
+        // is bit FUN_IE_S, the bit gpio_ll_input_enable sets.
+        let mux = unsafe { core::ptr::read_volatile(mux_reg as *const u32) };
+        if mux & (1 << sys::FUN_IE_S) == 0 {
+            log::warn!(
+                "Sleep: GPIO{} has no input enable; its level is not checked before sleep",
+                pin
+            );
+            continue;
+        }
+        // SAFETY: gpio_get_level only reads GPIO_IN_REG; pin is a valid GPIO number (0-5).
+        let read = unsafe { sys::gpio_get_level(pin as sys::gpio_num_t) };
+        if read == wake_level {
+            log::info!("Sleep: GPIO{} is already at its wake level", pin);
+            return true;
+        }
+    }
+    false
+}
+
 impl SleepManager for EspSleepManager {
     type Error = EspSleepError;
 
@@ -489,8 +555,29 @@ impl SleepManager for EspSleepManager {
     ///   On ESP32-C2/C3 the wake pins also stay held (`gpio_hold_en`) with the
     ///   internal pull applied at sleep entry; call `gpio_hold_dis` before
     ///   reconfiguring such a pin for other use.
+    ///   On ESP32-C2/C3 the hardware does not reject a held GPIO wake pin, so the
+    ///   manager reads the `GpioLevel` pins right before sleep entry and returns this
+    ///   error itself (same `code`); the wake sources stay configured and no pin is held.
+    ///   Only pins configured as inputs are read, and a pin needs an external bias
+    ///   against the wake level, because the internal pull is applied after the read.
+    ///   A pin that reaches its wake level after the read still wakes the chip at once.
     fn try_sleep(&mut self, sources: &[WakeSource]) -> Result<(), EspSleepError> {
         self.configure(sources)?;
+
+        // The C2/C3 hardware does not reject a held GPIO wake pin; it sleeps and wakes
+        // at once. Read the pins as late as possible, right before sleep entry.
+        #[cfg(all(
+            esp_idf_soc_gpio_support_deepsleep_wakeup,
+            not(esp_idf_soc_pm_support_ext1_wakeup)
+        ))]
+        if gpio_wake_pins_asserted(sources) {
+            // Same shape as the hardware reject below: ESP_ERR_SLEEP_REJECT is
+            // ESP_ERR_INVALID_STATE in IDF v5.3.3, and bindgen exposes only the latter.
+            return Err(EspSleepError::Idf {
+                code: sys::ESP_ERR_INVALID_STATE,
+                kind: SleepErrorKind::Rejected,
+            });
+        }
 
         log::info!("Trying to enter deep sleep");
 

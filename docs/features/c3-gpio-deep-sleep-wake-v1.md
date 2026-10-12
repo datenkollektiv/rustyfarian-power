@@ -44,10 +44,22 @@ Verified 2026-10-12 against ESP-IDF v5.3.3 headers: `SOC_GPIO_SUPPORT_DEEPSLEEP_
 - [x] IDF tier: C3/C2 GPIO wake path, stale-mask handling, `Gpio(mask)` mapping, isolation rule per chip
 - [x] `just check-c3` recipe, `.cargo/config.toml.dist` target, CI job
 - [x] Example `idf_c3_deep_sleep_gpio` wakes on GPIO4, shows one rejected `try_sleep`, sleeps again; documents GPIO4 = MTMS (JTAG) and the pull against the wake level
-- [ ] Bench case `wake-pin-held-at-entry` on the C3 DevKitM-1: PIR held HIGH when `try_sleep` is called, expect `Err` with `kind() == Rejected` (ADR-001 § 5); steps in [c3-idf-pir-bench-steps-v1](../bench/c3-idf-pir-bench-steps-v1.md), not observed yet
+- [x] Bench case `wake-pin-held-at-entry` on a C3: PIR held HIGH when `try_sleep` is called; expected `Err` with `kind() == Rejected` (ADR-001 § 5), observed instead an immediate GPIO wake on every attempt; with the manager's wake-pin pre-check (2026-10-13) the expected `Rejected` now holds, 5 of 5; steps in [c3-idf-pir-bench-steps-v1](../bench/c3-idf-pir-bench-steps-v1.md)
 - [x] S3 claim fixed in `sleep.rs`, `esp_sleep.rs`, `docs/key-insights.md`
 - [x] Tests passing (`just verify`, `just check-c3`)
 - [x] CHANGELOG `[Unreleased]`: Added (C3 wake, `try_sleep`) and Breaking (`WakeCause::Gpio(GpioWakeMask)`)
+
+## Implementation Notes (ESP-IDF v5.3.3)
+Moved here from the `esp_sleep.rs` module docs, which describe only the API behaviour; re-verify against the IDF source before the next IDF bump.
+- Path selection: `cfg(all(esp_idf_soc_gpio_support_deepsleep_wakeup, not(esp_idf_soc_pm_support_ext1_wakeup)))` is C2/C3; C6 has both and keeps EXT1. esp-idf-sys emits the SOC cfgs and `embuild::espidf::sysenv::output()` relays them.
+- Valid pins: `SOC_GPIO_DEEP_SLEEP_WAKE_VALID_GPIO_MASK` is GPIO0-5 on C3 (`soc/esp32c3/include/soc/soc_caps.h:175`) and C2 (`soc/esp32c2/include/soc/soc_caps.h:137`).
+- Isolation: `esp_sleep_config_gpio_isolate()` only writes each pad's sleep-mode config (`esp_hw_support/sleep_gpio.c:55-62`), and `gpio_deep_sleep_wakeup_enable` switches the wake pin's sleep-select off, so isolation may coexist with a C2/C3 wake pin; bench I4 decides.
+- Internal pulls: `gpio_deep_sleep_wakeup_prepare` (`esp_hw_support/sleep_modes.c:1953-1977`) applies `gpio_hold_en` and, with `CONFIG_ESP_SLEEP_GPIO_ENABLE_INTERNAL_RESISTORS` (default y, `esp_hw_support/Kconfig:195`), the pull against the wake level.
+- Stale arming: `esp_sleep_disable_wakeup_source(ALL)` only clears `RTC_GPIO_TRIG_EN` (`sleep_modes.c:1565-1566`). The manager disarms with `gpio_deep_sleep_wakeup_disable` (`esp_driver_gpio/src/gpio.c:1001-1017`) only pins whose bit in `RTC_CNTL_GPIO_WAKEUP_REG` is set (the test of the inline `gpio_ll_deepsleep_wakeup_is_enabled`, `hal/esp32c3/include/hal/gpio_ll.h:751-756`), because the disable call also re-enables sleep-select (bench I7).
+- Unfixable residuals: `s_config.gpio_wakeup_mask` is only ever OR-ed (`sleep_modes.c:2003`), and `gpio_trigger_mode &= ~(mode << idx)` with `LOW == 0` is a no-op (`sleep_modes.c:2004-2008`), so HIGH→LOW keeps the pull-down (bench I6).
+- Rejection: `RTC_GPIO_TRIG_EN` is in the C3 `RTC_SLEEP_REJECT_MASK` (`esp_hw_support/port/esp32c3/include/soc/rtc.h:661-663`), yet on hardware a held wake pin is not rejected.
+  `esp_deep_sleep_try_to_start` enters deep sleep and the chip wakes about 20 ms later with `cause=Gpio` (bench H1, 2026-10-12).
+  `try_sleep` therefore reads each mask pin right before sleep entry: it tests the pad input enable (`FUN_IE` in the pin's IO_MUX register, since arming does not set it), then `gpio_get_level`, and returns `Idf { code: ESP_ERR_INVALID_STATE, kind: Rejected }`, the same shape as the hardware reject.
 
 ## Session Log
 - 2026-10-12 — Feature doc created via /feature dialog from the spookhouse request
@@ -60,9 +72,15 @@ Verified 2026-10-12 against ESP-IDF v5.3.3 headers: `SOC_GPIO_SUPPORT_DEEPSLEEP_
   `WakeCause::Ext1` mapping cfg-gated off C2/C3 (missing symbol broke the link).
   `check-c3` recipe, `.cargo/config.toml.dist` target, CI job, example `idf_c3_deep_sleep_gpio`, `c3` support in the flash scripts, and a PIR runbook were added.
   Gates: `just verify`, `check-c3`, `check-all`, `check-esp32`, `clippy-all` and `build-example idf_c3_deep_sleep_gpio` all exit 0. C3 clippy, the CI job and the hardware were not run.
-- 2026-10-12 — Bench P0 with the real PIR (W1, W2, H1, H4): not observed.
+- 2026-10-12 — Bench P0 with the real PIR (W1, W2, H1, H4): W1 passed on 7 waves; W2 passed covered, 15 of 15 timer wakes at about 5 s; H1 observed (no rejection, immediate wake); H4 blocked by H1.
 - 2026-10-12 — Review of `4d8de80`: the example now configures GPIO4 as an input with a pull-down and keeps the driver alive, fails the build on an out-of-range `C3_SLEEP_TIMER_MS`, falls back to a timer-only sleep instead of a restart loop, and prints per-attempt `BENCH` lines only with `C3_BENCH_LOG`.
   `check-c3` now also checks the example, and the CI job builds and links it (ldproxy on).
   Bench case I6 `gpio-level-high-to-low` names the SDK trigger-mode bug; the IDF tier rejects that transition only if I6 shows wrong behaviour.
 - 2026-10-12 — Review of `bf680cb`: stale-pin cleanup now disarms only pins whose `RTC_CNTL_GPIO_WAKEUP_REG` enable bit is set, because `gpio_deep_sleep_wakeup_disable` also re-enables sleep-select and would override an application's `gpio_sleep_sel_dis()` on unrelated pins (bench I7).
   I6 now uses a controlled stimulus with an inactive HIGH phase before the `AnyLow` attempt and a separate pull-direction measurement; the example's expected-output block is labelled as `C3_BENCH_LOG=1` output.
+- 2026-10-12 — Third review: the module docs were cut down to API behaviour, with the SDK internals moved to Implementation Notes above, and the register read now explains why no public API suffices.
+  CI `check-c3` stays "logically correct, pending first run" until the push.
+- 2026-10-12 — Bench H1 on an ESP32-C3-MINI-1 board (CH340 bridge, HC-SR501 on GPIO4): a held wake pin is never rejected; the chip sleeps and wakes about 20 ms later, so a stuck-HIGH PIR boot-loops at about 2.5 Hz.
+  This contradicts ADR-001 § 2 and § 5 for GPIO on the C3; the ADR and the example's retry loop need a decision before acceptance.
+- 2026-10-13 — `try_sleep` on C2/C3 now reads the input-enabled wake pins before sleep entry and returns `Rejected` itself.
+  Bench re-run: H1 passes (5 of 5 held wakes rejected, no boot loop); H4 loop behaviour passes, highest count 80 of the planned 1000.
