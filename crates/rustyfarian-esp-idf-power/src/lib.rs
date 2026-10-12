@@ -59,12 +59,15 @@
 //!   The EXT1 status register is hardware-preserved until the next sleep entry.
 //! - `EspSleepManager::sleep()` does not return on real hardware.
 //!   The next code to execute is the firmware entry point after the device wakes.
+//! - `EspSleepManager::try_sleep()` returns `EspSleepError` with `kind() == SleepErrorKind::Rejected`
+//!   instead of sleeping when a wake source is already asserted.
 
 // Re-export the platform-agnostic surface so consumers import from one crate.
 pub use stoker::{
     BatteryConfig, BatteryMonitor, BatteryStatus, ChargingMonitor, ChargingSource, ChargingState,
-    GpioWakeLevel, GpioWakeMask, NoopBatteryMonitor, NoopChargingMonitor, NoopSleepManager,
-    PowerSource, SleepError, SleepManager, WakeCause, WakeCauseSource, WakeSource,
+    Error, GpioWakeLevel, GpioWakeMask, NoopBatteryMonitor, NoopChargingMonitor, NoopSleepManager,
+    PowerSource, SleepError, SleepErrorKind, SleepManager, WakeCause, WakeCauseSource, WakeSource,
+    MAX_TIMER_MS,
 };
 
 mod esp_adc;
@@ -73,4 +76,4 @@ mod esp_sleep;
 
 pub use esp_adc::EspAdcBatteryMonitor;
 pub use esp_charging::EspChargingMonitor;
-pub use esp_sleep::{EspSleepManager, EspWakeCauseSource};
+pub use esp_sleep::{EspSleepError, EspSleepManager, EspWakeCauseSource};

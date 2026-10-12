@@ -69,7 +69,7 @@ Remove or update entries that are superseded.
 - **Deep sleep current:** The ESP32-S3 datasheet specifies ~7 µA in deep sleep (RTC domain only, all others off).
   Real-world Heltec V3 boards measure significantly higher (50–150 µA) due to the LDO regulator, charge controller, and LoRa radio quiescent draw.
   The chip-only number is not achievable in practice on this board without hardware modifications.
-- **Wake-up sources in deep sleep (ESP32-S3):** Timer (`esp_sleep_enable_timer_wakeup`), EXT0 (single RTC GPIO, GPIOs 0–21), EXT1 (multiple RTC GPIOs 0–21, ANY_LOW or ANY_HIGH), Touch sensor, ULP FSM co-processor, and GPIO deep sleep wakeup (`esp_deep_sleep_enable_gpio_wakeup` — ESP32-S3 specific, confirmed in `soc_caps.h` as `SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP`).
+- **Wake-up sources in deep sleep (ESP32-S3):** Timer (`esp_sleep_enable_timer_wakeup`), EXT0 (single RTC GPIO, GPIOs 0–21), EXT1 (multiple RTC GPIOs 0–21, ANY_LOW or ANY_HIGH), Touch sensor, ULP FSM co-processor, and no GPIO deep sleep wakeup (`esp_deep_sleep_enable_gpio_wakeup` needs `SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP`, which is C3/C6 only in IDF v5.3.3; `esp_sleep_get_gpio_wakeup_status` has no S3/ESP32 binding).
   Timer wakeup is the primary source for a LoRaWAN duty-cycle sensor.
   EXT1 or GPIO wakeup are useful for alarm / interrupt-driven sensors (e.g., rain gauge tip, door sensor).
 - **ULP coprocessor:** ESP32-S3 has a ULP FSM coprocessor (`SOC_ULP_FSM_SUPPORTED = 1`, `SOC_ULP_HAS_ADC = 1`).
@@ -80,7 +80,7 @@ Remove or update entries that are superseded.
   `esp_deep_sleep_start()` never returns; use `esp_deep_sleep_try_to_start()` if you need rejection detection.
   Use `esp_sleep_enable_ext1_wakeup_io()` (v5.x preferred API) — not the deprecated `esp_sleep_enable_ext1_wakeup()`.
 - **EXT1 wakeup status functions:** Call `esp_sleep_get_ext1_wakeup_status()` when the wakeup cause is `ESP_SLEEP_WAKEUP_EXT1` to get the bitmask of fired pins.
-  For `ESP_SLEEP_WAKEUP_GPIO` (ESP32-S3 deep-sleep GPIO wake), use `esp_sleep_get_gpio_wakeup_status()` instead — the EXT1 status register is not populated.
+  For `ESP_SLEEP_WAKEUP_GPIO` (C3/C6 deep-sleep GPIO wake), use `esp_sleep_get_gpio_wakeup_status()` instead — the EXT1 status register is not populated.
   Both functions return a `u64` bitmask (bit N = GPIO N).
   The EXT1 register is preserved by hardware until the next sleep entry, so it can be read at any point after boot.
   Recommended practice (per Espressif) is to read it early in `main()` before peripheral initialisation, and store the result — not because the register is likely to be cleared, but for clarity and defensive coding.
@@ -114,7 +114,7 @@ Remove or update entries that are superseded.
 
 - **BatteryMonitor infallible convention:** `BatteryMonitor::read` returns `BatteryStatus` (not `Result`) by absorbing ADC errors into `PowerSource::Unknown`.
   New traits that read best-effort status (e.g., `ChargingMonitor::read_charging_state`) should follow the same convention for consistency.
-  Traits whose failure is operationally critical (e.g., `SleepManager::sleep`, or the planned radio power gate's `power_on`) return `Result<(), Self::Error>` with a typed `stoker` error for the pure implementation; `anyhow` is confined to the ESP-IDF tier, which maps at its edge (since 2026-10-12).
+  Traits whose failure is operationally critical (e.g., `SleepManager::sleep`, or the planned radio power gate's `power_on`) return `Result<(), Self::Error>` with a typed `stoker` error for the pure implementation; `SleepManager::Error` is bounded by `stoker::sleep::Error` (`Debug` + `kind()`), and `EspSleepManager` uses its own `EspSleepError` (since 2026-10-12, 0.3.0).
 - **Sleep/wake asymmetry:** On ESP32, `esp_deep_sleep_start()` never returns.
   This means `WakeCause` cannot be returned from a `sleep()` call — it must be read at the next boot via a separate `WakeCauseSource` trait.
   Always keep `SleepManager` and `WakeCauseSource` as two distinct traits; merging them implies a round-trip that does not exist in hardware.
@@ -241,7 +241,7 @@ Remove or update entries that are superseded.
 - **esp-hal arms every listening low-power pad for deep sleep, not just the ones a driver passes in** (`gpio/wakeup/mod.rs` `collect`); the low-power flag is a private static, so foreign pads can only be detected conservatively via `GPIO::regs().pin(n).int_type()` (ADR-001 § 4d).
 - **`ESP_ERR_SLEEP_REJECT` is `ESP_ERR_INVALID_STATE` (`0x103`) in IDF v5.3.3:** map rejection by call site (the return of `esp_deep_sleep_try_to_start`), never by code.
 - **esp-hal's `#[ram(unstable(rtc_fast, persistent))]` asserts `esp_hal::Persistable` on the static's type at compile time:** the orphan rule forbids implementing it for `stoker::RetainedCell`, so the hal tier wraps the cell in its own newtype and `unsafe impl Persistable` for that.
-- **`stoker` is `#![no_std]` with no dependencies (since 2026-10-12):** validators return `SleepError`; `SleepManager` has an associated `type Error` so the IDF impl keeps `anyhow` (a `From<SleepError> for anyhow::Error` impl is neither possible — orphan rule — nor needed: anyhow's blanket `From<E: core::error::Error + Send + Sync>` makes `?` work). Still open: `build.rs` only matches `*-espidf` triples, so a `*-none-elf` ESP32 build would silently get the S3 wake-pin mask.
+- **`stoker` is `#![no_std]` with no dependencies (since 2026-10-12):** validators return `SleepError`; `SleepManager::Error: stoker::sleep::Error`, and since the orphan rule forbids implementing that trait for `anyhow::Error`, implementors (including `EspSleepManager`, via `EspSleepError`) need a local error type; `?` into `anyhow` in firmware still works through `core::error::Error`. Still open: `build.rs` only matches `*-espidf` triples, so a `*-none-elf` ESP32 build would silently get the S3 wake-pin mask.
 - **ADC and GPIO port easily:** calibrated mV on ESP32 (`AdcCalLine` only), S3/C3/C6 (`Line`/`Curve`; C6 also `Basic`); `Input` + `Pull` are stable.
 - **Joining means exact-pinning `esp-hal` in lockstep with network/ws2812/peripherals** (all `=1.2.2` since 2026-09-26), or apps combining the hal tiers will not resolve.
 

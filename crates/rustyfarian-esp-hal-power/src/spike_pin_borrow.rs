@@ -40,7 +40,8 @@ use esp_hal::{
     time::{Duration, Instant},
 };
 use stoker::{
-    GpioWakeLevel, GpioWakeMask, SleepError, SleepManager, WakeCause, WakeCauseSource, WakeSource,
+    GpioWakeLevel, GpioWakeMask, SleepError, SleepErrorKind, SleepManager, WakeCause,
+    WakeCauseSource, WakeSource,
 };
 
 /// ESP32-C3 pads with a low-power wake path (GPIO0-5).
@@ -102,6 +103,21 @@ enum SpikeError {
     NoLowPowerPath { pin: u8 },
     /// The hardware rejected the sleep because a wake source was already asserted (`Rejected`).
     Rejected,
+}
+
+impl stoker::sleep::Error for SpikeError {
+    fn kind(&self) -> SleepErrorKind {
+        match self {
+            Self::Config(err) => stoker::sleep::Error::kind(err),
+            Self::UartBusy { .. } | Self::NoLowPowerPath { .. } => SleepErrorKind::Platform,
+            Self::Rejected => SleepErrorKind::Rejected,
+            Self::NoWakeSource
+            | Self::PinNotBound { .. }
+            | Self::TimerTooShort { .. }
+            | Self::TimerTooLong { .. }
+            | Self::ForeignWakePin { .. } => SleepErrorKind::InvalidConfig,
+        }
+    }
 }
 
 /// A fully validated request. Building it touches no hardware, so a validation error leaves
@@ -399,6 +415,11 @@ impl SleepManager for BoundSleep<'_, '_, '_, '_> {
             self.manager.low_power.sleep_deep(RtcSleepConfig::deep())
         })
     }
+
+    fn try_sleep(&mut self, sources: &[WakeSource]) -> Result<(), SpikeError> {
+        // Inherent method above; inherent associated functions win path resolution.
+        BoundSleep::try_sleep(self, sources)
+    }
 }
 
 /// Wake cause captured once at boot from the pins the firmware re-creates.
@@ -421,10 +442,7 @@ impl EspHalWakeCauseSource {
                 .filter(|pin| pin.caused_wakeup())
                 .filter_map(|pin| pin.peripheral_input().gpio_number())
                 .fold(0u64, |mask, n| mask | (1u64 << n));
-            // `WakeCause::Gpio` is still a unit variant; the C3 wake feature turns it into
-            // `Gpio(GpioWakeMask)`. The spike proves the mask can be built.
-            let _ = GpioWakeMask(mask);
-            WakeCause::Gpio
+            WakeCause::Gpio(GpioWakeMask(mask))
         } else if reason.contains(WakeupSource::Timer) {
             WakeCause::Timer
         } else {

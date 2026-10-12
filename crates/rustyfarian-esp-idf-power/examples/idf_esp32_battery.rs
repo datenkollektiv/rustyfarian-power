@@ -83,7 +83,10 @@ fn main() -> anyhow::Result<()> {
         WakeCause::Timer => println!("Wake cause: Timer"),
         WakeCause::Ext1(mask) => println!("Wake cause: Ext1 (GPIO) — fired pins: 0x{:x}", mask.0),
         WakeCause::Ext0 => println!("Wake cause: Ext0 (GPIO)"),
-        WakeCause::Gpio => println!("Wake cause: Gpio (deep-sleep GPIO wake)"),
+        WakeCause::Gpio(mask) => println!(
+            "Wake cause: Gpio (deep-sleep GPIO wake) — fired pins: 0x{:x}",
+            mask.0
+        ),
         WakeCause::Touch => println!("Wake cause: Touch"),
         WakeCause::Other => println!("Wake cause: Other"),
     }

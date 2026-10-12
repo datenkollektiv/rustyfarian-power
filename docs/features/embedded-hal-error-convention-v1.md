@@ -34,13 +34,14 @@ desk-work: available
 ## State
 - [x] Design approved
 - [x] Design questions closed by ADR-001; this feature is implementation only
-- [ ] Error trait + kind enum in `stoker`, implemented for `SleepError`
-- [ ] `EspSleepManager` error provides `kind()`
+- [x] Error trait + kind enum in `stoker`, implemented for `SleepError`
+- [x] `EspSleepManager` error provides `kind()` (`EspSleepError`)
 - [ ] Tests passing (`just verify`, device checks)
-- [ ] Documentation updated (CHANGELOG, key-insights)
+- [x] Documentation updated (CHANGELOG, key-insights)
 
 ## Session Log
 - 2026-10-12 — Feature doc created via /feature dialog; follows the stoker no_std step
 - 2026-10-12 — Updated: open question on a `core::error::Error` bound from the spookhouse review
 - 2026-10-12 — All open questions answered by ADR-001 § 3 (kinds, no `core::error::Error` bound, `EspSleepError`, reject mapping by call site); implementation only from here
 - 2026-10-12 — ADR-001 review round 2: `TimerOverflow` replaced by `TimerTooLong`; `ForeignWakePin` and `UartBusy` (the only `Platform` variant) added
+- 2026-10-12 — Implemented: `stoker::sleep::Error` + `SleepErrorKind`, eight new `SleepError` variants, `EspSleepError` replaces `anyhow` in `EspSleepManager`; `just verify`, `check-all`, `check-esp32`, `check-hal-c3` exit 0; device checks open

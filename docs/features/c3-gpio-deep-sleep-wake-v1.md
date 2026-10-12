@@ -40,15 +40,16 @@ Verified 2026-10-12 against ESP-IDF v5.3.3 headers: `SOC_GPIO_SUPPORT_DEEPSLEEP_
 
 ## State
 - [x] Design approved
-- [ ] `stoker`: chip mask constants, `validate_gpio_level_source_against`, `Gpio(mask)`, `try_sleep` on trait and `NoopSleepManager`
+- [x] `stoker`: chip mask constants, `validate_gpio_level_source_against`, `Gpio(mask)`, `try_sleep` on trait and `NoopSleepManager`
 - [ ] IDF tier: C3/C2 GPIO wake path, stale-mask handling, `Gpio(mask)` mapping, isolation rule per chip
 - [ ] `just check-c3` recipe, `.cargo/config.toml.dist` target, CI job
 - [ ] Example `idf_c3_deep_sleep_gpio` wakes on GPIO4, shows one rejected `try_sleep`, sleeps again; documents GPIO4 = MTMS (JTAG) and the pull against the wake level
 - [ ] Bench case `wake-pin-held-at-entry` on the C3 DevKitM-1: PIR held HIGH when `try_sleep` is called, expect `Err` with `kind() == Rejected` (ADR-001 § 5)
-- [ ] S3 claim fixed in `sleep.rs`, `esp_sleep.rs`, `docs/key-insights.md`
+- [x] S3 claim fixed in `sleep.rs`, `esp_sleep.rs`, `docs/key-insights.md`
 - [ ] Tests passing (`just verify`, `just check-c3`)
 - [ ] CHANGELOG `[Unreleased]`: Added (C3 wake, `try_sleep`) and Breaking (`WakeCause::Gpio(GpioWakeMask)`)
 
 ## Session Log
 - 2026-10-12 — Feature doc created via /feature dialog from the spookhouse request
 - 2026-10-12 — ADR-001 settles `try_sleep` as a required method, the reject error, wake-pin validity by chip constant, the GPIO4/JTAG note, the named bench case and the slept-time scope
+- 2026-10-12 — `stoker` part landed (gap 1 of the C3 bench plan): `try_sleep`, `NoopSleepManager::rejecting()`, `Gpio(GpioWakeMask)`, chip masks incl. C3 `0x3F`; IDF tier got `try_sleep` and the `Gpio(mask)` read (cfg `esp_idf_soc_gpio_support_deepsleep_wakeup`), not yet the C3 wake path
