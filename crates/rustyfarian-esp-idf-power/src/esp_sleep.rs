@@ -114,6 +114,8 @@ impl Default for EspSleepManager {
 }
 
 impl SleepManager for EspSleepManager {
+    type Error = anyhow::Error;
+
     /// Clear previous wake sources, configure new ones, and enter deep sleep.
     ///
     /// All previously registered wake sources are disabled first via
@@ -174,8 +176,9 @@ impl SleepManager for EspSleepManager {
                 }
                 WakeSource::GpioLevel { pin_mask, level } => {
                     // Delegate to the platform-independent validation helper.
-                    // The valid-bit check (0–21) is ESP32-S3-specific; see
-                    // `validate_gpio_level_source` in sleep.rs for the rationale.
+                    // The valid wake-pin mask is chip-specific (ESP32 vs ESP32-S3,
+                    // selected by the `esp32` cfg); see `validate_gpio_level_source`
+                    // in sleep.rs for the rationale.
                     validate_gpio_level_source(*pin_mask)?;
                     let mode = match level {
                         GpioWakeLevel::AnyHigh => {

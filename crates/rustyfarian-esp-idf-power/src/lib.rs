@@ -64,7 +64,7 @@
 pub use stoker::{
     BatteryConfig, BatteryMonitor, BatteryStatus, ChargingMonitor, ChargingSource, ChargingState,
     GpioWakeLevel, GpioWakeMask, NoopBatteryMonitor, NoopChargingMonitor, NoopSleepManager,
-    PowerSource, SleepManager, WakeCause, WakeCauseSource, WakeSource,
+    PowerSource, SleepError, SleepManager, WakeCause, WakeCauseSource, WakeSource,
 };
 
 mod esp_adc;

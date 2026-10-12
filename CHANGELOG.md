@@ -9,6 +9,18 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 
 ## [Unreleased]
 
+### Migration
+- **Breaking:** `stoker` is now `#![no_std]` unconditionally.
+- **Breaking:** `stoker::sleep::validate_gpio_level_source` and `stoker::sleep::validate_wake_sources` return `Result<(), stoker::SleepError>` instead of `anyhow::Result<()>`; the messages are available via `Display` and unchanged except for the out-of-range case, which now names the valid mask instead of a chip. `SleepError` is `Copy`, `#[non_exhaustive]` and implements `core::error::Error`, so `?` into `anyhow::Error` still works.
+- **Breaking:** `SleepManager` gains an associated `type Error: core::fmt::Debug`, and `sleep` returns `Result<(), Self::Error>`. Implementors add `type Error`; generic code bounds or names `S::Error`. `NoopSleepManager` uses `SleepError`; `EspSleepManager` uses `anyhow::Error`, so its call sites are unchanged.
+
+### Added
+- `stoker::SleepError`: `GpioMaskZero`, `GpioMaskOutOfRange { pin_mask, valid_mask }`, `MultipleTimers { count }`, `MultipleGpioLevel`; carrying `valid_mask` keeps the variant stable when the C3/C6 masks land.
+
+### Changed
+- `stoker` drops its `anyhow` dependency and now has no dependencies.
+- `rustyfarian-esp-idf-power` re-exports `SleepError`.
+
 ## [0.2.0] - 2026-09-26
 
 Downstream apps can now combine `rustyfarian-esp-idf-power` with the September 2026 sibling crates.

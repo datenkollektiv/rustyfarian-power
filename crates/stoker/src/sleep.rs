@@ -159,6 +159,63 @@ pub enum WakeSource {
     },
 }
 
+/// Errors returned by the platform-independent wake-source validation.
+///
+/// Returned by [`validate_gpio_level_source`], [`validate_wake_sources`] and
+/// [`NoopSleepManager`]'s [`SleepManager::sleep`].
+/// Platform implementations surface these through their own
+/// [`SleepManager::Error`] type (for example via `?` into `anyhow::Error`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SleepError {
+    /// A [`WakeSource::GpioLevel`] `pin_mask` was zero.
+    GpioMaskZero,
+    /// A [`WakeSource::GpioLevel`] `pin_mask` contains bits outside the
+    /// chip's RTC GPIO range.
+    GpioMaskOutOfRange {
+        /// The rejected mask.
+        pin_mask: u64,
+        /// The chip's valid wake-pin mask the rejected mask was checked against.
+        valid_mask: u64,
+    },
+    /// More than one [`WakeSource::Timer`] was supplied.
+    MultipleTimers {
+        /// Number of timer sources supplied.
+        count: usize,
+    },
+    /// More than one [`WakeSource::GpioLevel`] was supplied.
+    MultipleGpioLevel,
+}
+
+impl core::fmt::Display for SleepError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::GpioMaskZero => write!(f, "GpioLevel pin_mask must not be zero"),
+            Self::GpioMaskOutOfRange {
+                pin_mask,
+                valid_mask,
+            } => write!(
+                f,
+                "pin_mask 0x{:016x} contains bits outside the valid wake-pin mask 0x{:016x}",
+                pin_mask, valid_mask
+            ),
+            Self::MultipleTimers { count } => write!(
+                f,
+                "at most one Timer wake source is supported per sleep call; \
+                 {} were provided",
+                count
+            ),
+            Self::MultipleGpioLevel => write!(
+                f,
+                "at most one GpioLevel wake source is supported per sleep call; \
+                 combine multiple pins into a single pin_mask"
+            ),
+        }
+    }
+}
+
+impl core::error::Error for SleepError {}
+
 /// Validates the `pin_mask` field of a [`WakeSource::GpioLevel`] source.
 ///
 /// This is a pure function with no hardware or ESP-IDF dependency.
@@ -167,9 +224,9 @@ pub enum WakeSource {
 ///
 /// # Errors
 ///
-/// - `pin_mask == 0` — at least one pin must be specified.
-/// - `pin_mask` contains bits above position 21 — only RTC GPIOs 0–21 are
-///   valid for EXT1 wakeup on ESP32-S3.
+/// - [`SleepError::GpioMaskZero`] — at least one pin must be specified.
+/// - [`SleepError::GpioMaskOutOfRange`] — `pin_mask` contains bits outside the
+///   chip's valid wake-pin mask; the error carries that mask as `valid_mask`.
 ///
 /// # Target specificity
 ///
@@ -186,24 +243,21 @@ pub enum WakeSource {
 /// `build.rs` sets the cfg matching the actual chip. Host tests therefore validate
 /// the S3 boundary logic; the ESP32 mask is covered by the on-target build
 /// (`just check-esp32`).
-pub fn validate_gpio_level_source(pin_mask: u64) -> anyhow::Result<()> {
+pub fn validate_gpio_level_source(pin_mask: u64) -> Result<(), SleepError> {
     if pin_mask == 0 {
-        anyhow::bail!("GpioLevel pin_mask must not be zero");
+        return Err(SleepError::GpioMaskZero);
     }
 
     #[cfg(esp32)]
-    let (valid_mask, chip_name, range_desc) = (0xFF0E00F015u64, "ESP32", "");
+    let valid_mask = 0xFF0E00F015u64;
     #[cfg(not(esp32))] // Default to S3 logic for S3 chip and for host tests
-    let (valid_mask, chip_name, range_desc) = ((1u64 << 22) - 1, "ESP32-S3", "0–21");
+    let valid_mask = (1u64 << 22) - 1;
 
     if pin_mask & !valid_mask != 0 {
-        anyhow::bail!(
-            "pin_mask 0x{:016x} contains bits outside RTC GPIO range {} \
-             ({} EXT1 limit)",
+        return Err(SleepError::GpioMaskOutOfRange {
             pin_mask,
-            range_desc,
-            chip_name
-        );
+            valid_mask,
+        });
     }
     Ok(())
 }
@@ -216,29 +270,24 @@ pub fn validate_gpio_level_source(pin_mask: u64) -> anyhow::Result<()> {
 ///
 /// # Errors
 ///
-/// - More than one `WakeSource::Timer` — ESP-IDF supports only one timer source.
-/// - More than one `WakeSource::GpioLevel` — combine multiple pins into one mask.
-pub fn validate_wake_sources(sources: &[WakeSource]) -> anyhow::Result<()> {
+/// - [`SleepError::MultipleTimers`] — more than one `WakeSource::Timer`;
+///   ESP-IDF supports only one timer source.
+/// - [`SleepError::MultipleGpioLevel`] — more than one `WakeSource::GpioLevel`;
+///   combine multiple pins into one mask.
+pub fn validate_wake_sources(sources: &[WakeSource]) -> Result<(), SleepError> {
     let timer_count = sources
         .iter()
         .filter(|s| matches!(s, WakeSource::Timer { .. }))
         .count();
     if timer_count > 1 {
-        anyhow::bail!(
-            "at most one Timer wake source is supported per sleep call; \
-             {} were provided",
-            timer_count
-        );
+        return Err(SleepError::MultipleTimers { count: timer_count });
     }
     let gpio_level_count = sources
         .iter()
         .filter(|s| matches!(s, WakeSource::GpioLevel { .. }))
         .count();
     if gpio_level_count > 1 {
-        anyhow::bail!(
-            "at most one GpioLevel wake source is supported per sleep call; \
-             combine multiple pins into a single pin_mask"
-        );
+        return Err(SleepError::MultipleGpioLevel);
     }
     Ok(())
 }
@@ -255,6 +304,15 @@ pub fn validate_wake_sources(sources: &[WakeSource]) -> anyhow::Result<()> {
 /// Use [`WakeCauseSource`] at the start of `main()` to determine why the
 /// device woke.
 pub trait SleepManager {
+    /// Error returned when pre-sleep configuration fails.
+    ///
+    /// An associated type rather than [`SleepError`] because platform
+    /// implementations must surface their own failures (FFI error codes,
+    /// driver state) alongside validation errors.
+    /// [`NoopSleepManager`] uses [`SleepError`]; `EspSleepManager` uses
+    /// `anyhow::Error`.
+    type Error: core::fmt::Debug;
+
     /// Configure the requested wake sources and enter sleep.
     ///
     /// # Errors
@@ -263,7 +321,7 @@ pub trait SleepManager {
     /// A failure here is operationally critical — do not continue running on
     /// battery if sleep cannot be entered, as the device will drain the battery.
     #[must_use = "sleep configuration errors must be handled — ignoring them may drain the battery"]
-    fn sleep(&mut self, sources: &[WakeSource]) -> anyhow::Result<()>;
+    fn sleep(&mut self, sources: &[WakeSource]) -> Result<(), Self::Error>;
 }
 
 /// Reads the reason the device last woke from sleep.
@@ -326,7 +384,9 @@ impl NoopSleepManager {
 }
 
 impl SleepManager for NoopSleepManager {
-    fn sleep(&mut self, sources: &[WakeSource]) -> anyhow::Result<()> {
+    type Error = SleepError;
+
+    fn sleep(&mut self, sources: &[WakeSource]) -> Result<(), SleepError> {
         validate_wake_sources(sources)
     }
 }
@@ -340,6 +400,7 @@ impl WakeCauseSource for NoopSleepManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::string::ToString;
 
     #[test]
     fn noop_sleep_returns_ok() {
@@ -443,6 +504,7 @@ mod tests {
             WakeSource::Timer { duration_ms: 2000 },
         ])
         .unwrap_err();
+        assert_eq!(err, SleepError::MultipleTimers { count: 2 });
         assert!(
             err.to_string().contains("at most one Timer"),
             "unexpected: {err}"
@@ -462,6 +524,7 @@ mod tests {
             },
         ])
         .unwrap_err();
+        assert_eq!(err, SleepError::MultipleGpioLevel);
         assert!(
             err.to_string().contains("combine multiple pins"),
             "unexpected: {err}"
@@ -485,6 +548,7 @@ mod tests {
     #[test]
     fn validate_gpio_level_source_rejects_zero_mask() {
         let err = validate_gpio_level_source(0).unwrap_err();
+        assert_eq!(err, SleepError::GpioMaskZero);
         assert!(
             err.to_string().contains("must not be zero"),
             "unexpected error: {err}"
@@ -495,8 +559,15 @@ mod tests {
     fn validate_gpio_level_source_rejects_bit_22() {
         // Bit 22 is one past the ESP32-S3 RTC GPIO range (0–21).
         let err = validate_gpio_level_source(1u64 << 22).unwrap_err();
+        assert_eq!(
+            err,
+            SleepError::GpioMaskOutOfRange {
+                pin_mask: 1u64 << 22,
+                valid_mask: (1u64 << 22) - 1,
+            }
+        );
         assert!(
-            err.to_string().contains("outside RTC GPIO range"),
+            err.to_string().contains("outside the valid wake-pin mask"),
             "unexpected error: {err}"
         );
     }
@@ -504,8 +575,15 @@ mod tests {
     #[test]
     fn validate_gpio_level_source_rejects_high_bits() {
         let err = validate_gpio_level_source(1u64 << 63).unwrap_err();
+        assert_eq!(
+            err,
+            SleepError::GpioMaskOutOfRange {
+                pin_mask: 1u64 << 63,
+                valid_mask: (1u64 << 22) - 1,
+            }
+        );
         assert!(
-            err.to_string().contains("outside RTC GPIO range"),
+            err.to_string().contains("outside the valid wake-pin mask"),
             "unexpected error: {err}"
         );
     }
@@ -524,5 +602,44 @@ mod tests {
     #[test]
     fn validate_gpio_level_source_accepts_multi_pin_mask() {
         assert!(validate_gpio_level_source(1u64 << 4 | 1u64 << 7 | 1u64 << 21).is_ok());
+    }
+
+    // --- SleepError tests ---
+
+    #[test]
+    fn sleep_error_display_preserves_messages() {
+        assert_eq!(
+            SleepError::GpioMaskZero.to_string(),
+            "GpioLevel pin_mask must not be zero"
+        );
+        assert_eq!(
+            SleepError::GpioMaskOutOfRange {
+                pin_mask: 1u64 << 22,
+                valid_mask: (1u64 << 22) - 1,
+            }
+            .to_string(),
+            "pin_mask 0x0000000000400000 contains bits outside the valid wake-pin mask 0x00000000003fffff"
+        );
+        assert_eq!(
+            SleepError::MultipleTimers { count: 3 }.to_string(),
+            "at most one Timer wake source is supported per sleep call; 3 were provided"
+        );
+        assert_eq!(
+            SleepError::MultipleGpioLevel.to_string(),
+            "at most one GpioLevel wake source is supported per sleep call; \
+             combine multiple pins into a single pin_mask"
+        );
+    }
+
+    #[test]
+    fn noop_sleep_rejects_with_sleep_error() {
+        let mut mgr = NoopSleepManager::default();
+        let err = mgr
+            .sleep(&[
+                WakeSource::Timer { duration_ms: 1 },
+                WakeSource::Timer { duration_ms: 2 },
+            ])
+            .unwrap_err();
+        assert_eq!(err, SleepError::MultipleTimers { count: 2 });
     }
 }
