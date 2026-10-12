@@ -70,3 +70,33 @@ Fix: don't chase it with thresholds — document the behaviour, or tap STAT to G
 The board's primary console is UART0 with `CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG=y`; ESP-IDF logging writes via `esp_rom_printf` straight to UART, but Rust stdout writes are swallowed and `flush()` does not help.
 The original ESP32 (Feather V2) has no second console, so `println!` happens to work there — which masks the problem until the first S3 example.
 Fix: in examples, route output through `esp_idf_hal::sys::esp_rom_printf` (e.g. a tiny `log::Log` impl forwarding to it) — no `esp-idf-svc` dependency needed. This is also why the library's `log::debug!`/`warn!` diagnostics are invisible by default: nothing installs a `log` logger.
+
+---
+
+## esp-hal tier (esp-hal 1.2.2)
+
+**A sleep manager that borrows `&mut Input` wake pins must give the pins their own lifetime, not the manager's `LowPower<'d>` lifetime.**
+`&mut Input<'d>` is invariant in `'d`, so `&mut [&mut Input<'d>]` with the manager's `'d` fails with "lifetime may not live long enough" once the manager and the pin come from different scopes.
+Fix: add a separate `'i` parameter, as in `pins: &'a mut [&'p mut Input<'i>]`.
+`Input` has no public pin-number method; use `peripheral_input().gpio_number()`.
+See `docs/adr/001-hal-neutral-sleep-contract.md` § 2.
+
+**A rejected `sleep_deep_with_rejection` overwrites the boot's wake record, so `caused_wakeup()` read after a rejection no longer names the pin that woke the chip.**
+Sleep entry clears the per-pin wake status, and the rejected sleep then runs `record_wakeup()` again.
+Fix: capture the wake cause and its pin mask at boot, before the first `try_sleep`.
+Not yet bench-confirmed on the C3; bench case `wake-cause-survives-rejection` in ADR-001 § 5.
+
+**A custom esp-hal GPIO handler that calls `unlisten()` on a wake pin silently removes it from the deep-sleep wake set.**
+`Input::listen` enables the CPU interrupt immediately, so a pin already at its wake level runs the handler before sleep entry.
+`unlisten()` clears the pin's `listening` record and `int_type`, sleep entry then drops the GPIO source, and with no timer armed `sleep_deep` panics on "no wakeup source".
+The default `rt` handler is safe: it clears only `int_ena` and keeps the wake condition.
+Fix: arm, sleep and clean up inside `critical_section::with`; found by code reading, bench case `held-level-custom-handler` in ADR-001 § 4b.
+
+**esp-hal 1.2.2 drains the UART TX FIFOs inside sleep entry, after both deadline checks, so a short sleep timer can expire before the chip sleeps.**
+`sleep_uart_prepare` runs after `sleep_deep`'s `deadline_missed` assert; on the C3 it spins until the 128-byte FIFO is empty and the transmitter idle, about 11 ms per full FIFO at 115200 baud.
+Masking interrupts does not shorten the wait, and with `sleep_deep_with_rejection` a deadline missed there is a sleep that never ends.
+Fix: inside the critical section, wait for every UART to drain before arming the deadline; see ADR-001 § 4c.
+
+**esp-hal 1.2.2 writes the sleep deadline into a 48-bit RTC comparator and silently drops the higher bits.**
+An oversized timer passes `u64` µs arithmetic and programs a different deadline (`sleep/timer.rs` `arm`).
+Fix: cap requests in software (`MAX_TIMER_MS`); see ADR-001 § 4a.
