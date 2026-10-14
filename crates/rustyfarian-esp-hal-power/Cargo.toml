@@ -49,5 +49,10 @@ rt = ["esp-hal/rt"]
 
 [dependencies]
 stoker = { workspace = true }
+
+# Bare-metal only. The workspace default target (and so the IDE's) is
+# `xtensa-esp32s3-espidf`, where `xtensa-lx-rt`'s build script (via esp-hal)
+# panics with "Unsupported target"; gating keeps IDE workspace builds green.
+[target.'cfg(target_os = "none")'.dependencies]
 esp-hal = { workspace = true }
 critical-section = { workspace = true }
