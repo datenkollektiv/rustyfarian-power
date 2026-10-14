@@ -81,6 +81,12 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 - `just check-c3`, the C3 target in `.cargo/config.toml.dist`, and a `check-c3` CI job.
 - Bench runbook `docs/bench/c3-idf-pir-bench-steps-v1.md` for the P0 cases a real PIR can drive.
 - `rustyfarian-esp-hal-power` crate scaffold: the bare-metal (`no_std`, esp-hal `=1.2.2`, MSRV 1.95) hardware tier, with four mutually exclusive chip features (`esp32c3` default, `esp32c6`, `esp32`, `esp32s3`) enforced by `compile_error!`, plus `unstable` and `rt`; re-exports `stoker`. No drivers yet; the sleep module lands first.
+- `rustyfarian-esp-hal-power::sleep` for the ESP32-C3 and ESP32-S3 (ADR-001): `EspHalSleepManager` owns only `LPWR`; `bind_wake_pins(&mut [&mut Input])` returns a `BoundSleep` that implements `SleepManager` with `type Error = stoker::SleepError`; `EspHalWakeCauseSource::capture(&[&Input])` reads the wake cause at boot. The whole request is validated before any pin or deadline is touched; arming, sleep and post-rejection cleanup run in one critical section; UART TX is drained before arming; listening wake pads outside the binding are refused with `ForeignWakePin`. Replaces the compile-only ADR-001 spike.
+- ESP32-S3 wake causes are normalised per chip: an EXT1 wake reports `WakeCause::Ext1(mask)` on both tiers (the C3 reports `Gpio(mask)`). Hardware-validated on the CrowPanel 1.28" ESP32-S3 on both tiers: touch wake on GPIO5, timer wake, and `Rejected` for an EXT1 level held at entry (the S3 needs no pre-sleep level check, unlike the C2/C3).
+- Examples `idf_s3_deep_sleep_gpio` and `hal_s3_deep_sleep_gpio` (CrowPanel 1.28" ESP32-S3, CST816S touch INT on GPIO5 plus a 60 s timer): both power the touch controller (`LCD_3V3` on GPIO1, reset on GPIO13) and hold it through deep sleep, print the wake cause, and retry a rejected sleep.
+- `rustyfarian-esp-hal-power` feature `examples` (`rt` plus the optional `esp-bootloader-esp-idf =0.6.0` and `esp-println =0.18.0`, the versions the sibling repos pin).
+- `just build-example-hal-s3` and `run-hal-s3`; `check-hal` and `clippy-hal` also build the S3 example; the example scripts accept the `s3` chip; `[target.xtensa-esp32s3-none-elf]` in `.cargo/config.toml.dist`.
+- Bench record `docs/bench/s3-crowpanel-touch-sleep-bench-steps-v1.md`.
 - `stoker::sleep::Error` (`Debug` + `kind()`, the embedded-hal 1.0 shape, no `core::error::Error` bound) and `SleepErrorKind` (`InvalidConfig`, `Unsupported`, `Rejected`, `Platform`, `Other`; `#[non_exhaustive]`, `Copy`), both re-exported at the crate root; `SleepError` implements it.
 - `stoker::SleepError` variants for the 0.3.0 contract: `NoWakeSource`, `Rejected`, `TimerTooShort { duration_ms, min_ms }`, `TimerTooLong { duration_ms, max_ms }`, `PinNotBound { pin }`, `ForeignWakePin { pin }`, `UartBusy { uart }` (kind `Platform`), `IsolationConflict`.
 - `SleepManager::try_sleep`: rejection-aware deep sleep. `EspSleepManager` implements it over `esp_deep_sleep_try_to_start()` and reports a rejection as `EspSleepError::Idf` with `kind() == Rejected`, mapped by call site because `ESP_ERR_SLEEP_REJECT` aliases `ESP_ERR_INVALID_STATE`. `NoopSleepManager::rejecting()` returns `SleepError::Rejected` from `try_sleep`, so retry paths are host-testable.
@@ -99,6 +105,7 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 - `GpioWakeMask::contains_pin` returns `false` for `pin >= 64` instead of overflowing the shift.
 - `EspSleepManager` validates every `GpioLevel` mask before the first ESP-IDF call, so a validation error leaves the wake configuration untouched.
 - Docs: the deep-sleep GPIO wakeup (`esp_deep_sleep_enable_gpio_wakeup`) is a C3/C6 feature, not S3 as previously stated.
+- ADR-001 (HAL-neutral sleep contract) is widened from the C3 to the C3 and S3, with the S3 path allocation, pad isolation and bench results in § 6.
 
 ## [0.2.0] - 2026-09-26
 

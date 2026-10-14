@@ -6,9 +6,17 @@ It implements the traits of the platform-agnostic [`stoker`](../stoker) crate on
 
 ## Status
 
-Scaffold: no drivers yet.
-The sleep module lands first, see [esp-hal-sleep-tier-v1](../../docs/features/esp-hal-sleep-tier-v1.md).
-ADC battery monitoring and charging detection follow, see [esp-hal-parity-v1](../../docs/features/esp-hal-parity-v1.md).
+The `sleep` module (deep sleep with GPIO and timer wake) exists for ESP32-C3 and ESP32-S3, see [esp-hal-sleep-tier-v1](../../docs/features/esp-hal-sleep-tier-v1.md).
+ADC battery monitoring and charging detection are pending, see [esp-hal-parity-v1](../../docs/features/esp-hal-parity-v1.md).
+
+## Sleep
+
+`EspHalSleepManager` owns only the `LPWR` peripheral; the firmware keeps its wake pins.
+`bind_wake_pins(&mut [&mut pin])` borrows them for one attempt and returns a `BoundSleep` that implements `stoker::SleepManager`.
+`EspHalWakeCauseSource::capture` reads the wake cause at boot, before the first `try_sleep`.
+The wake cause is `Gpio(mask)` on the C3 and `Ext1(mask)` on the S3, the same as the ESP-IDF tier.
+Firmware binaries need esp-hal's `rt` feature for the critical-section implementation.
+The module documentation covers wake pads, pulls, and the interrupt contract.
 
 ## Chip features
 

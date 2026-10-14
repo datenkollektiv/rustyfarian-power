@@ -36,3 +36,7 @@ esp-hal = { version = "=1.2.2" }
 # The hal sleep path arms wake pins and enters sleep with interrupts masked; esp-hal
 # (default `rt`) provides the implementation, the crate only calls `critical_section::with`.
 critical-section = "1.2"
+# Example-only support for the hal tier (`examples` feature): the IDF-bootloader app descriptor
+# and serial output. Versions as in rustyfarian-ws2812; chip features are forwarded by the crate.
+esp-bootloader-esp-idf = { version = "=0.6.0", default-features = false }
+esp-println = { version = "=0.18.0", default-features = false }

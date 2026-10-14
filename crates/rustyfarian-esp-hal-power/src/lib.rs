@@ -9,12 +9,11 @@
 //! Everything public in [`stoker`] is re-exported here, so firmware needs a
 //! single import once drivers exist.
 //!
-//! # Status — scaffold
+//! # Status
 //!
-//! No drivers yet. The crate is a thin re-export of [`stoker`] with the chip
-//! features and the `esp-hal` dependency already in place. The sleep module
-//! lands first (`docs/features/esp-hal-sleep-tier-v1.md`), followed by the ADC
-//! battery monitor and charging monitor (`docs/features/esp-hal-parity-v1.md`).
+//! The `sleep` module (deep sleep with GPIO and timer wake) exists for the ESP32-C3 and
+//! ESP32-S3 (`docs/features/esp-hal-sleep-tier-v1.md`). The ADC battery monitor and charging
+//! monitor are still pending (`docs/features/esp-hal-parity-v1.md`).
 //!
 //! # Chip features
 //!
@@ -55,6 +54,7 @@ compile_error!(
 #[doc(inline)]
 pub use stoker::*;
 
-// ADR-001 compile-only spike (not exported, C3 only); removed when the sleep module lands.
-#[cfg(all(feature = "esp32c3", target_os = "none"))]
-mod spike_pin_borrow;
+#[cfg(all(target_os = "none", any(feature = "esp32c3", feature = "esp32s3")))]
+pub mod sleep;
+#[cfg(all(target_os = "none", any(feature = "esp32c3", feature = "esp32s3")))]
+pub use sleep::{BoundSleep, EspHalSleepManager, EspHalWakeCauseSource};

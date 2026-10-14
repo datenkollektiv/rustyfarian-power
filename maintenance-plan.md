@@ -24,7 +24,8 @@ After any ESP-IDF crate bump, run:
 - `just check-all` for ESP32-S3 (`xtensa-esp32s3-espidf`, Heltec V3)
 - `just check-esp32` for ESP32 (`xtensa-esp32-espidf`, Feather V2)
 - `just clippy-all`
-- one `just build-example <name>` per chip: `idf_esp32s3_battery` and `idf_esp32_battery`
+- one `just build-example <name>` per chip: `idf_esp32s3_battery`, `idf_esp32_battery`, `idf_c3_deep_sleep_gpio` and `idf_s3_deep_sleep_gpio`
+- `just check-hal`, `just clippy-hal` and `just build-example-hal-s3 hal_s3_deep_sleep_gpio` for the esp-hal tier
 
 Device builds need the espup `esp` toolchain (`just setup-toolchain`) and `just setup-cargo-config`.
 `just doctor` reports both.
@@ -40,6 +41,15 @@ The run passes when:
 Before connecting any LiPo, meter its polarity first (see `docs/key-insights.md` § Hardware).
 With USB connected and no battery, both boards report a phantom charge; this is expected.
 Record "compile-verified only" honestly when no board is attached.
+
+| Board                         | Chip     | Examples                                           | Last bench                  |
+|:------------------------------|:---------|:---------------------------------------------------|:----------------------------|
+| Heltec WiFi LoRa 32 V3.1      | ESP32-S3 | `idf_esp32s3_battery`                              | see `docs/project-lore.md`  |
+| Adafruit ESP32 Feather V2     | ESP32    | `idf_esp32_battery`, `idf_esp32_chargeprobe`       | see `docs/project-lore.md`  |
+| ESP32-C3-DevKitM-1 + HC-SR501 | ESP32-C3 | `idf_c3_deep_sleep_gpio`                           | 2026-10-13, bench runbook   |
+| Elecrow CrowPanel 1.28" HMI   | ESP32-S3 | `idf_s3_deep_sleep_gpio`, `hal_s3_deep_sleep_gpio` | 2026-10-14, bench record    |
+
+The CrowPanel console is native USB-Serial-JTAG, which drops off the bus in deep sleep; flash a sleeping board from download mode (hold BOOT while plugging in).
 
 ## Dependency Updates
 

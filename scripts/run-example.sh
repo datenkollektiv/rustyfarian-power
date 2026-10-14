@@ -2,7 +2,7 @@
 set -euo pipefail
 # run-example.sh — build and flash an idf_{chip}_{name} example
 # Usage: scripts/run-example.sh <example> [idf_dir]
-#   example: idf_{chip}_{name}  e.g. idf_esp32_battery, idf_esp32s3_battery, idf_c3_deep_sleep_gpio
+#   example: idf_{chip}_{name}  e.g. idf_esp32_battery, idf_esp32s3_battery, idf_c3_deep_sleep_gpio, idf_s3_deep_sleep_gpio
 #   idf_dir: target directory for ESP-IDF builds (default: target/idf)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,6 +17,8 @@ fi
 example="$1"
 idf_dir="${2:-target/idf}"
 chip=$(printf '%s' "$example" | cut -d_ -f2)
+# `s3` is shorthand for `esp32s3` (idf_s3_*); the helper scripts below expect the long name.
+[ "$chip" = "s3" ] && chip="esp32s3"
 
 # Build the example first.
 "$SCRIPT_DIR/build-example.sh" "$example" "$idf_dir"
@@ -26,7 +28,7 @@ case "$chip" in
     esp32)   target="xtensa-esp32-espidf"   ;;
     esp32s3) target="xtensa-esp32s3-espidf" ;;
     c3)      target="riscv32imc-esp-espidf" ;;
-    *) printf 'Unknown chip "%s" in example "%s". Supported: esp32, esp32s3, c3\n' "$chip" "$example" >&2; exit 1 ;;
+    *) printf 'Unknown chip "%s" in example "%s". Supported: esp32, esp32s3, s3, c3\n' "$chip" "$example" >&2; exit 1 ;;
 esac
 
 # espflash names the chip esp32c3; the example prefix says c3.

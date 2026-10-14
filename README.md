@@ -82,16 +82,18 @@ The core modules (`config.rs`, `sleep.rs`) can be fully unit-tested on your lapt
 
 ## Examples
 
-Three hardware targets are supported.
+Four hardware targets are supported.
 See [docs/hardware-setup.md](docs/hardware-setup.md) for wiring diagrams, ADC configuration, and power budgets.
 
-| Board                     | Chip     | Example binary        | Run command                    |
-|:--------------------------|:---------|:----------------------|:-------------------------------|
-| Heltec WiFi LoRa 32 V3.1  | ESP32-S3 | `idf_esp32s3_battery` | `just run idf_esp32s3_battery` |
-| Adafruit ESP32 Feather V2 | ESP32    | `idf_esp32_battery`   | `just run idf_esp32_battery`   |
-| ESP32-C3-DevKitM-1        | ESP32-C3 | `idf_c3_deep_sleep_gpio` | `just run idf_c3_deep_sleep_gpio` |
+| Board                     | Chip     | Example binary                     | Run command                              |
+|:--------------------------|:---------|:-----------------------------------|:-----------------------------------------|
+| Heltec WiFi LoRa 32 V3.1  | ESP32-S3 | `idf_esp32s3_battery`              | `just run idf_esp32s3_battery`           |
+| Adafruit ESP32 Feather V2 | ESP32    | `idf_esp32_battery`                | `just run idf_esp32_battery`             |
+| ESP32-C3-DevKitM-1        | ESP32-C3 | `idf_c3_deep_sleep_gpio`           | `just run idf_c3_deep_sleep_gpio`        |
+| Elecrow CrowPanel 1.28"   | ESP32-S3 | `idf_s3_deep_sleep_gpio`           | `just run idf_s3_deep_sleep_gpio`        |
+| Elecrow CrowPanel 1.28"   | ESP32-S3 | `hal_s3_deep_sleep_gpio` (esp-hal) | `just run-hal-s3 hal_s3_deep_sleep_gpio` |
 
-The chip is inferred from the `idf_{chip}_{name}` prefix.
+The chip is inferred from the `idf_{chip}_{name}` prefix; the esp-hal example has its own `*-hal-s3` recipes.
 Connect the matching board before running — `espflash` will reject the binary if the wrong board is detected.
 
 **Heltec WiFi LoRa 32 V3** (ESP32-S3) — reads battery voltage on GPIO1 every 2 s:
@@ -118,6 +120,13 @@ just run idf_esp32_battery
 
 ```shell
 just run idf_c3_deep_sleep_gpio
+```
+
+**Elecrow CrowPanel 1.28" HMI** (ESP32-S3) — deep-sleeps until the CST816S touch INT on GPIO5 or a 60 s timer wakes it, on both tiers; the bench runbook is [docs/bench/s3-crowpanel-touch-sleep-bench-steps-v1.md](docs/bench/s3-crowpanel-touch-sleep-bench-steps-v1.md):
+
+```shell
+just run idf_s3_deep_sleep_gpio
+just run-hal-s3 hal_s3_deep_sleep_gpio
 ```
 
 ## Prerequisites
@@ -170,11 +179,11 @@ just pre-commit
 
 This repository publishes three crates, one per tier (see [release-plan.md](release-plan.md)):
 
-| Crate                                                           | Tier                         | Contents                                                                                                                                                                                                                                                                      | crates.io                                                                                                                         | Docs                                                                                                   |
-|:----------------------------------------------------------------|:-----------------------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------|
-| [`stoker`](crates/stoker)                                       | Pure / host-buildable        | `BatteryConfig`, `BatteryStatus`, `PowerSource`, the `BatteryMonitor` / `ChargingMonitor` / `SleepManager` / `WakeCauseSource` traits, `ChargingState`, `WakeCause` / `WakeSource`, sleep validation, and the `Noop*` host mocks. No ESP-IDF dependency; fully host-testable. | [![crates.io](https://img.shields.io/crates/v/stoker.svg)](https://crates.io/crates/stoker)                                       | [![docs.rs](https://img.shields.io/docsrs/stoker)](https://docs.rs/stoker)                             |
-| [`rustyfarian-esp-idf-power`](crates/rustyfarian-esp-idf-power) | ESP-IDF (std)                | `EspAdcBatteryMonitor`, `EspSleepManager`, `EspWakeCauseSource`, `EspChargingMonitor`, plus the hardware examples. Re-exports `stoker`'s surface, so firmware imports from one crate.                                                                                         | [![crates.io](https://img.shields.io/crates/v/rustyfarian-esp-idf-power.svg)](https://crates.io/crates/rustyfarian-esp-idf-power) | [![readme](https://img.shields.io/badge/docs-readme-blue)](crates/rustyfarian-esp-idf-power/README.md) |
-| [`rustyfarian-esp-hal-power`](crates/rustyfarian-esp-hal-power) | Bare-metal (esp-hal, no_std) | Scaffold: chip features `esp32c3` / `esp32c6` / `esp32` / `esp32s3`, re-exports `stoker`. The sleep module and ADC drivers land per [esp-hal-sleep-tier-v1](docs/features/esp-hal-sleep-tier-v1.md) and [esp-hal-parity-v1](docs/features/esp-hal-parity-v1.md).              | [![crates.io](https://img.shields.io/crates/v/rustyfarian-esp-hal-power.svg)](https://crates.io/crates/rustyfarian-esp-hal-power) | [![readme](https://img.shields.io/badge/docs-readme-blue)](crates/rustyfarian-esp-hal-power/README.md) |
+| Crate                                                           | Tier                         | Contents                                                                                                                                                                                                                                                                                                         | crates.io                                                                                                                         | Docs                                                                                                   |
+|:----------------------------------------------------------------|:-----------------------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------|
+| [`stoker`](crates/stoker)                                       | Pure / host-buildable        | `BatteryConfig`, `BatteryStatus`, `PowerSource`, the `BatteryMonitor` / `ChargingMonitor` / `SleepManager` / `WakeCauseSource` traits, `ChargingState`, `WakeCause` / `WakeSource`, sleep validation, and the `Noop*` host mocks. No ESP-IDF dependency; fully host-testable.                                    | [![crates.io](https://img.shields.io/crates/v/stoker.svg)](https://crates.io/crates/stoker)                                       | [![docs.rs](https://img.shields.io/docsrs/stoker)](https://docs.rs/stoker)                             |
+| [`rustyfarian-esp-idf-power`](crates/rustyfarian-esp-idf-power) | ESP-IDF (std)                | `EspAdcBatteryMonitor`, `EspSleepManager`, `EspWakeCauseSource`, `EspChargingMonitor`, plus the hardware examples. Re-exports `stoker`'s surface, so firmware imports from one crate.                                                                                                                            | [![crates.io](https://img.shields.io/crates/v/rustyfarian-esp-idf-power.svg)](https://crates.io/crates/rustyfarian-esp-idf-power) | [![readme](https://img.shields.io/badge/docs-readme-blue)](crates/rustyfarian-esp-idf-power/README.md) |
+| [`rustyfarian-esp-hal-power`](crates/rustyfarian-esp-hal-power) | Bare-metal (esp-hal, no_std) | Chip features `esp32c3` / `esp32c6` / `esp32` / `esp32s3`, re-exports `stoker`. The `sleep` module (`EspHalSleepManager`, `EspHalWakeCauseSource`) covers the C3 and S3 per [ADR-001](docs/adr/001-hal-neutral-sleep-contract.md); ADC drivers land per [esp-hal-parity-v1](docs/features/esp-hal-parity-v1.md). | [![crates.io](https://img.shields.io/crates/v/rustyfarian-esp-hal-power.svg)](https://crates.io/crates/rustyfarian-esp-hal-power) | [![readme](https://img.shields.io/badge/docs-readme-blue)](crates/rustyfarian-esp-hal-power/README.md) |
 
 > `rustyfarian-esp-idf-power` links to its crate README rather than docs.rs — `esp-idf-sys` cannot build in the docs.rs sandbox.
 

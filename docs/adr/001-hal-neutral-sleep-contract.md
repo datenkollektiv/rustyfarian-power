@@ -2,6 +2,7 @@
 
 ## Status
 Proposed (2026-10-12), revised after review rounds 1 and 2 (2026-10-12): § 4 rewritten, spike attempts 3 and 4 added.
+Amended 2026-10-14: scope widened to the ESP32-S3 (§ 6), knob request U4.
 Acceptance waits for the bench values of the timer constants in § 4c and the bench cases of § 4b-4d.
 
 Pinned to esp-hal `=1.2.2` (unstable sleep API) and ESP-IDF v5.3.3.
@@ -29,7 +30,7 @@ Its go/no-go gate is 2026-10-25 and this ADR is the first step of its longest de
 Three feature documents left questions to this ADR: `esp-hal-sleep-tier-v1` (pin ownership, esp-hal panics, re-arming), `embedded-hal-error-convention-v1` (kind variants, `core::error::Error` bound, `ESP_ERR_SLEEP_REJECT`) and `c3-gpio-deep-sleep-wake-v1` (which error covers rejection, wake-pin validity).
 All of it ships in the one breaking `SleepManager` change of 0.3.0.
 `stoker` stays `#![no_std]` with no dependencies.
-C3 first; C6, ESP32 and S3 sleep on esp-hal are out of scope here.
+C3 first; S3 follows (amended 2026-10-14); C6 and ESP32 sleep on esp-hal are out of scope here.
 
 ## Decision
 
@@ -53,8 +54,9 @@ pub trait SleepManager {
   The IDF tier passes `pin_mask` to `esp_deep_sleep_enable_gpio_wakeup` (C3/C6) or EXT1 (ESP32/S3/C6).
   The hal tier matches every set bit against the pins the firmware bound for the attempt (decision 2) via `peripheral_input().gpio_number()`, arms exactly those pins with `listen` and `apply_wakeup_config`, and reports a bit without a bound pin as `SleepError::PinNotBound { pin }`.
 - `WakeCauseSource::last_wake_cause(&self) -> WakeCause` stays a separate trait; `WakeCause::Gpio` becomes `Gpio(GpioWakeMask)` as decided in the C3 wake feature.
-  The hal tier provides `EspHalWakeCauseSource::capture(pins: &[&Input<'_>]) -> Self`, which reads `wakeup_cause()` once at boot: an empty set is `PowerOn`; `Gpio` builds the mask from `caused_wakeup()` on the pins handed in; `Timer` is `Timer`; anything else is `Other`.
-  Firmware must capture the cause before the first `try_sleep`: a rejected sleep ends with `record_wakeup()` after sleep entry cleared the per-pin wake status (`gpio/wakeup/mod.rs` `record_wakeup`, `per_pin.rs` `prepare_gpio_wakeup`), so the boot record is overwritten.
+  The hal tier normalises the wake cause per chip: on the C3, `wakeup_cause()` returns `WakeupSource::Gpio` and the mask is built from `caused_wakeup()`; on the S3, `wakeup_cause()` returns `WakeupSource::Ext1` (or `Ext0` → `WakeCause::Ext0`) and the mask is again built from `caused_wakeup()`, which reads the EXT1 status there (IDF also reports S3 Ext1 via `esp_sleep_get_ext1_wakeup_status`, so both tiers report the same variant per chip).
+  `EspHalWakeCauseSource::capture(pins: &[&Input<'_>]) -> Self` reads `wakeup_cause()` once at boot: an empty set is `PowerOn`; on the C3 `Gpio` builds the mask from `caused_wakeup()` on the pins handed in; on the S3 `Ext1` builds `Ext1(mask)` the same way; `Timer` is `Timer`; anything else is `Other`.
+  Firmware must capture the cause before the first `try_sleep`: a rejected sleep ends with `record_wakeup()` after sleep entry cleared the per-pin wake status, so the boot record is overwritten.
 - `NoopSleepManager` validates and returns `Ok(())` from both methods for host tests, and gains `NoopSleepManager::rejecting()` whose `try_sleep` returns `SleepError::Rejected`, so a consumer's retry path is host-testable.
 
 Rejected alternatives: a `WakeSource::Pin(&mut dyn WakePad)` variant with a `stoker` pad trait (puts a lifetime into `WakeSource`, makes it non-`Copy`, and adds a trait the IDF tier would implement for nothing); a default `try_sleep`; dropping `sleep` (fire-and-forget timer sleep is the common battery-logger case and costs nothing to keep).
@@ -242,6 +244,57 @@ Rejected alternatives:
 - A margin large enough to cover esp-hal's UART drain: the drain depends on queued bytes and baud rate, which the manager does not know (review round 2).
 - Arm only the bound pins and ignore foreign ones: esp-hal collects listening low-power pads globally, so a foreign pad still wakes or rejects the sleep (review round 2).
 - Snapshot and restore all pads: the manager cannot know their configuration either.
+
+### 6. ESP32-S3 (amended 2026-10-14)
+
+ESP32-S3 uses the same `SleepManager` trait and `bind_wake_pins` call as the C3; the implementation differs in pad topology and wake-source encoding.
+
+**Pad topology:**
+Low-power pads GPIO0–21 support wake sources on both tiers; the hal mask comes from `stoker::sleep::ESP32S3_WAKE_PIN_MASK` and is validated per-chip with `validate_gpio_level_source_against(mask, WAKE_PIN_MASK)` at the hal tier (`esp-metadata-generated` 0.5.3 `_generated_esp32s3.rs:6186-6207`).
+
+**Wake source allocation:**
+Path: `gpio/wakeup/ext1_v1.rs` (S3 `sleep.ext1_version = 1`).
+A single level group goes to EXT1; mixed levels spill one pin to EXT0 and the rest to per-pin wake, and any leftover keeps the LP peripherals powered (`keep_alive(LpPeripherals)`, `ext1_v1.rs:59`).
+`bind_wake_pins` is unchanged; the caller provides the same `&mut Input` pins.
+
+**Pads and cleanup:**
+Wake pads are held at entry level by `prepare_pad` / `pad_hold`, not isolated; `isolate_pads_for_deep_sleep` isolates only pads without an LP number (GPIO22+), which a rejected sleep does not restore.
+Pulls are copied from the GPIO config, none added.
+
+**Foreign-pin scan and UART:**
+GPIO0–21 scanned for foreign wake pins (same rule as C3).
+The UART drain covers UART0-2 on the S3 (UART0-1 on the C3), with the same v1 register names as esp-hal's `wait_for_suspended`.
+
+**Rejection and pre-check:**
+Reject mask includes RTC_EXT0_TRIG_EN and RTC_EXT1_TRIG_EN.
+Unlike the C3, the S3 hardware does reject a held EXT1 level; bench case H1-level (2026-10-14, CrowPanel 1.28" HMI) shows 675 consecutive `Rejected` in 34 s at the 50 ms retry, no boot loop.
+No pre-sleep level check is needed on the S3; the hal tier re-arms on each attempt and the hardware rejection prevents a boot loop.
+
+**Bench results (2026-10-14, firmware uncommitted on top of `ea40d22`, bench builds with extra logging; record in `docs/bench/s3-crowpanel-touch-sleep-bench-steps-v1.md`):**
+
+| Tier | Event                | Outcome                                          |
+|:-----|:---------------------|:-------------------------------------------------|
+| IDF  | cold boot            | PowerOn, GPIO5 HIGH after touch bring-up, sleeps |
+| IDF  | touch wake (3×)      | `Ext1 mask=0x20`                                 |
+| IDF  | timer (60 s)         | `Timer`                                          |
+| IDF  | finger held at entry | wake loop (6 wakes, INT pulses, no rejection)    |
+| IDF  | level held LOW       | 800+ `Rejected`, no boot loop                    |
+| hal  | cold boot            | PowerOn, HIGH, sleeps                            |
+| hal  | touch wake (3×)      | `Ext1 mask=0x20`                                 |
+| hal  | timer (60 s)         | `Timer`                                          |
+| hal  | finger held at entry | wake loop (6 wakes, 22:50:28-40)                 |
+| hal  | level held LOW       | 675 `Rejected` in 34 s, no boot loop             |
+
+The S3 hardware rejects a held EXT1 level on both tiers; no boot loop occurs on either.
+The wake loop with a resting finger reflects CST816S INT pulsing while touched, not a rejection gap.
+
+**Board facts:**
+CrowPanel 1.28" HMI ESP32-S3 (rev v0.2, 16 MB) uses LCD_3V3 (GPIO1) and CST816S RST (GPIO13); both held HIGH through deep sleep (IDF `gpio_hold_en` + `gpio_deep_sleep_hold_en`; hal: `RTC_CNTL_PAD_HOLD` via `LPWR::regs()`, since esp-hal 1.2.2 has no public pad-hold API).
+INT idles LOW when the controller is unpowered; while powered, it pulses during a resting touch, causing the wake loop.
+A knob firmware that must not loop should wait for touch release or reconfigure the CST816S IRQ mode (unverified which register).
+
+**Not covered:**
+`wake-cause-survives-rejection`, `short-timer-sweep`, `foreign-wake-pin`, `held-level-custom-handler` on the S3; deep-sleep current not measured.
 
 ### 5. Consumer follow-up points 2 to 4
 

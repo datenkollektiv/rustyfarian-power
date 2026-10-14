@@ -81,6 +81,38 @@ The hardware reason is not confirmed; the deep-sleep GPIO wake on the C3 may lat
 Fix: `EspSleepManager::try_sleep` on C2/C3 reads the wake pins right before sleep entry and returns `Rejected` itself.
 The read needs the pin configured as an input (`FUN_IE`; arming does not set it) and an external bias, and a pin that changes after the read still wakes the chip at once.
 
+
+## ESP-IDF tier — ESP32-S3 deep sleep (IDF v5.3.3)
+
+**On the ESP32-S3, `esp_deep_sleep_try_to_start` does reject a deep sleep whose EXT1 wake pin is already at its wake level, unlike the C3's GPIO wake.**
+With GPIO5 held LOW and `AnyLow` armed, every attempt logged `E sleep: Deep sleep request is rejected` and `try_sleep` returned `Rejected` (more than 800 in a row, no boot loop; CrowPanel 1.28", 2026-10-14).
+The C2/C3 pre-sleep level read in `EspSleepManager::try_sleep` is therefore not needed on the S3, and it stays gated to C2/C3.
+
+**On the CrowPanel 1.28" the CST816S touch INT (GPIO5) idles LOW until firmware enables the `LCD_3V3` rail (GPIO1) and releases touch reset (GPIO13).**
+A sleep example that only configures GPIO5 sees a permanently asserted wake pin and never sleeps.
+Fix: drive GPIO1 and GPIO13 HIGH (knob sequence: rail on, 20 ms, RST low 10 ms, high, 50 ms) and hold both through deep sleep: IDF `gpio_hold_en` plus `gpio_deep_sleep_hold_en`; esp-hal 1.2.2 has no public pad hold, so the hal example sets `RTC_CNTL_PAD_HOLD` `touch_pad1`/`touch_pad13` via `LPWR::regs()`.
+
+**A finger resting on the CrowPanel does not hold the CST816S INT LOW; INT pulses, so deep sleep with a touch wake loops instead of being rejected.**
+GPIO5 reads HIGH at each sleep entry, the S3 sleeps, and the next pulse wakes it within 0.3-0.6 s, on both tiers (bench H1, 2026-10-14).
+Firmware that must not loop while touched should wait for the touch to release before sleeping, or change the CST816S IRQ mode (register not verified).
+
+**The bench CrowPanel's USB-C reaches the S3's native USB-Serial-JTAG (`/dev/cu.usbmodem*`), not a CH340 as the knob docs say.**
+`esp-println` built with `uart` prints nowhere visible; use `auto` (or `jtag-serial`).
+Once the app spins in a tight `try_sleep` rejection loop, `espflash flash` cannot connect through the USB-JTAG reset; enter download mode by hand (hold BOOT, tap RST).
+
+---
+
+## Bench tooling — USB-Serial-JTAG boards
+
+**`espflash monitor` (4.3) cannot follow a USB-Serial-JTAG board across deep sleep without disturbing it.**
+The port vanishes in sleep and re-enumerates on wake, which ends the monitor, and every reattach syncs with the bootloader: `--before no-reset` and `--before no-reset-no-sync` (which also needs `--chip`) both fail with "Error while connecting to device" against a running app.
+Fix: read the port passively, for example with pyserial, and reopen it after each re-enumeration.
+
+**A pyserial reader that sets `dtr = False` and then `rts = False` resets an S3 on USB-Serial-JTAG, and the reattach turns that into a reset loop.**
+pyserial lowers DTR before RTS, so the line state passes through RTS=1 with DTR=0, which is the USB-Serial-JTAG chip-reset condition (`rst:0x15 (USB_UART_CHIP_RESET)`).
+The reset re-enumerates the port, the reader reopens it and resets the chip again, about every 0.8 s, and every boot reports `PowerOn` instead of the deep-sleep wake.
+Fix: leave DTR and RTS at their asserted open-time defaults.
+
 ---
 
 ## esp-hal tier (esp-hal 1.2.2)
