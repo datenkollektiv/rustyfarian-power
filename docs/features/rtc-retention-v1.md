@@ -6,7 +6,7 @@ desk-work: available
 # Feature: RTC Retention Record v1
 
 A validity-checked, `no_std`, allocation-free retention envelope in `stoker` with placement in both tiers, so a few words survive deep sleep and ordinary resets without each firmware writing its own magic-and-checksum record.
-Requested by rustbox-spookhouse (session id, report sequence, presence snapshot); request copy in `review-queue/rustyfarian-power-rtc-retention-v1.md`.
+Requested by rustbox-spookhouse (`docs/features/upstream-sleep-wake-requests-v1.md` in that repo, filed 2026-10-12).
 Verified 2026-10-12: the C3 has 8 KB RTC fast memory at `0x50000000` and IDF aliases `.rtc.data` onto it; `.rtc_noinit` is `NOLOAD`.
 
 ## Decisions
@@ -42,6 +42,18 @@ Verified 2026-10-12: the C3 has 8 KB RTC fast memory at `0x50000000` and IDF ali
 - Two payload types with equal `VERSION` and `SIZE` (for example `u32` and `i32`) load each other's bytes; the envelope cannot tell them apart.
 - The `.rtc.data` `static mut` recipe in `sleep.rs`, `esp_sleep.rs` and `docs/hardware-setup.md` is replaced by the envelope.
 
+## Consumer Requirements
+
+The rustbox-spookhouse firmware retains approximately 60 bytes across deep sleep:
+- Session id (`u32`) — generated per cold boot, mixes the MAC, a retained boot counter, and `esp_random`
+- Report sequence (`u32`) — incremented per transmitted report, not per boot
+- Encounter counter (`u32`) — counts PIR triggers in the current session
+- Pending report slot (`Option<PendingReport>`) — serialised report awaiting transmission
+- Session snapshot (`SessionState` from `tamer::presence`) — determines whether a watchdog reset restarts the warm-up period or resumes it
+
+The envelope must carry this payload through GPIO and timer wake events, software and watchdog resets (bonus), and be rejected cleanly after power-on or brownout so the receiver deduplicates on session id + sequence.
+`new_session_id()` cannot run at every boot because the RNG is weak with the radio off; it depends on the retained counter.
+
 ## Open Questions
 - [x] Fixed little-endian encoding, checksum algorithm, and whether an A/B slot pair is needed against torn writes — decided 2026-10-12, see Decisions.
 - [ ] Does `#[link_section = ".rtc_noinit.<name>"]` place a Rust static at or above `0x50000000` on the C3 (check the map file)?
@@ -63,3 +75,4 @@ Verified 2026-10-12: the C3 has 8 KB RTC fast memory at `0x50000000` and IDF ali
 - 2026-10-12 — `stoker` half landed: `retain.rs` (`Retained<N>`, `Retainable`, `Invalid`, `StoreError`, CRC-32), `reset.rs` (`ResetReason`, `ResetReasonSource`, `NoopResetReasonSource`), 32 host tests covering every acceptance case plus the CRC-32 check value; encoding and checksum decided; `sleep.rs` recipe replaced. IDF and esp-hal placement wait on the `check-c3` target and the hal crate scaffold.
 - 2026-10-12 — Consumer review (rustbox-spookhouse) applied: `RetainedCell` moved into `stoker`, `ResetReason::Panic` + `#[non_exhaustive]`, `store` clears the magic first; 12 more host tests (torn store, layout, 1 KB envelope, 10 k garbage records, cell behaviour). Hal-tier `Persistable` newtype noted under Constraints.
 - 2026-10-12 — Second review pass: `RetainedCell` docs gain an explicit concurrency contract and a `new()` vs `empty()` note; `reset.rs` carries the single `ResetReason` mapping table for IDF and esp-hal and states that `Panic` is best-effort (esp-hal reports `Software`); new integration test `tests/retention_boot_cycle.rs` drives a static cell through cold boot, ten sleep cycles, watchdog/software/panic/other resets and a brownout. Plain-data helper deferred (Open Questions).
+- 2026-10-14 — Folded spookhouse request into this doc; `Consumer Requirements` section captures payload composition (60 bytes, session id, sequence, counter, pending report, session snapshot) and cold-boot id generation contract; review-queue copies retired.

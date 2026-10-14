@@ -23,7 +23,7 @@ That contract is IDF-shaped: a `GpioLevel` source is a `pin_mask`, deep sleep is
 - A rejected deep sleep returns the wake pads to their drivers but not every other pad; esp-hal isolates digital pads at entry and cannot restore them (`sleep_deep_with_rejection` docs, `rtc_cntl/sleep/mod.rs:134-149`).
 - `Input` has no public pin-number method; the number is reachable as `Input::peripheral_input().gpio_number() -> Option<u8>` (`gpio/interconnect.rs:597`).
 
-Consumer input (rustbox-spookhouse, `review-queue/rustyfarian-power-sleep-wake-followup-v1.md`):
+Consumer input (rustbox-spookhouse follow-up, 2026-10-12):
 the firmware polls its PIR wake pin through `tamer` for the whole awake period and then sleeps on the same pin, so the hal manager must not own the pin.
 Its go/no-go gate is 2026-10-25 and this ADR is the first step of its longest dependency chain.
 
@@ -289,7 +289,8 @@ The S3 hardware rejects a held EXT1 level on both tiers; no boot loop occurs on 
 The wake loop with a resting finger reflects CST816S INT pulsing while touched, not a rejection gap.
 
 **Board facts:**
-CrowPanel 1.28" HMI ESP32-S3 (rev v0.2, 16 MB) uses LCD_3V3 (GPIO1) and CST816S RST (GPIO13); both held HIGH through deep sleep (IDF `gpio_hold_en` + `gpio_deep_sleep_hold_en`; hal: `RTC_CNTL_PAD_HOLD` via `LPWR::regs()`, since esp-hal 1.2.2 has no public pad-hold API).
+CrowPanel 1.28" HMI ESP32-S3 (rev v0.2, 16 MB) uses LCD_3V3 (GPIO1) and CST816S RST (GPIO13); both held HIGH through deep sleep (IDF `gpio_hold_en` + `gpio_deep_sleep_hold_en`; hal: `Output::set_pad_hold()` from esp-hal 1.2.2, unstable).
+A HAL-neutral pad-hold trait is deferred until the IDF tier needs a library API.
 INT idles LOW when the controller is unpowered; while powered, it pulses during a resting touch, causing the wake loop.
 A knob firmware that must not loop should wait for touch release or reconfigure the CST816S IRQ mode (unverified which register).
 

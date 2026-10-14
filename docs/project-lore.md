@@ -90,7 +90,7 @@ The C2/C3 pre-sleep level read in `EspSleepManager::try_sleep` is therefore not 
 
 **On the CrowPanel 1.28" the CST816S touch INT (GPIO5) idles LOW until firmware enables the `LCD_3V3` rail (GPIO1) and releases touch reset (GPIO13).**
 A sleep example that only configures GPIO5 sees a permanently asserted wake pin and never sleeps.
-Fix: drive GPIO1 and GPIO13 HIGH (knob sequence: rail on, 20 ms, RST low 10 ms, high, 50 ms) and hold both through deep sleep: IDF `gpio_hold_en` plus `gpio_deep_sleep_hold_en`; esp-hal 1.2.2 has no public pad hold, so the hal example sets `RTC_CNTL_PAD_HOLD` `touch_pad1`/`touch_pad13` via `LPWR::regs()`.
+Fix: drive GPIO1 and GPIO13 HIGH (knob sequence: rail on, 20 ms, RST low 10 ms, high, 50 ms) and hold both through deep sleep: IDF `gpio_hold_en` plus `gpio_deep_sleep_hold_en`; the hal example uses esp-hal's `Output::set_pad_hold` (unstable) on both outputs.
 
 **A finger resting on the CrowPanel does not hold the CST816S INT LOW; INT pulses, so deep sleep with a touch wake loops instead of being rejected.**
 GPIO5 reads HIGH at each sleep entry, the S3 sleeps, and the next pulse wakes it within 0.3-0.6 s, on both tiers (bench H1, 2026-10-14).
@@ -142,3 +142,8 @@ Fix: inside the critical section, wait for every UART to drain before arming the
 **esp-hal 1.2.2 writes the sleep deadline into a 48-bit RTC comparator and silently drops the higher bits.**
 An oversized timer passes `u64` µs arithmetic and programs a different deadline (`sleep/timer.rs` `arm`).
 Fix: cap requests in software (`MAX_TIMER_MS`); see ADR-001 § 4a.
+
+**esp-hal `Output::new`, `Input::new` and `Flex::new` release a pad hold before they drive the level, so a hold from the previous run does not survive re-creating the driver.**
+`init_gpio` disables the output driver and calls `set_pad_hold(false)` first, then `set_level` runs (`gpio/mod.rs:658-668`, `1728-1736`).
+On a wake boot the pad is therefore briefly undriven, and the rail is not glitch-free as a "drive, then release" reading suggests.
+Fix: call `Output::set_pad_hold(true)` again after re-creating the drivers (`gpio/mod.rs:857-866`, unstable), and expect the brief undriven window; the earlier raw-register version passed the bench 3/3, the `set_pad_hold` version is not yet re-benched.

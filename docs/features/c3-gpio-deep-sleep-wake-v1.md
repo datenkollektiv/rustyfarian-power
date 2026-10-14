@@ -6,8 +6,15 @@ desk-work: available
 # Feature: ESP32-C3 GPIO Deep-Sleep Wake v1
 
 Make `stoker` and `rustyfarian-esp-idf-power` serve the ESP32-C3, which has no EXT0/EXT1 and wakes from deep sleep via `esp_deep_sleep_enable_gpio_wakeup`.
-Requested by rustbox-spookhouse (PIR on GPIO4 wakes a battery prop); request copy in `review-queue/rustyfarian-power-c3-gpio-deep-sleep-wake-v1.md`.
+Requested by rustbox-spookhouse (PIR on GPIO4 wakes a battery prop; `docs/features/upstream-sleep-wake-requests-v1.md` in that repo, filed 2026-10-12).
 Verified 2026-10-12 against ESP-IDF v5.3.3 headers: `SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP` is C3/C6, not S3; the S3 claim in `sleep.rs`, `esp_sleep.rs` and `docs/key-insights.md` is wrong.
+
+## Consumer Requirements
+
+The firmware polls the PIR wake pin through `tamer` for the whole awake period and borrows it for sleep only, not handing it to the manager.
+[ADR-001 § 2](../adr/001-hal-neutral-sleep-contract.md) settles the pin lifetime design as `bind_wake_pins(&mut [&mut Input<'i>])` for each sleep attempt; the manager owns only `LowPower<'d>`, so `pir.is_high()` is callable again right after a rejected `try_sleep`.
+GPIO4 is JTAG TMS (`io_mux_reg.h:100`); the `idf_c3_deep_sleep_gpio` example documents that a PIR on GPIO4 disables JTAG debugging while the firmware runs.
+A held PIR returns `Rejected` from `try_sleep`: bench case `wake-pin-held-at-entry` (2026-10-13, C3 DevKitM-1 with HC-SR501) confirms 5 of 5 held wakes return `Rejected`, no boot loop.
 
 ## Decisions
 |                                                                                                                                Decision | Reason                                                                                                                              | Rejected Alternative                                                          |
@@ -84,3 +91,4 @@ Moved here from the `esp_sleep.rs` module docs, which describe only the API beha
   This contradicts ADR-001 § 2 and § 5 for GPIO on the C3; the ADR and the example's retry loop need a decision before acceptance.
 - 2026-10-13 — `try_sleep` on C2/C3 now reads the input-enabled wake pins before sleep entry and returns `Rejected` itself.
   Bench re-run: H1 passes (5 of 5 held wakes rejected, no boot loop); H4 loop behaviour passes, highest count 80 of the planned 1000.
+- 2026-10-14 — Folded the spookhouse request and follow-up into this doc (consumer requirements context, GPIO4 JTAG note, bench case H1 summary); review-queue copy retired.

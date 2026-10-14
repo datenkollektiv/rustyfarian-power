@@ -34,7 +34,6 @@ esp_bootloader_esp_idf::esp_app_desc!();
 use esp_hal::{
     delay::Delay,
     gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull},
-    peripherals::LPWR,
     rtc_cntl::{reset_reason, SocResetReason},
     system::Cpu,
 };
@@ -53,27 +52,16 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-/// Latches GPIO1 (`LCD_3V3` enable, touch pad 1) and GPIO13 (CST816S reset, touch pad 13) at
-/// their current level, through deep sleep.
-///
-/// esp-hal 1.2.2 has no public pad hold, so this writes `RTC_CNTL_PAD_HOLD`, the register esp-hal
-/// itself uses to hold wake pads.
-fn set_touch_pads_held(held: bool) {
-    LPWR::regs()
-        .pad_hold()
-        .modify(|_, w| w.touch_pad1().bit(held).touch_pad13().bit(held));
-}
-
 #[esp_hal::main]
 fn main() -> ! {
     let peripherals = esp_hal::init(esp_hal::Config::default());
     let delay = Delay::new();
 
-    // Touch power: drive the levels before releasing the hold so the rail does not glitch
-    // after a wake; only a cold boot gets the reset pulse. The drivers live until sleep.
-    let _lcd_rail = Output::new(peripherals.GPIO1, Level::High, OutputConfig::default());
+    // Touch power: `Output::new` releases any pad hold from the previous run and then drives the
+    // level, so the pads are briefly undriven on a wake boot. Only a cold boot gets the reset
+    // pulse. The hold is re-armed once the pulse is done; the drivers live until sleep.
+    let mut lcd_rail = Output::new(peripherals.GPIO1, Level::High, OutputConfig::default());
     let mut touch_rst = Output::new(peripherals.GPIO13, Level::High, OutputConfig::default());
-    set_touch_pads_held(false);
     if reset_reason(Cpu::ProCpu) != Some(SocResetReason::CoreDeepSleep) {
         delay.delay_millis(20);
         touch_rst.set_low();
@@ -81,7 +69,8 @@ fn main() -> ! {
         touch_rst.set_high();
         delay.delay_millis(50);
     }
-    set_touch_pads_held(true);
+    lcd_rail.set_pad_hold(true);
+    touch_rst.set_pad_hold(true);
 
     // The CST816S drives INT; the knob reads it without a pull, and so does this example.
     let mut touch_int = Input::new(
