@@ -47,6 +47,10 @@ check:
 check-all:
     CARGO_TARGET_DIR="{{ idf_dir }}" cargo check
 
+# check every workspace member against the default target, as the IDE does (requires espup)
+check-ide:
+    cargo check --workspace
+
 # check the ESP-IDF power crate for the ESP32 target (Adafruit Feather V2, requires espup)
 check-esp32:
     MCU=esp32 CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p rustyfarian-esp-idf-power --target {{ esp32_target }}
