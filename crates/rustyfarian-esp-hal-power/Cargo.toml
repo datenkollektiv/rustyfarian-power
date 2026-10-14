@@ -37,15 +37,20 @@ default = ["esp32c3", "unstable"]
 # ── Chip features ────────────────────────────────────────────────────────────
 #
 # Each selects the matching chip in esp-hal. Exactly one must be enabled.
-esp32c3 = ["esp-hal/esp32c3"] # RISC-V, riscv32imc-unknown-none-elf
-esp32c6 = ["esp-hal/esp32c6"] # RISC-V, riscv32imac-unknown-none-elf
-esp32 = ["esp-hal/esp32"] # Xtensa LX6, xtensa-esp32-none-elf
-esp32s3 = ["esp-hal/esp32s3"] # Xtensa LX7, xtensa-esp32s3-none-elf
+esp32c3 = ["esp-hal/esp32c3", "esp-bootloader-esp-idf?/esp32c3", "esp-println?/esp32c3"] # RISC-V, riscv32imc-unknown-none-elf
+esp32c6 = ["esp-hal/esp32c6", "esp-bootloader-esp-idf?/esp32c6", "esp-println?/esp32c6"] # RISC-V, riscv32imac-unknown-none-elf
+esp32 = ["esp-hal/esp32", "esp-bootloader-esp-idf?/esp32", "esp-println?/esp32"] # Xtensa LX6, xtensa-esp32-none-elf
+esp32s3 = ["esp-hal/esp32s3", "esp-bootloader-esp-idf?/esp32s3", "esp-println?/esp32s3"] # Xtensa LX7, xtensa-esp32s3-none-elf
 
 # esp-hal gates ADC and the sleep API behind `unstable`; `rt` pulls in the
 # runtime/interrupt vectoring that firmware binaries need.
 unstable = ["esp-hal/unstable"]
 rt = ["esp-hal/rt"]
+
+# Pulls in the example-only dependencies: the IDF-bootloader app descriptor and serial output.
+# `esp-println/auto` prints on USB-Serial-JTAG when a host is attached, else on UART0, so the
+# example works whether the board's USB-C reaches the S3's native USB or a USB-UART bridge.
+examples = ["rt", "dep:esp-bootloader-esp-idf", "dep:esp-println"]
 
 [dependencies]
 stoker = { workspace = true }
@@ -56,3 +61,9 @@ stoker = { workspace = true }
 [target.'cfg(target_os = "none")'.dependencies]
 esp-hal = { workspace = true }
 critical-section = { workspace = true }
+esp-bootloader-esp-idf = { workspace = true, optional = true }
+esp-println = { workspace = true, optional = true, features = ["auto"] }
+
+[[example]]
+name = "hal_s3_deep_sleep_gpio"
+required-features = ["esp32s3", "unstable", "examples"]

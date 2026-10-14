@@ -37,7 +37,7 @@ Facts verified 2026-10-12 against esp-hal 1.2.2 in the cargo registry (`sleep_de
 - Wake pins need a pull against the wake level; esp-hal adds none and a floating pad wakes immediately.
 - `WakeCause::Gpio(mask)` is assembled from `caused_wakeup()` on the registered pins; the mask shape comes from the C3 wake feature.
 - Depends on the hal crate scaffold from parity v1 and on `stoker` being `no_std` with its error enum.
-- Light sleep, async sleep, PM locks, ULP, and S3/ESP32 sleep on esp-hal are out of scope.
+- Light sleep, async sleep, PM locks, ULP, and ESP32/C6 sleep on esp-hal are out of scope; the S3 joined via the knob request U4.
 
 ## Open Questions
 - [x] Does the hal manager borrow `&mut Input` wake pins at sleep time, or own them? Borrow per attempt; spike in `src/spike_pin_borrow.rs`, ADR-001 § 2 (the pin lifetime must be its own parameter, not the manager's `'d`).
@@ -51,7 +51,7 @@ Facts verified 2026-10-12 against esp-hal 1.2.2 in the cargo registry (`sleep_de
 - [x] ADR-001 review round 2 applied: timer maximum, UART drain before arming, foreign-wake-pin rule (spike attempt 4, `just check-hal-c3` exit 0)
 - [ ] ADR-001 accepted (after the bench sets the timer constants and passes the § 4b-4d cases)
 - [ ] Three esp-rs issues filed (GPIO light-sleep-only doc, `rtc_fastmem_pd_en` unused on C3, C3 metadata lists Touch/Ulp)
-- [ ] `rustyfarian-esp-hal-power` sleep module: `SleepManager`, `WakeCauseSource`, `try_sleep`
+- [x] `rustyfarian-esp-hal-power` sleep module: `SleepManager`, `WakeCauseSource`, `try_sleep` (C3 and S3, 2026-10-14; S3 bench in [esp32s3-deep-sleep-gpio-wake-v1](esp32s3-deep-sleep-gpio-wake-v1.md))
 - [ ] Example `hal_c3_deep_sleep_gpio`, twin of the IDF example, same wiring
 - [ ] Hardware-validated on the C3 DevKitM-1: GPIO4 wake, timer fallback, bench cases `wake-pin-held-at-entry` (expect `Rejected`), `wake-cause-survives-rejection` (ADR-001 § 5), `held-level-custom-handler`, `rejection-retry-loop`, `short-timer-sweep` with queued UART output and GPIO plus timer, measuring guard-to-sleep-entry, and `foreign-wake-pin` (ADR-001 § 4b-4d)
 - [ ] Example documents GPIO4 = MTMS (JTAG) and the pull against the wake level
@@ -63,3 +63,4 @@ Facts verified 2026-10-12 against esp-hal 1.2.2 in the cargo registry (`sleep_de
 - 2026-10-12 — ADR-001 written (Proposed); compile-only spike `spike_pin_borrow.rs` proves `&mut Input` borrowing at `try_sleep` on esp-hal 1.2.2 (`just check-hal-c3` exit 0 after decoupling the pin lifetime from the manager's); open questions and bench cases updated from the ADR
 - 2026-10-12 — Review round 1 on ADR-001: § 4 rewritten (validation before mutation, critical section around arm/sleep/cleanup, post-arm timer guard, three new bench cases); spike attempt 3 compiles
 - 2026-10-12 — Review round 2 on ADR-001: `TimerTooLong` (48-bit comparator), UART drain before arming (esp-hal drains after the deadline checks), exclusivity rule with `ForeignWakePin`; spike attempt 4 compiles
+- 2026-10-14 — Spike promoted to the exported `sleep` module with C3 and S3 arms (knob U4); the C3 hal bench is still open
