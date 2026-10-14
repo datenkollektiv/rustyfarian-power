@@ -6,7 +6,7 @@ desk-work: available
 # Feature: esp-hal Sleep Tier (C3-first) v1
 
 Sleep and wake-cause support in `rustyfarian-esp-hal-power`, pulled forward from the parity doc's deferred v2 and scoped to the ESP32-C3 first.
-Requested by rustbox-spookhouse for its esp-hal prop; request copy in `review-queue/rustyfarian-power-esp-hal-sleep-tier-v1.md`.
+Requested by rustbox-spookhouse for its esp-hal prop (`docs/features/upstream-sleep-wake-requests-v1.md` in that repo, filed 2026-10-12); its consumer requirements are in ADR-001.
 Facts verified 2026-10-12 against esp-hal 1.2.2 in the cargo registry (`sleep_deep_with_rejection`, per-pin `apply_wakeup_config`, `caused_wakeup`).
 
 ## Decisions
@@ -51,10 +51,14 @@ Facts verified 2026-10-12 against esp-hal 1.2.2 in the cargo registry (`sleep_de
 - [x] ADR-001 review round 2 applied: timer maximum, UART drain before arming, foreign-wake-pin rule (spike attempt 4, `just check-hal-c3` exit 0)
 - [ ] ADR-001 accepted (after the bench sets the timer constants and passes the § 4b-4d cases)
 - [ ] Three esp-rs issues filed (GPIO light-sleep-only doc, `rtc_fastmem_pd_en` unused on C3, C3 metadata lists Touch/Ulp)
+  - `src/rtc_cntl/sleep/mod.rs:4-7` says GPIO wake is light-sleep only, but LP pads wake from deep sleep.
+  - `RtcSleepConfig::deep()` sets `rtc_fastmem_pd_en` for the C3 (`sleep/esp32c3.rs:295`), but `apply()` never reads it.
+  - `_generated_esp32c3.rs:862-875` lists `Touch` and `Ulp` wake sources the C3 does not have.
 - [x] `rustyfarian-esp-hal-power` sleep module: `SleepManager`, `WakeCauseSource`, `try_sleep` (C3 and S3, 2026-10-14; S3 bench in [esp32s3-deep-sleep-gpio-wake-v1](esp32s3-deep-sleep-gpio-wake-v1.md))
 - [ ] Example `hal_c3_deep_sleep_gpio`, twin of the IDF example, same wiring
 - [ ] Hardware-validated on the C3 DevKitM-1: GPIO4 wake, timer fallback, bench cases `wake-pin-held-at-entry` (expect `Rejected`), `wake-cause-survives-rejection` (ADR-001 § 5), `held-level-custom-handler`, `rejection-retry-loop`, `short-timer-sweep` with queued UART output and GPIO plus timer, measuring guard-to-sleep-entry, and `foreign-wake-pin` (ADR-001 § 4b-4d)
 - [ ] Example documents GPIO4 = MTMS (JTAG) and the pull against the wake level
+- [ ] rustbox-spookhouse measures deep-sleep current on both stacks from the same wiring
 - [ ] Tests passing (`just verify`, hal check recipe)
 - [ ] CHANGELOG `[Unreleased]`: Added (hal sleep module)
 
@@ -64,3 +68,4 @@ Facts verified 2026-10-12 against esp-hal 1.2.2 in the cargo registry (`sleep_de
 - 2026-10-12 — Review round 1 on ADR-001: § 4 rewritten (validation before mutation, critical section around arm/sleep/cleanup, post-arm timer guard, three new bench cases); spike attempt 3 compiles
 - 2026-10-12 — Review round 2 on ADR-001: `TimerTooLong` (48-bit comparator), UART drain before arming (esp-hal drains after the deadline checks), exclusivity rule with `ForeignWakePin`; spike attempt 4 compiles
 - 2026-10-14 — Spike promoted to the exported `sleep` module with C3 and S3 arms (knob U4); the C3 hal bench is still open
+- 2026-10-14 — Folded the spookhouse request and follow-up into this doc and ADR-001; review-queue copy retired
