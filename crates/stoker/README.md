@@ -27,6 +27,8 @@ theme of the rustyfarian core crates (`bunting`, `pennant`, `ferriswheel`,
 The ESP-IDF implementations of these traits live in the companion
 [`rustyfarian-esp-idf-power`](https://crates.io/crates/rustyfarian-esp-idf-power)
 crate, which re-exports everything here so device firmware needs only one import.
+The bare-metal esp-hal sleep implementation lives in
+[`rustyfarian-esp-hal-power`](https://crates.io/crates/rustyfarian-esp-hal-power).
 
 ## Example
 

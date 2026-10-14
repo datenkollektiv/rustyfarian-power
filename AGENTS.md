@@ -5,18 +5,20 @@
 
 ## Project Overview
 
-Rustyfarian Power is a Rust workspace for battery monitoring and power management on ESP32 microcontrollers, targeting the Heltec WiFi LoRa 32 V3 (ESP32-S3) and Adafruit ESP32 Feather V2.
+Rustyfarian Power is a Rust workspace for battery monitoring and power management on ESP32 microcontrollers, targeting the Heltec WiFi LoRa 32 V3 (ESP32-S3), Adafruit ESP32 Feather V2, ESP32-C3-DevKitM-1 and the CrowPanel 1.28" ESP32-S3.
 It is built for low-power firmware loops: read battery state, decide whether to transmit, enter deep sleep, repeat.
 
 ## Architecture
 
-Two-crate Cargo workspace (`members = ["crates/*"]`), split by a **crate boundary** — not a feature flag. The pure/hardware separation is what lets the core build and test on the host with no ESP toolchain.
+Three-crate Cargo workspace (`members = ["crates/*"]`, `default-members` excludes the esp-hal tier), split by **crate boundaries** — not feature flags. The pure/hardware separation is what lets the core build and test on the host with no ESP toolchain.
 
 **`crates/stoker`** — platform-agnostic core, host-buildable, `#![no_std]` with no dependencies:
 - `lib.rs` — `BatteryMonitor` trait, `PowerSource`, `BatteryStatus`, `NoopBatteryMonitor`
 - `config.rs` — `BatteryConfig` with board presets (`heltec_v3()`, `adafruit_feather_v2()`) and `evaluate_reading()` — all voltage/percentage logic
 - `sleep.rs` — `SleepManager` (associated `type Error`) + `WakeCauseSource` traits, `WakeCause`/`WakeSource` enums, `SleepError`, `validate_wake_sources()` / `validate_gpio_level_source()`, `NoopSleepManager`
 - `charging.rs` — `ChargingMonitor` trait, `ChargingState`, `ChargingSource`, `NoopChargingMonitor`
+- `retain.rs` — validity-checked RTC retention envelope (`Retained<N>`, `RetainedCell`)
+- `reset.rs` — `ResetReason`, `ResetReasonSource`, `NoopResetReasonSource`
 
 **`crates/rustyfarian-esp-idf-power`** — ESP-IDF (std) hardware tier; cannot compile on the host (needs the Xtensa/ESP-IDF toolchain):
 - `esp_adc.rs` — `EspAdcBatteryMonitor` (ADC1 averaging + divider compensation)
@@ -24,24 +26,32 @@ Two-crate Cargo workspace (`members = ["crates/*"]`), split by a **crate boundar
 - `esp_charging.rs` — `EspChargingMonitor` (MCP73831 STAT + USB VBUS pins)
 - `lib.rs` re-exports all of `stoker`, so device firmware imports from this one crate.
 
+**`crates/rustyfarian-esp-hal-power`** — bare-metal esp-hal tier (`no_std`, `*-none-elf` only, esp-hal `=1.2.2`, chip features C3/C6/ESP32/S3):
+- `sleep.rs` — `EspHalSleepManager` (wake pins borrowed per attempt via `bind_wake_pins`), `EspHalWakeCauseSource`
+- Contract decisions for both sleep tiers live in `docs/adr/001-hal-neutral-sleep-contract.md`.
+
 Every hardware concern is behind a trait, and every trait ships a `Noop*` mock for host tests. Business logic lives in `stoker` (`evaluate_reading()`, the `validate_*` fns) — hardware-independent and fully unit-tested.
 
 ## Development Workflow
 
-Requires the Espressif `esp` Rust toolchain (installed via `espup`); ESP-IDF is pinned to v5.3.3. The workspace defaults to the `xtensa-esp32s3-espidf` target via `.cargo/config.toml`, so host recipes pass `--target` explicitly and scope to `-p stoker`. Use `just` for all operations:
+Requires the Espressif `esp` Rust toolchain (installed via `espup`, then `source ~/export-esp.sh`); ESP-IDF is pinned to v5.3.3. The workspace defaults to the `xtensa-esp32s3-espidf` target via `.cargo/config.toml`, so host recipes pass `--target` explicitly and scope to `-p stoker`. Use `just` for all operations:
 
 ```shell
 just check          # check the pure stoker crate on the host — no ESP toolchain
 just test           # host-side unit tests — no ESP toolchain
 just check-all      # check everything incl. ESP-IDF crate (requires espup)
 just check-esp32    # check the ESP-IDF crate for the ESP32 / Feather V2 target
-just verify         # non-modifying gate: fmt-check, check, clippy, test
+just check-c3       # check the ESP-IDF crate and its C3 example for the ESP32-C3
+just check-hal      # check the esp-hal crate for all four chips
+just clippy-hal     # clippy the esp-hal crate for all four chips
+just verify         # non-modifying gate: fmt-check, deny, check, clippy, test
 just pre-commit     # fmt, check, clippy, test (modifies files — local only)
 just build-example <name>   # chip inferred from the idf_{chip}_{name} prefix
 just run <name>             # build, flash, and open the serial monitor
+just run-hal-s3 <name>      # build and flash an esp-hal S3 example
 ```
 
-Run `just` with no arguments to list all recipes. Building the ESP32 (Feather V2) target additionally requires the `MCU=esp32` env var (esp-idf-sys reads it). ESP-IDF builds are isolated under `target/idf`; an optional macOS RAM disk at `/Volumes/RustBuilds` speeds incremental builds.
+Run `just` with no arguments to list all recipes. Building the ESP32 (Feather V2) target additionally requires the `MCU=esp32` env var (esp-idf-sys reads it). ESP-IDF and esp-hal builds are isolated under `target/idf` and `target/hal`; an optional macOS RAM disk at `/Volumes/RustBuilds` speeds incremental builds.
 
 ## Key Conventions
 
@@ -51,7 +61,7 @@ Run `just` with no arguments to list all recipes. Building the ESP32 (Feather V2
 
 **Board presets:** Start from `BatteryConfig::heltec_v3()` or `adafruit_feather_v2()` — each encodes a calibrated divider ratio and ADC setup. `heltec_v3`'s `divider_ratio` is empirical (folds in ADC loading), not the textbook figure.
 
-**Error handling:** `stoker` returns typed `core::error::Error` enums (`SleepError`); `rustyfarian-esp-idf-power` uses `anyhow::Result` with `.context()`; no `.unwrap()` outside tests. Log via `log::info!/warn!/error!`.
+**Error handling:** `stoker` returns typed `core::error::Error` enums (`SleepError`); `rustyfarian-esp-idf-power` returns `EspError` / `EspSleepError` (`anyhow` only in examples); no `.unwrap()` outside tests. Log via `log::info!/warn!/error!`.
 
 **`is_sufficient` fallback:** `BatteryStatus::is_sufficient()` intentionally returns `true` for `External` and `Unknown` — never block operations when battery state is unclear.
 
@@ -65,12 +75,14 @@ Run `just` with no arguments to list all recipes. Building the ESP32 (Feather V2
 - **Simplicity first.** Minimum code that solves the problem. No features beyond what was asked. No abstractions for single-use code. No error handling for impossible scenarios.
 - **Surgical changes.** Touch only what the task requires. Do not improve adjacent code, comments, or formatting. Every changed line should trace directly to the user's request.
 - When your changes create orphans (unused imports, variables, functions), remove them. Do not remove pre-existing dead code unless asked.
+- **Recorded knowledge is load-bearing — verify before acting on it.** Lore, insights and comments are point-in-time facts; confirm them against the current code first.
 
 ## Important Files
 
 - `crates/stoker/src/lib.rs` — public API, trait definitions, Noop mocks, usage examples in doc comments
 - `crates/stoker/src/config.rs` — board presets and voltage conversion logic
 - `docs/key-insights.md` — non-obvious hardware behaviour, build quirks, resolved gotchas; read before any non-trivial task
+- `docs/project-lore.md` — hard-won debugging facts; entries are point-in-time, verify against current code before acting
 - `docs/hardware-setup.md` — GPIO wiring tables and power budgets for Heltec V3 and Feather V2
 - `crates/rustyfarian-esp-idf-power/examples/idf_esp32_battery.rs` — complete Feather V2 example: wake-cause detection, ADC read, charging state, deep sleep
 - `release-plan.md` — staged two-crate publish sequence (`stoker` first, then the ESP-IDF crate)

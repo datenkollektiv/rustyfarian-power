@@ -1,7 +1,7 @@
 # rustyfarian-esp-idf-power
 
 ESP-IDF (std) battery monitoring, charging detection, and deep-sleep drivers for
-ESP32 and ESP32-S3.
+ESP32, ESP32-S3 and ESP32-C3.
 
 This is the hardware tier of the
 [rustyfarian-power](https://github.com/datenkollektiv/rustyfarian-power) stack.
@@ -18,10 +18,12 @@ re-exports `stoker`'s public surface so firmware needs only one import.
 
 ## Supported boards / examples
 
-| Board                     | Chip     | Example               |
-|:--------------------------|:---------|:----------------------|
-| Heltec WiFi LoRa 32 V3.1  | ESP32-S3 | `idf_esp32s3_battery` |
-| Adafruit ESP32 Feather V2 | ESP32    | `idf_esp32_battery`   |
+| Board                     | Chip     | Example                  |
+|:--------------------------|:---------|:-------------------------|
+| Heltec WiFi LoRa 32 V3.1  | ESP32-S3 | `idf_esp32s3_battery`    |
+| Adafruit ESP32 Feather V2 | ESP32    | `idf_esp32_battery`      |
+| ESP32-C3-DevKitM-1        | ESP32-C3 | `idf_c3_deep_sleep_gpio` |
+| CrowPanel 1.28" HMI       | ESP32-S3 | `idf_s3_deep_sleep_gpio` |
 
 ```rust,ignore
 use rustyfarian_esp_idf_power::{BatteryConfig, BatteryMonitor, EspAdcBatteryMonitor};
