@@ -74,6 +74,9 @@ use esp_hal::{
 // the `stoker` sleep types used below into scope (an explicit import would shadow the re-export).
 pub use stoker::sleep::*;
 
+#[cfg(all(feature = "bench", not(feature = "esp32c3")))]
+compile_error!("the `bench` feature supports the ESP32-C3 only; enable `esp32c3`");
+
 /// Pads with a low-power wake path on this chip.
 #[cfg(feature = "esp32c3")]
 const WAKE_PIN_MASK: u64 = stoker::sleep::ESP32C3_WAKE_PIN_MASK;
@@ -109,6 +112,93 @@ const POST_ARM_MARGIN_US: u64 = 200;
 /// after this (CTS flow control held off, DMA feeding the FIFO) is a `UartBusy` error instead of
 /// the endless spin esp-hal's own drain would give inside sleep entry. Provisional.
 const UART_DRAIN_TIMEOUT_US: u64 = 200_000;
+
+/// Bench instrumentation: a GPIO marker around the arm-to-sleep path and timing capture.
+///
+/// Internal and unstable; enabled by the `bench` feature on the ESP32-C3 only. The marker pin is
+/// driven low at the top of the critical section and high right after arming, so a logic analyser
+/// or the PPK2 sees the arm-to-sleep window. The pin must already be configured as an output by
+/// the firmware (and be below GPIO32); the hook writes the set/clear registers directly and
+/// borrows no driver.
+#[cfg(feature = "bench")]
+pub mod bench {
+    use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
+
+    use esp_hal::{peripherals::GPIO, time::Instant};
+
+    /// Marker pin number; `u8::MAX` = no marker.
+    static MARKER_PIN: AtomicU8 = AtomicU8::new(u8::MAX);
+    static DRAIN_US: AtomicU32 = AtomicU32::new(0);
+    static GUARD_US: AtomicU32 = AtomicU32::new(0);
+
+    /// Timings of the most recent sleep attempt, in microseconds.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct BenchTimings {
+        /// Time spent in the UART drain wait.
+        pub drain_us: u32,
+        /// Time from the marker rising edge (armed) to the rejected return of `try_sleep`.
+        pub guard_us: u32,
+    }
+
+    /// Selects the marker pin (GPIO0-31); a pin of 32 or above disables the marker.
+    ///
+    /// The firmware configures the pin as an output first.
+    pub fn set_marker_pin(pin: u8) {
+        let pin = if pin < 32 { pin } else { u8::MAX };
+        MARKER_PIN.store(pin, Ordering::Relaxed);
+    }
+
+    /// Timings recorded by the most recent `sleep` or `try_sleep`.
+    ///
+    /// `guard_us` is only meaningful after a rejected `try_sleep`.
+    #[must_use]
+    pub fn last() -> BenchTimings {
+        BenchTimings {
+            drain_us: DRAIN_US.load(Ordering::Relaxed),
+            guard_us: GUARD_US.load(Ordering::Relaxed),
+        }
+    }
+
+    fn marker_mask() -> Option<u32> {
+        match MARKER_PIN.load(Ordering::Relaxed) {
+            pin if pin < 32 => Some(1u32 << pin),
+            _ => None,
+        }
+    }
+
+    /// Starts an attempt: drives the marker low and clears the previous attempt's timings.
+    pub(super) fn begin_attempt() {
+        DRAIN_US.store(0, Ordering::Relaxed);
+        GUARD_US.store(0, Ordering::Relaxed);
+        if let Some(mask) = marker_mask() {
+            // SAFETY: `mask` has exactly one bit set, for a pin below 32. `out_w1tc` is a
+            // write-only clear register, so the write cannot race a driver's read-modify-write.
+            GPIO::regs().out_w1tc().write(|w| unsafe { w.bits(mask) });
+        }
+    }
+
+    pub(super) fn marker_high() {
+        if let Some(mask) = marker_mask() {
+            // SAFETY: `mask` has exactly one bit set, for a pin below 32. `out_w1ts` is a
+            // write-only set register, so the write cannot race a driver's read-modify-write.
+            GPIO::regs().out_w1ts().write(|w| unsafe { w.bits(mask) });
+        }
+    }
+
+    #[allow(clippy::cast_possible_truncation)]
+    pub(super) fn now_us() -> u32 {
+        // Wraps after about 71 minutes; only differences are used.
+        Instant::now().duration_since_epoch().as_micros() as u32
+    }
+
+    pub(super) fn set_drain_us(us: u32) {
+        DRAIN_US.store(us, Ordering::Relaxed);
+    }
+
+    pub(super) fn set_guard_us(us: u32) {
+        GUARD_US.store(us, Ordering::Relaxed);
+    }
+}
 
 /// A fully validated request. Building it touches no hardware, so a validation error leaves
 /// every pin and the deadline exactly as they were.
@@ -305,7 +395,11 @@ impl BoundSleep<'_, '_, '_, '_> {
     /// after the first mutation releases everything it armed.
     fn arm(&mut self, plan: Plan) -> Result<(), SleepError> {
         self.check_foreign_wake_pins()?;
+        #[cfg(feature = "bench")]
+        let drain_start = bench::now_us();
         Self::drain_uarts()?;
+        #[cfg(feature = "bench")]
+        bench::set_drain_us(bench::now_us().wrapping_sub(drain_start));
 
         if let Err(e) = self.arm_pins(plan.pin_mask, plan.event) {
             self.disarm();
@@ -392,7 +486,11 @@ impl SleepManager for BoundSleep<'_, '_, '_, '_> {
     fn sleep(&mut self, sources: &[WakeSource]) -> Result<(), SleepError> {
         let plan = self.plan(sources)?;
         critical_section::with(|_| {
+            #[cfg(feature = "bench")]
+            bench::begin_attempt();
             self.arm(plan)?;
+            #[cfg(feature = "bench")]
+            bench::marker_high();
             self.manager.low_power.sleep_deep(RtcSleepConfig::deep())
         })
     }
@@ -407,10 +505,19 @@ impl SleepManager for BoundSleep<'_, '_, '_, '_> {
     fn try_sleep(&mut self, sources: &[WakeSource]) -> Result<(), SleepError> {
         let plan = self.plan(sources)?;
         critical_section::with(|_| {
+            #[cfg(feature = "bench")]
+            bench::begin_attempt();
             self.arm(plan)?;
+            #[cfg(feature = "bench")]
+            let armed_at = {
+                bench::marker_high();
+                bench::now_us()
+            };
             self.manager
                 .low_power
                 .sleep_deep_with_rejection(RtcSleepConfig::deep());
+            #[cfg(feature = "bench")]
+            bench::set_guard_us(bench::now_us().wrapping_sub(armed_at));
             // Reaching this line *is* the rejection report (esp-hal 1.2.2 `sleep/mod.rs:150`).
             // Release before interrupts come back, so the held level cannot fire a handler.
             self.disarm();

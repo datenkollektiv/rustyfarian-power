@@ -71,6 +71,7 @@ check-hal:
     cargo check {{ hal_std }} {{ hal_crate }} --target {{ hal_esp32_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32,unstable
     cargo check {{ hal_std }} {{ hal_crate }} --target {{ hal_s3_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32s3,unstable
     cargo check {{ hal_std }} {{ hal_crate }} --target {{ hal_s3_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32s3,unstable,examples --examples
+    BENCH_CASE=H1 cargo check {{ hal_std }} {{ hal_crate }} --target {{ hal_c3_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32c3,unstable,examples,bench --examples
 
 # check the esp-hal crate for the ESP32-C3 only (fast; esp toolchain, no espup)
 check-hal-c3:
@@ -110,6 +111,18 @@ build-example-hal-s3 example:
 run-hal-s3 example: (build-example-hal-s3 example)
     espflash flash --monitor --chip esp32s3 {{ hal_dir }}/{{ hal_s3_target }}/release/examples/{{ example }}
 
+# build a named esp-hal example for C3 (no_std bare-metal, release optimization, optional features)
+build-example-hal-c3 example features="esp32c3,unstable,examples":
+    cargo build {{ hal_std }} {{ hal_crate }} --release --target {{ hal_c3_target }} --target-dir {{ hal_dir }} --no-default-features --features {{ features }} --example {{ example }}
+
+# build and flash a named esp-hal C3 example, then open serial monitor
+run-hal-c3 example features="esp32c3,unstable,examples": (build-example-hal-c3 example features)
+    espflash flash --monitor --chip esp32c3 {{ hal_dir }}/{{ hal_c3_target }}/release/examples/{{ example }}
+
+# build and flash a named esp-hal C3 example without opening the monitor (bench host scripts attach their own reader)
+flash-hal-c3 example features="esp32c3,unstable,examples": (build-example-hal-c3 example features)
+    espflash flash --chip esp32c3 {{ hal_dir }}/{{ hal_c3_target }}/release/examples/{{ example }}
+
 # erase the connected device's flash completely (use before reflashing on boot failures)
 [confirm]
 erase-flash:
@@ -132,6 +145,7 @@ clippy-hal:
     cargo clippy {{ hal_std }} {{ hal_crate }} --target {{ hal_esp32_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32,unstable -- -D warnings
     cargo clippy {{ hal_std }} {{ hal_crate }} --target {{ hal_s3_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32s3,unstable -- -D warnings
     cargo clippy {{ hal_std }} {{ hal_crate }} --target {{ hal_s3_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32s3,unstable,examples --examples -- -D warnings
+    BENCH_CASE=H1 cargo clippy {{ hal_std }} {{ hal_crate }} --target {{ hal_c3_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32c3,unstable,examples,bench --examples -- -D warnings
 
 # run host-side unit tests (no ESP toolchain required)
 test:
