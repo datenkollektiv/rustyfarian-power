@@ -15,6 +15,7 @@ description = "Bare-metal (esp-hal) battery monitoring, charging detection, and 
 keywords = ["esp32", "esp-hal", "battery", "power", "no-std"]
 categories = ["embedded", "hardware-support", "no-std"]
 readme = "README.md"
+exclude = ["examples/hal_c3_sleep_bench.rs", "examples/hal_esp32_bench_stimulus.rs"]
 
 [lib]
 name = "rustyfarian_esp_hal_power"
@@ -78,3 +79,7 @@ required-features = ["esp32c3", "unstable", "examples"]
 [[example]]
 name = "hal_c3_sleep_bench"
 required-features = ["esp32c3", "unstable", "examples", "bench"]
+
+[[example]]
+name = "hal_esp32_bench_stimulus"
+required-features = ["esp32", "unstable", "examples"]

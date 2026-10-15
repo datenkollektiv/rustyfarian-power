@@ -18,3 +18,4 @@ tmp/
 memory/
 
 .envrc
+__pycache__/
