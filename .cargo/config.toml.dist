@@ -27,6 +27,11 @@ rustflags = ["-C", "link-arg=-Tlinkall.x"]
 runner = "espflash flash --monitor --chip esp32c3"
 rustflags = ["-C", "link-arg=-Tlinkall.x"]
 
+# ESP32 bare-metal target (esp-hal tier examples; linkall.x comes from esp-hal)
+[target.xtensa-esp32-none-elf]
+runner = "espflash flash --monitor --chip esp32"
+rustflags = ["-C", "link-arg=-Tlinkall.x"]
+
 [unstable]
 build-std = ["std", "panic_abort"]
 
