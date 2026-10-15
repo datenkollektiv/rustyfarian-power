@@ -15,19 +15,24 @@ The consumer's go/no-go gate is 2026-10-25, so the P0 cases run first and report
 
 ADR-001 moves to Accepted when every P0 and P1 case passes and `MIN_TIMER_MS` and `POST_ARM_MARGIN_US` are set from H5.
 
-## Prerequisites (not yet built)
+## Prerequisites
 
-- Hal tier: the sleep module from ADR-001, replacing `spike_pin_borrow.rs`, with a `bench` cargo feature that drives the marker pin at the post-arm guard.
+**Built 2026-10-15:**
+- Hal tier: sleep module in `crates/rustyfarian-esp-hal-power/src/sleep.rs` with `bench` feature; `set_marker_pin(u8)` and `last() -> BenchTimings { drain_us, guard_us }`.
+- Bench firmware: `examples/hal_c3_deep_sleep_gpio.rs` (plain twin of IDF example) and `examples/hal_c3_sleep_bench.rs`, case selected at build time by `BENCH_CASE` env var; both compile when `BENCH_CASE` is set.
+- `just` recipes: `build-example-hal-c3`, `run-hal-c3` and `flash-hal-c3`, each `<name> [features]`, modelled on S3; `BENCH_CASE` passes through `option_env!()` at compile time.
+- C3 toolchain: `.cargo/config.toml.dist` with `[target.riscv32imc-unknown-none-elf]`, `runner` for espflash, and `-Tlinkall.x` rustflag.
+
+**Not yet built:**
 - IDF tier: the C3 GPIO wake path and `try_sleep` from `c3-gpio-deep-sleep-wake-v1`.
-- Bench firmware per tier: `hal_c3_sleep_bench` and `idf_c3_sleep_bench`, case selected at build time by `BENCH_CASE`, one flash per case.
-- `just` recipes: `build-example-hal-c3 <name>`, `flash-hal-c3 <name>`, `flash-c3 <name>` (IDF), each accepting `BENCH_CASE`.
+- IDF bench firmware: `idf_c3_sleep_bench`, case selected at build time by `BENCH_CASE`.
 - Host script `scripts/c3-bench.py`: reads the serial log, drives the stimulus, detects hangs, writes one CSV row per cycle.
 
 ## Setup
 
 ### Instruments
 
-- ESP32-C3 DevKitM-1, powered and logged over its micro-USB port (CP2102N bridge on UART0, GPIO20/21).
+- **Bench board:** ESP32-C3-MINI-1 with CH340 on UART0 (`/dev/cu.usbserial-210`). The plan assumes DevKitM-1 with CP2102N; both use micro-USB and have GPIO20/21 on UART0.
 - Stimulus: any host-controlled 3.3 V GPIO source, for example a spare RP2040 board running a serial-to-GPIO sketch, two channels.
 - Logic analyser, 4 channels, at least 4 MS/s.
 - Current: Nordic PPK2 in ampere-meter mode in series with VBUS through a USB data pass-through breakout, so serial keeps working; its digital inputs record the marker on the same time base.
@@ -59,11 +64,33 @@ BENCH case=<id> tier=<hal|idf> cycle=<n> reset=<reason> cause=<cause> mask=0x<he
 The IDF example `idf_c3_deep_sleep_gpio` also prints `result=boot` on the boot line; the host script must accept it.
 The owner-desk runbook for W1, W2, H1 and H4 with a real HC-SR501 PIR is [c3-idf-pir-bench-steps-v1](c3-idf-pir-bench-steps-v1.md).
 
+### Case equipment requirements
+
+| Case | P0/P1 | Tier | PIR or jumper | GPIO stimulus | LA (ch0/1/2/3) | PPK2 |
+|:-----|:-----:|:-----|:-------------:|:-------------:|:--------------:|:----:|
+| W1   |  P0   | both |      Yes      |     GPIO4     |     ch0,3      |  —   |
+| W2   |  P0   | both |      Yes      |       —       |       —        |  —   |
+| W3   |  P0   | both |      Yes      |     GPIO4     |     ch0,3      |  —   |
+| H1   |  P0   | both |       —       |     GPIO4     |       —        |  —   |
+| H2   |  P0   | hal  |       —       |       —       |       —        |  —   |
+| H3   |  P0   | hal  |       —       |     GPIO4     |       —        |  —   |
+| H4   |  P0   | both |       —       |     GPIO4     |       —        |  —   |
+| H5   |  P1   | both |       —       |     GPIO4     |      ch3       |  D0  |
+| H6   |  P1   | hal  |       —       |       —       |       —        |  —   |
+| H7   |  P1   | hal  |       —       |       —       |       —        |  —   |
+| H8   |  P1   | hal  |       —       |     GPIO5     |       —        |  —   |
+| R1   |  P2   | hal  |      Yes      |       —       |       —        |  —   |
+
+PIR or jumper: use the HC-SR501 PIR for realistic wake-up timing (W1-W3, R1), or a manual jumper to GND for gate-level testing.
+GPIO stimulus: any host-controlled 3.3 V GPIO source, or spare GPIO driven from the bench script.
+LA (Logic Analyser): record the channels and timing around critical sections; ch3 shows UART0 TX activity for H5 drain measurement.
+PPK2 (Nordic Power Profiler Kit II): in ampere-meter mode in series with VBUS, digital input D0 records the marker on the same time base; required to measure guard-to-sleep-entry in H5.
+
 ### Host procedure per case
 
 ```shell
-just flash-hal-c3 hal_c3_sleep_bench BENCH_CASE=H1
-python3 scripts/c3-bench.py --case H1 --port /dev/cu.usbserial-0001 --cycles 100
+BENCH_CASE=H1 just flash-hal-c3 hal_c3_sleep_bench esp32c3,unstable,examples,bench
+python3 scripts/c3-bench.py --case H1 --port /dev/cu.usbserial-210 --cycles 100
 ```
 
 A hang is no log line within the expected sleep time plus 2 s; the script then resets the board through the bridge's RTS line and logs `result=hang`.

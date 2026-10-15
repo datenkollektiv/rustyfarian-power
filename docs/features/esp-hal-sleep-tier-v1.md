@@ -55,7 +55,7 @@ Facts verified 2026-10-12 against esp-hal 1.2.2 in the cargo registry (`sleep_de
   - `RtcSleepConfig::deep()` sets `rtc_fastmem_pd_en` for the C3 (`sleep/esp32c3.rs:295`), but `apply()` never reads it.
   - `_generated_esp32c3.rs:862-875` lists `Touch` and `Ulp` wake sources the C3 does not have.
 - [x] `rustyfarian-esp-hal-power` sleep module: `SleepManager`, `WakeCauseSource`, `try_sleep` (C3 and S3, 2026-10-14; S3 bench in [esp32s3-deep-sleep-gpio-wake-v1](esp32s3-deep-sleep-gpio-wake-v1.md))
-- [ ] Example `hal_c3_deep_sleep_gpio`, twin of the IDF example, same wiring
+- [x] Example `hal_c3_deep_sleep_gpio`, twin of the IDF example, same wiring (built 2026-10-15 as part of plan item 1)
 - [ ] Hardware-validated on the C3 DevKitM-1: GPIO4 wake, timer fallback, bench cases `wake-pin-held-at-entry` (expect `Rejected`), `wake-cause-survives-rejection` (ADR-001 § 5), `held-level-custom-handler`, `rejection-retry-loop`, `short-timer-sweep` with queued UART output and GPIO plus timer, measuring guard-to-sleep-entry, and `foreign-wake-pin` (ADR-001 § 4b-4d)
 - [ ] Example documents GPIO4 = MTMS (JTAG) and the pull against the wake level
 - [ ] rustbox-spookhouse measures deep-sleep current on both stacks from the same wiring
@@ -69,3 +69,4 @@ Facts verified 2026-10-12 against esp-hal 1.2.2 in the cargo registry (`sleep_de
 - 2026-10-12 — Review round 2 on ADR-001: `TimerTooLong` (48-bit comparator), UART drain before arming (esp-hal drains after the deadline checks), exclusivity rule with `ForeignWakePin`; spike attempt 4 compiles
 - 2026-10-14 — Spike promoted to the exported `sleep` module with C3 and S3 arms (knob U4); the C3 hal bench is still open
 - 2026-10-14 — Folded the spookhouse request and follow-up into this doc and ADR-001; review-queue copy retired
+- 2026-10-15 — C3 hal tier bench prerequisites completed: examples `hal_c3_deep_sleep_gpio` and `hal_c3_sleep_bench` with 12 cases (W1-W3, H1-H8, R1), `bench` feature in sleep module, recipes `build-example-hal-c3`, `run-hal-c3` and `flash-hal-c3`, C3 toolchain in `.cargo/config.toml.dist`; bench plan updated with board info and case equipment table; CHANGELOG [Unreleased] entries added
