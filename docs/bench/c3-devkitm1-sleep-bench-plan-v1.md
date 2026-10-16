@@ -172,13 +172,13 @@ Set `POST_ARM_MARGIN_US` to at least 4x the worst guard-to-entry, and `MIN_TIMER
 
 ### Retention (P2)
 
-| ID | Tier | Case                               | Steps                                                       | Pass                                                                    |
-|:---|:-----|:-----------------------------------|:------------------------------------------------------------|:------------------------------------------------------------------------|
-| R1 | hal  | RTC fast memory through deep sleep | store a counter in the `Persistable` cell; W2 for 20 cycles | counter increments every boot; answers the `rtc_fastmem_pd_en` question |
-| R2 | both | GPIO and timer wake                | as W1/W2 with the envelope                                  | `load` returns the stored value every boot                              |
-| R3 | both | Watchdog and software reset        | trigger RWDT, then `software_reset`                         | `load` succeeds after both                                              |
-| R4 | both | Power cycle                        | unplug USB for 5 s                                          | `load` returns `Invalid::PowerOn`                                       |
-| R5 | both | Brownout                           | setup to be decided, see risks                              | `load` returns `Invalid::Brownout`                                      |
+| ID | Tier | Case                               | Steps                                                       | Pass                                                                                                                                                            |
+|:---|:-----|:-----------------------------------|:------------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| R1 | hal  | RTC fast memory through deep sleep | store a counter in the `Persistable` cell; W2 for 20 cycles | every judged boot is a `DeepSleep`/`Timer` wake with the counter incremented (a warm reset with a kept counter fails); answers the `rtc_fastmem_pd_en` question |
+| R2 | both | GPIO and timer wake                | as W1/W2 with the envelope                                  | `load` returns the stored value every boot                                                                                                                      |
+| R3 | both | Watchdog and software reset        | trigger RWDT, then `software_reset`                         | `load` succeeds after both                                                                                                                                      |
+| R4 | both | Power cycle                        | unplug USB for 5 s                                          | `load` returns `Invalid::PowerOn`                                                                                                                               |
+| R5 | both | Brownout                           | setup to be decided, see risks                              | `load` returns `Invalid::Brownout`                                                                                                                              |
 
 ## Manual Verification
 

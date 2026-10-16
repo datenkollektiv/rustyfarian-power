@@ -56,3 +56,5 @@ The CP210x port open resets the board through EN, so every capture starts with a
 - GPIO wake: the example has no wake pin; the record does not depend on the wake source.
 - Brownout: needs a bench supply; the reset gate covers it and the host tests prove the refusal.
 - ESP32-S3: the types build under the `esp32s3` feature, but no S3 board was benched.
+
+Re-run 2026-10-16 after `RetainedCell` moved its volatile copies into `critical_section::with` (review finding P1): three cycles, every warm boot `load=ok`, one session id; behaviour unchanged.

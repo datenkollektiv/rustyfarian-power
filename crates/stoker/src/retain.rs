@@ -325,18 +325,18 @@ fn reset_gate(reset: ResetReason) -> Result<(), Invalid> {
 /// invalid record, or the new valid record, and a memory fence after the last
 /// write commits it before the caller goes on to sleep or reset.
 ///
-/// # Concurrency contract
+/// # Concurrency
 ///
-/// **Do not call `load`, `store` or `invalidate` on the same cell from more
-/// than one task, thread or interrupt at a time.**
-/// The cell does not synchronise its callers, which is a deliberate soundness
-/// trade-off: `stoker` has no dependencies and riscv32imc has no compare-and-
-/// swap for a lock, so a `store` that overlaps another `store` or a `load` on
-/// the same cell from safe code is a data race (a torn copy still fails the
-/// checksum, but the race itself is undefined behaviour).
-/// Use it from one execution context, typically `load` at the top of `main`
-/// and `store` right before sleep or reset, or wrap every call in the tier's
-/// critical section.
+/// Every `load`, `store` and `invalidate` copies the record inside a
+/// [`critical_section::with`] block, so two callers on the same cell (two
+/// tasks, or `main` and an interrupt) are serialised and the safe `&self` API
+/// is sound; riscv32imc has no compare-and-swap, so a critical section is the
+/// portable lock.
+/// The platform supplies the `critical-section` implementation: esp-hal with
+/// its `rt` feature, esp-idf-hal with its `critical-section` feature, and the
+/// crate's `std` feature on the host (a dev-dependency here).
+/// The section lasts for one volatile copy of `N + 12` bytes; serialising the
+/// payload happens outside it.
 ///
 /// # Initialisation
 ///
@@ -363,9 +363,9 @@ pub struct RetainedCell<const N: usize> {
 }
 
 // SAFETY: the memory is only ever accessed through `load`, `store` and
-// `invalidate`, which copy through volatile reads and writes and never hand out
-// a reference. The cell does not synchronise concurrent callers; the type docs
-// make single-context use the caller's contract, as for any persistent static.
+// `invalidate`, which copy through volatile reads and writes inside a critical
+// section and never hand out a reference, so no two accesses to the cell can
+// overlap from any task, thread or interrupt.
 unsafe impl<const N: usize> Sync for RetainedCell<N> {}
 
 impl<const N: usize> RetainedCell<N> {
@@ -407,8 +407,9 @@ impl<const N: usize> RetainedCell<N> {
         // holds some bit pattern, and every bit pattern is a valid
         // `Retained<N>` (integers and a byte array only). The volatile read
         // keeps the compiler from substituting the initialiser it saw in
-        // source. The caller guarantees no concurrent `store` (type docs).
-        let record = unsafe { ptr::read_volatile(self.ptr()) };
+        // source. The critical section excludes every other `load`, `store`
+        // and `invalidate` on this cell.
+        let record = critical_section::with(|_| unsafe { ptr::read_volatile(self.ptr()) });
         record.load(reset)
     }
 
@@ -437,15 +438,18 @@ impl<const N: usize> RetainedCell<N> {
         })?;
         let magic = record.magic;
         record.magic = 0;
-        self.invalidate();
-        // SAFETY: see `load`; the pointer is valid for writes of `Retained<N>`
-        // and the caller guarantees no concurrent access.
-        unsafe { ptr::write_volatile(self.ptr(), record) };
-        compiler_fence(Ordering::SeqCst);
-        // SAFETY: `&raw mut` projects the field without creating a reference;
-        // the field is aligned and inside the valid allocation.
-        unsafe { ptr::write_volatile(&raw mut (*self.ptr()).magic, magic) };
-        fence(Ordering::SeqCst);
+        critical_section::with(|_| {
+            self.clear_magic();
+            // SAFETY: see `load`; the pointer is valid for writes of
+            // `Retained<N>` and the critical section excludes every other
+            // access to this cell.
+            unsafe { ptr::write_volatile(self.ptr(), record) };
+            compiler_fence(Ordering::SeqCst);
+            // SAFETY: `&raw mut` projects the field without creating a
+            // reference; the field is aligned and inside the valid allocation.
+            unsafe { ptr::write_volatile(&raw mut (*self.ptr()).magic, magic) };
+            fence(Ordering::SeqCst);
+        });
         Ok(())
     }
 
@@ -453,6 +457,11 @@ impl<const N: usize> RetainedCell<N> {
     ///
     /// The payload bytes are left in place.
     pub fn invalidate(&self) {
+        critical_section::with(|_| self.clear_magic());
+    }
+
+    /// Volatile write of a zero magic; the caller holds the critical section.
+    fn clear_magic(&self) {
         // SAFETY: field projection through `&raw mut` creates no reference;
         // the field is aligned and inside the valid allocation.
         unsafe { ptr::write_volatile(&raw mut (*self.ptr()).magic, 0) };

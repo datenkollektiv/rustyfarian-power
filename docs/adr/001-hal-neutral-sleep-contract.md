@@ -29,7 +29,7 @@ Its go/no-go gate is 2026-10-25 and this ADR is the first step of its longest de
 
 Three feature documents left questions to this ADR: `esp-hal-sleep-tier-v1` (pin ownership, esp-hal panics, re-arming), `embedded-hal-error-convention-v1` (kind variants, `core::error::Error` bound, `ESP_ERR_SLEEP_REJECT`) and `c3-gpio-deep-sleep-wake-v1` (which error covers rejection, wake-pin validity).
 All of it ships in the one breaking `SleepManager` change of 0.3.0.
-`stoker` stays `#![no_std]` with no dependencies.
+`stoker` stays `#![no_std]`; its only dependency is `critical-section`, added 2026-10-16 so `RetainedCell` is sound.
 C3 first; S3 follows (amended 2026-10-14); C6 and ESP32 sleep on esp-hal are out of scope here.
 
 ## Decision

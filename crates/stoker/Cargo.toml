@@ -13,3 +13,13 @@ readme = "README.md"
 
 [package.metadata.docs.rs]
 all-features = true
+
+[dependencies]
+# The only dependency: `RetainedCell` serialises its volatile copies inside
+# `critical_section::with`, so the safe `&self` API is sound on every tier. The
+# platform supplies the implementation (esp-hal `rt`, esp-idf-hal
+# `critical-section`); host tests use the crate's `std` implementation below.
+critical-section = { workspace = true }
+
+[dev-dependencies]
+critical-section = { workspace = true, features = ["std"] }
