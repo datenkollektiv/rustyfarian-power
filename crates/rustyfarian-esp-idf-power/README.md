@@ -15,6 +15,7 @@ re-exports `stoker`'s public surface so firmware needs only one import.
 - `EspSleepManager` — deep sleep with configured wake sources
 - `EspWakeCauseSource` — the reason for the last wake
 - `EspResetReasonSource` — the reason for the last reset, which gates `RetainedCell::load`
+- `EspRtcClock` — the RTC timer in microseconds, for slept-time accounting across deep sleep
 - `EspChargingMonitor` — charging state from MCP73831 STAT + USB VBUS pins
 
 ## Supported boards / examples

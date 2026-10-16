@@ -14,11 +14,12 @@
 //!
 //! # Mapping
 //!
-//! The mapping table lives in the `stoker::reset` module docs, which are the single
-//! source of truth.
-//! The wildcard arm maps everything the table does not name to [`ResetReason::Other`]:
-//! `ESP_RST_EXT`, `ESP_RST_SDIO`, USB, JTAG, eFuse, CPU lockup and any code added by a future ESP-IDF.
-//! `ESP_RST_PWR_GLITCH` maps to [`ResetReason::Brownout`] because a power glitch may corrupt RTC memory.
+//! The driver only reads the code; [`stoker::reset::from_esp_idf_code`] does the
+//! mapping, so the table in the `stoker::reset` module docs is host-tested there.
+//! The `const` assertions below pin every generated `esp_reset_reason_t_ESP_RST_*`
+//! value to the code `stoker` assumes, so an ESP-IDF renumbering fails the build.
+//! `ESP_RST_PWR_GLITCH` maps to [`ResetReason::Brownout`] because a power glitch may corrupt RTC memory;
+//! codes the table does not name (external pin, SDIO, USB, JTAG, eFuse, CPU lockup) map to [`ResetReason::Other`].
 //!
 //! # Example
 //!
@@ -32,7 +33,28 @@
 //! ```
 
 use esp_idf_hal::sys;
+use stoker::reset::{esp_idf_code, from_esp_idf_code};
 use stoker::{ResetReason, ResetReasonSource};
+
+// Pin the generated constants to the codes `stoker::reset::from_esp_idf_code` assumes.
+const _: () = {
+    assert!(sys::esp_reset_reason_t_ESP_RST_UNKNOWN as u32 == esp_idf_code::UNKNOWN);
+    assert!(sys::esp_reset_reason_t_ESP_RST_POWERON as u32 == esp_idf_code::POWERON);
+    assert!(sys::esp_reset_reason_t_ESP_RST_EXT as u32 == esp_idf_code::EXT);
+    assert!(sys::esp_reset_reason_t_ESP_RST_SW as u32 == esp_idf_code::SW);
+    assert!(sys::esp_reset_reason_t_ESP_RST_PANIC as u32 == esp_idf_code::PANIC);
+    assert!(sys::esp_reset_reason_t_ESP_RST_INT_WDT as u32 == esp_idf_code::INT_WDT);
+    assert!(sys::esp_reset_reason_t_ESP_RST_TASK_WDT as u32 == esp_idf_code::TASK_WDT);
+    assert!(sys::esp_reset_reason_t_ESP_RST_WDT as u32 == esp_idf_code::WDT);
+    assert!(sys::esp_reset_reason_t_ESP_RST_DEEPSLEEP as u32 == esp_idf_code::DEEPSLEEP);
+    assert!(sys::esp_reset_reason_t_ESP_RST_BROWNOUT as u32 == esp_idf_code::BROWNOUT);
+    assert!(sys::esp_reset_reason_t_ESP_RST_SDIO as u32 == esp_idf_code::SDIO);
+    assert!(sys::esp_reset_reason_t_ESP_RST_USB as u32 == esp_idf_code::USB);
+    assert!(sys::esp_reset_reason_t_ESP_RST_JTAG as u32 == esp_idf_code::JTAG);
+    assert!(sys::esp_reset_reason_t_ESP_RST_EFUSE as u32 == esp_idf_code::EFUSE);
+    assert!(sys::esp_reset_reason_t_ESP_RST_PWR_GLITCH as u32 == esp_idf_code::PWR_GLITCH);
+    assert!(sys::esp_reset_reason_t_ESP_RST_CPU_LOCKUP as u32 == esp_idf_code::CPU_LOCKUP);
+};
 
 /// Reads the reset reason from ESP-IDF.
 ///
@@ -52,22 +74,7 @@ impl ResetReasonSource for EspResetReasonSource {
     fn last_reset_reason(&self) -> ResetReason {
         // SAFETY: esp_reset_reason() reads a value latched at boot and does not
         // change any hardware state. Safe to call at any time.
-        let reason = unsafe { sys::esp_reset_reason() };
-
-        #[allow(non_upper_case_globals)]
-        match reason {
-            sys::esp_reset_reason_t_ESP_RST_POWERON | sys::esp_reset_reason_t_ESP_RST_UNKNOWN => {
-                ResetReason::PowerOn
-            }
-            sys::esp_reset_reason_t_ESP_RST_BROWNOUT
-            | sys::esp_reset_reason_t_ESP_RST_PWR_GLITCH => ResetReason::Brownout,
-            sys::esp_reset_reason_t_ESP_RST_DEEPSLEEP => ResetReason::DeepSleep,
-            sys::esp_reset_reason_t_ESP_RST_SW => ResetReason::Software,
-            sys::esp_reset_reason_t_ESP_RST_PANIC => ResetReason::Panic,
-            sys::esp_reset_reason_t_ESP_RST_INT_WDT
-            | sys::esp_reset_reason_t_ESP_RST_TASK_WDT
-            | sys::esp_reset_reason_t_ESP_RST_WDT => ResetReason::Watchdog,
-            _ => ResetReason::Other,
-        }
+        let code = unsafe { sys::esp_reset_reason() };
+        from_esp_idf_code(code as u32)
     }
 }

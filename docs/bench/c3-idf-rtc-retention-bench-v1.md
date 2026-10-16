@@ -47,3 +47,18 @@ ESP-IDF reports both as `ESP_RST_POWERON`, the record is refused the same way, a
 - The task watchdog cannot be used for a reset here because `CONFIG_ESP_TASK_WDT_PANIC` is unset in the generated sdkconfig; it only warns.
 
 Re-run 2026-10-16 after `RetainedCell` moved its volatile copies into `critical_section::with` (review finding P1): three cycles, every warm boot `load=ok`, one session id; behaviour unchanged.
+
+## RTC clock (`EspRtcClock::now_us`, follow-up item 2)
+
+Cycle build on 2026-10-16, `RTC rtc_us=<n>` printed after each `RET` line; the delta is between consecutive boots.
+
+| Boot ends with        | Next boot reads   | Delta to previous boot                |
+|:----------------------|:------------------|:--------------------------------------|
+| Flash, then power-on  | `rtc_us=129805`   | starts near zero                      |
+| Deep sleep, 5 s timer | `rtc_us=6508678`  | 6.38 s (5 s sleep + 1 s delay + boot) |
+| `esp_restart()`       | `rtc_us=7890197`  | 1.38 s                                |
+| `panic!` (reboot)     | `rtc_us=9688057`  | 1.80 s                                |
+| Interrupt watchdog    | `rtc_us=11780349` | 2.09 s                                |
+
+Three cycles gave the same deltas within 1 ms, and the clock never went backwards on a warm reset.
+It restarts only with the power-on at the top of a capture.

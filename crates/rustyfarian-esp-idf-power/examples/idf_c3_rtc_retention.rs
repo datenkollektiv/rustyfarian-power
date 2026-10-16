@@ -44,11 +44,17 @@
 //! Built with `C3_RET_ACTION=cycle`.
 //! The `session` stays constant and `boots` increments across all four reset kinds.
 //!
+//! Every boot also prints `RTC rtc_us=<n>`, the RTC timer in microseconds since the last power-on;
+//! it keeps counting through deep sleep and warm resets, so consecutive values differ by the sleep
+//! plus about one second of delay and boot time.
+//!
 //! ```text
 //! RET reset=PowerOn wake=PowerOn load=err:PowerOn boots=1 session=0x9c41e7a2
+//! RTC rtc_us=312455
 //! Action: Sleep
 //! RET reset=DeepSleep wake=Timer load=ok boots=2 session=0x9c41e7a2
 //! Previous boot began with reset code 0
+//! RTC rtc_us=6713802
 //! Action: Restart
 //! RET reset=Software wake=PowerOn load=ok boots=3 session=0x9c41e7a2
 //! Previous boot began with reset code 2
@@ -72,7 +78,7 @@
 use esp_idf_hal::delay::FreeRtos;
 use esp_idf_hal::sys;
 use rustyfarian_esp_idf_power::{
-    EspResetReasonSource, EspSleepManager, EspWakeCauseSource, Invalid, ResetReason,
+    EspResetReasonSource, EspRtcClock, EspSleepManager, EspWakeCauseSource, Invalid, ResetReason,
     ResetReasonSource, Retainable, RetainedCell, SleepManager, WakeCause, WakeCauseSource,
     WakeSource, MAX_TIMER_MS,
 };
@@ -274,6 +280,9 @@ fn main() -> anyhow::Result<()> {
     if let Some(code) = previous_reset {
         println!("Previous boot began with reset code {code}");
     }
+    // The RTC timer keeps counting through deep sleep and warm resets; the delta between two
+    // boots' values is the slept time plus the boot time, which consumers use to age a session.
+    println!("RTC rtc_us={}", EspRtcClock::now_us());
 
     let action = resolve(ACTION, session.boots);
     println!("Action: {action:?}");

@@ -84,6 +84,76 @@ pub enum ResetReason {
     Other,
 }
 
+/// ESP-IDF v5.3.3 `esp_reset_reason_t` values, in `esp_system.h` order.
+///
+/// [`from_esp_idf_code`] maps them; the ESP-IDF tier pins its generated
+/// `esp_reset_reason_t_ESP_RST_*` constants to these at compile time, so an
+/// upstream renumbering fails the build instead of mis-mapping silently.
+pub mod esp_idf_code {
+    /// `ESP_RST_UNKNOWN`: the reason could not be determined.
+    pub const UNKNOWN: u32 = 0;
+    /// `ESP_RST_POWERON`.
+    pub const POWERON: u32 = 1;
+    /// `ESP_RST_EXT`: external pin.
+    pub const EXT: u32 = 2;
+    /// `ESP_RST_SW`: `esp_restart()`.
+    pub const SW: u32 = 3;
+    /// `ESP_RST_PANIC`: panic handler.
+    pub const PANIC: u32 = 4;
+    /// `ESP_RST_INT_WDT`: interrupt watchdog.
+    pub const INT_WDT: u32 = 5;
+    /// `ESP_RST_TASK_WDT`: task watchdog.
+    pub const TASK_WDT: u32 = 6;
+    /// `ESP_RST_WDT`: other watchdogs.
+    pub const WDT: u32 = 7;
+    /// `ESP_RST_DEEPSLEEP`.
+    pub const DEEPSLEEP: u32 = 8;
+    /// `ESP_RST_BROWNOUT`.
+    pub const BROWNOUT: u32 = 9;
+    /// `ESP_RST_SDIO`.
+    pub const SDIO: u32 = 10;
+    /// `ESP_RST_USB`.
+    pub const USB: u32 = 11;
+    /// `ESP_RST_JTAG`.
+    pub const JTAG: u32 = 12;
+    /// `ESP_RST_EFUSE`: eFuse error.
+    pub const EFUSE: u32 = 13;
+    /// `ESP_RST_PWR_GLITCH`.
+    pub const PWR_GLITCH: u32 = 14;
+    /// `ESP_RST_CPU_LOCKUP`: double exception.
+    pub const CPU_LOCKUP: u32 = 15;
+}
+
+/// Map an ESP-IDF `esp_reset_reason()` code onto [`ResetReason`] per the
+/// [module docs](self) table.
+///
+/// Pure and `const`, so the mapping is host-testable here while the ESP-IDF
+/// tier only forwards the code it read; unknown or future codes map to
+/// [`ResetReason::Other`], which trusts the record's checksum.
+///
+/// # Examples
+///
+/// ```
+/// use stoker::reset::{esp_idf_code, from_esp_idf_code};
+/// use stoker::ResetReason;
+///
+/// assert_eq!(from_esp_idf_code(esp_idf_code::DEEPSLEEP), ResetReason::DeepSleep);
+/// assert_eq!(from_esp_idf_code(esp_idf_code::PWR_GLITCH), ResetReason::Brownout);
+/// assert_eq!(from_esp_idf_code(99), ResetReason::Other);
+/// ```
+#[must_use]
+pub const fn from_esp_idf_code(code: u32) -> ResetReason {
+    match code {
+        esp_idf_code::UNKNOWN | esp_idf_code::POWERON => ResetReason::PowerOn,
+        esp_idf_code::BROWNOUT | esp_idf_code::PWR_GLITCH => ResetReason::Brownout,
+        esp_idf_code::DEEPSLEEP => ResetReason::DeepSleep,
+        esp_idf_code::SW => ResetReason::Software,
+        esp_idf_code::PANIC => ResetReason::Panic,
+        esp_idf_code::INT_WDT | esp_idf_code::TASK_WDT | esp_idf_code::WDT => ResetReason::Watchdog,
+        _ => ResetReason::Other,
+    }
+}
+
 /// Reads the reason for the most recent reset.
 ///
 /// Mirrors [`crate::WakeCauseSource`]; see the [module docs](self) for why the
@@ -168,5 +238,129 @@ mod tests {
         let a = ResetReason::DeepSleep;
         let b = a;
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn esp_idf_power_on_row() {
+        assert_eq!(
+            from_esp_idf_code(esp_idf_code::UNKNOWN),
+            ResetReason::PowerOn
+        );
+        assert_eq!(
+            from_esp_idf_code(esp_idf_code::POWERON),
+            ResetReason::PowerOn
+        );
+    }
+
+    #[test]
+    fn esp_idf_brownout_row() {
+        assert_eq!(
+            from_esp_idf_code(esp_idf_code::BROWNOUT),
+            ResetReason::Brownout
+        );
+        assert_eq!(
+            from_esp_idf_code(esp_idf_code::PWR_GLITCH),
+            ResetReason::Brownout
+        );
+    }
+
+    #[test]
+    fn esp_idf_deep_sleep_row() {
+        assert_eq!(
+            from_esp_idf_code(esp_idf_code::DEEPSLEEP),
+            ResetReason::DeepSleep
+        );
+    }
+
+    #[test]
+    fn esp_idf_software_row() {
+        assert_eq!(from_esp_idf_code(esp_idf_code::SW), ResetReason::Software);
+    }
+
+    #[test]
+    fn esp_idf_panic_row() {
+        assert_eq!(from_esp_idf_code(esp_idf_code::PANIC), ResetReason::Panic);
+    }
+
+    #[test]
+    fn esp_idf_watchdog_row() {
+        for code in [
+            esp_idf_code::INT_WDT,
+            esp_idf_code::TASK_WDT,
+            esp_idf_code::WDT,
+        ] {
+            assert_eq!(from_esp_idf_code(code), ResetReason::Watchdog, "{code}");
+        }
+    }
+
+    #[test]
+    fn esp_idf_other_row() {
+        for code in [
+            esp_idf_code::EXT,
+            esp_idf_code::SDIO,
+            esp_idf_code::USB,
+            esp_idf_code::JTAG,
+            esp_idf_code::EFUSE,
+            esp_idf_code::CPU_LOCKUP,
+        ] {
+            assert_eq!(from_esp_idf_code(code), ResetReason::Other, "{code}");
+        }
+    }
+
+    #[test]
+    fn esp_idf_literal_codes_follow_the_header() {
+        // Literal values from esp_system.h, independent of the `esp_idf_code` constants.
+        let expected = [
+            (0, ResetReason::PowerOn),
+            (1, ResetReason::PowerOn),
+            (2, ResetReason::Other),
+            (3, ResetReason::Software),
+            (4, ResetReason::Panic),
+            (5, ResetReason::Watchdog),
+            (6, ResetReason::Watchdog),
+            (7, ResetReason::Watchdog),
+            (8, ResetReason::DeepSleep),
+            (9, ResetReason::Brownout),
+            (10, ResetReason::Other),
+            (11, ResetReason::Other),
+            (12, ResetReason::Other),
+            (13, ResetReason::Other),
+            (14, ResetReason::Brownout),
+            (15, ResetReason::Other),
+        ];
+        for (code, reason) in expected {
+            assert_eq!(from_esp_idf_code(code), reason, "{code}");
+        }
+    }
+
+    #[test]
+    fn esp_idf_out_of_range_is_other() {
+        assert_eq!(from_esp_idf_code(16), ResetReason::Other);
+        assert_eq!(from_esp_idf_code(u32::MAX), ResetReason::Other);
+    }
+
+    #[test]
+    fn esp_idf_codes_are_contiguous_in_header_order() {
+        let codes = [
+            esp_idf_code::UNKNOWN,
+            esp_idf_code::POWERON,
+            esp_idf_code::EXT,
+            esp_idf_code::SW,
+            esp_idf_code::PANIC,
+            esp_idf_code::INT_WDT,
+            esp_idf_code::TASK_WDT,
+            esp_idf_code::WDT,
+            esp_idf_code::DEEPSLEEP,
+            esp_idf_code::BROWNOUT,
+            esp_idf_code::SDIO,
+            esp_idf_code::USB,
+            esp_idf_code::JTAG,
+            esp_idf_code::EFUSE,
+            esp_idf_code::PWR_GLITCH,
+            esp_idf_code::CPU_LOCKUP,
+        ];
+        for (i, code) in codes.iter().enumerate() {
+            assert_eq!(*code as usize, i);
+        }
     }
 }
