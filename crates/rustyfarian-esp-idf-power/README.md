@@ -16,6 +16,9 @@ re-exports `stoker`'s public surface so firmware needs only one import.
 - `EspWakeCauseSource` — the reason for the last wake
 - `EspResetReasonSource` — the reason for the last reset, which gates `RetainedCell::load`
 - `EspRtcClock` — the RTC timer in microseconds, for slept-time accounting across deep sleep
+
+The default feature `critical-section-impl` provides the firmware's `critical-section` implementation over the FreeRTOS port critical section, which `RetainedCell` needs to exclude interrupts and the other core.
+Disable it if the firmware links another provider; esp-idf-hal's own `critical-section` feature is a task-level mutex and is not interrupt-safe.
 - `EspChargingMonitor` — charging state from MCP73831 STAT + USB VBUS pins
 
 ## Supported boards / examples

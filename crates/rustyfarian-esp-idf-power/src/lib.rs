@@ -12,6 +12,12 @@
 //! - [`EspRtcClock`] — the RTC timer in microseconds, which keeps counting through deep sleep
 //! - [`EspChargingMonitor`] — resolves charging state from MCP73831 STAT + USB VBUS pins
 //!
+//! With the default feature `critical-section-impl` the crate also provides the
+//! firmware's `critical-section` implementation over the FreeRTOS port critical
+//! section, which `RetainedCell` needs to exclude interrupts and the other core;
+//! disable the feature if the firmware links another provider (esp-idf-hal's own
+//! `critical-section` feature is a task-level mutex and is not interrupt-safe).
+//!
 //! Everything public in [`stoker`] (the traits, config, state types, and the
 //! `Noop*` host mocks) is re-exported here, so device firmware needs only a
 //! single import:
@@ -75,6 +81,8 @@ pub use stoker::{
 
 mod esp_adc;
 mod esp_charging;
+#[cfg(feature = "critical-section-impl")]
+mod esp_critical_section;
 mod esp_reset;
 mod esp_rtc;
 mod esp_sleep;

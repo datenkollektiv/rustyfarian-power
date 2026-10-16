@@ -17,12 +17,20 @@ readme = "README.md"
 [lib]
 name = "rustyfarian_esp_idf_power"
 
+[features]
+default = ["critical-section-impl"]
+# Provides the process-wide `critical-section` implementation that `stoker::RetainedCell`
+# needs, over the FreeRTOS port critical section (interrupt- and multicore-safe). Disable it
+# when the firmware links another provider. esp-idf-hal's own `critical-section` feature is a
+# task-level mutex that FreeRTOS forbids in an ISR, so it must not be used for this.
+critical-section-impl = ["dep:critical-section"]
+
 [dependencies]
 stoker.workspace = true
 anyhow.workspace = true
 log.workspace = true
-# `critical-section` links esp-idf-hal's FreeRTOS critical-section implementation, which `stoker::RetainedCell` needs.
-esp-idf-hal = { workspace = true, features = ["critical-section"] }
+esp-idf-hal.workspace = true
+critical-section = { workspace = true, features = ["restore-state-none"], optional = true }
 
 [build-dependencies]
 embuild.workspace = true

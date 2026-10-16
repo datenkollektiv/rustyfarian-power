@@ -38,22 +38,22 @@ use stoker::{ResetReason, ResetReasonSource};
 
 // Pin the generated constants to the codes `stoker::reset::from_esp_idf_code` assumes.
 const _: () = {
-    assert!(sys::esp_reset_reason_t_ESP_RST_UNKNOWN as u32 == esp_idf_code::UNKNOWN);
-    assert!(sys::esp_reset_reason_t_ESP_RST_POWERON as u32 == esp_idf_code::POWERON);
-    assert!(sys::esp_reset_reason_t_ESP_RST_EXT as u32 == esp_idf_code::EXT);
-    assert!(sys::esp_reset_reason_t_ESP_RST_SW as u32 == esp_idf_code::SW);
-    assert!(sys::esp_reset_reason_t_ESP_RST_PANIC as u32 == esp_idf_code::PANIC);
-    assert!(sys::esp_reset_reason_t_ESP_RST_INT_WDT as u32 == esp_idf_code::INT_WDT);
-    assert!(sys::esp_reset_reason_t_ESP_RST_TASK_WDT as u32 == esp_idf_code::TASK_WDT);
-    assert!(sys::esp_reset_reason_t_ESP_RST_WDT as u32 == esp_idf_code::WDT);
-    assert!(sys::esp_reset_reason_t_ESP_RST_DEEPSLEEP as u32 == esp_idf_code::DEEPSLEEP);
-    assert!(sys::esp_reset_reason_t_ESP_RST_BROWNOUT as u32 == esp_idf_code::BROWNOUT);
-    assert!(sys::esp_reset_reason_t_ESP_RST_SDIO as u32 == esp_idf_code::SDIO);
-    assert!(sys::esp_reset_reason_t_ESP_RST_USB as u32 == esp_idf_code::USB);
-    assert!(sys::esp_reset_reason_t_ESP_RST_JTAG as u32 == esp_idf_code::JTAG);
-    assert!(sys::esp_reset_reason_t_ESP_RST_EFUSE as u32 == esp_idf_code::EFUSE);
-    assert!(sys::esp_reset_reason_t_ESP_RST_PWR_GLITCH as u32 == esp_idf_code::PWR_GLITCH);
-    assert!(sys::esp_reset_reason_t_ESP_RST_CPU_LOCKUP as u32 == esp_idf_code::CPU_LOCKUP);
+    assert!(sys::esp_reset_reason_t_ESP_RST_UNKNOWN == esp_idf_code::UNKNOWN);
+    assert!(sys::esp_reset_reason_t_ESP_RST_POWERON == esp_idf_code::POWERON);
+    assert!(sys::esp_reset_reason_t_ESP_RST_EXT == esp_idf_code::EXT);
+    assert!(sys::esp_reset_reason_t_ESP_RST_SW == esp_idf_code::SW);
+    assert!(sys::esp_reset_reason_t_ESP_RST_PANIC == esp_idf_code::PANIC);
+    assert!(sys::esp_reset_reason_t_ESP_RST_INT_WDT == esp_idf_code::INT_WDT);
+    assert!(sys::esp_reset_reason_t_ESP_RST_TASK_WDT == esp_idf_code::TASK_WDT);
+    assert!(sys::esp_reset_reason_t_ESP_RST_WDT == esp_idf_code::WDT);
+    assert!(sys::esp_reset_reason_t_ESP_RST_DEEPSLEEP == esp_idf_code::DEEPSLEEP);
+    assert!(sys::esp_reset_reason_t_ESP_RST_BROWNOUT == esp_idf_code::BROWNOUT);
+    assert!(sys::esp_reset_reason_t_ESP_RST_SDIO == esp_idf_code::SDIO);
+    assert!(sys::esp_reset_reason_t_ESP_RST_USB == esp_idf_code::USB);
+    assert!(sys::esp_reset_reason_t_ESP_RST_JTAG == esp_idf_code::JTAG);
+    assert!(sys::esp_reset_reason_t_ESP_RST_EFUSE == esp_idf_code::EFUSE);
+    assert!(sys::esp_reset_reason_t_ESP_RST_PWR_GLITCH == esp_idf_code::PWR_GLITCH);
+    assert!(sys::esp_reset_reason_t_ESP_RST_CPU_LOCKUP == esp_idf_code::CPU_LOCKUP);
 };
 
 /// Reads the reset reason from ESP-IDF.
@@ -75,6 +75,6 @@ impl ResetReasonSource for EspResetReasonSource {
         // SAFETY: esp_reset_reason() reads a value latched at boot and does not
         // change any hardware state. Safe to call at any time.
         let code = unsafe { sys::esp_reset_reason() };
-        from_esp_idf_code(code as u32)
+        from_esp_idf_code(code)
     }
 }

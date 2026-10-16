@@ -62,3 +62,4 @@ Cycle build on 2026-10-16, `RTC rtc_us=<n>` printed after each `RET` line; the d
 
 Three cycles gave the same deltas within 1 ms, and the clock never went backwards on a warm reset.
 It restarts only with the power-on at the top of a capture.
+Re-run 2026-10-16 with the crate's own `critical-section-impl` provider (FreeRTOS port critical section, review finding on esp-idf-hal's task-mutex provider): 10 boots, every warm boot `load=ok`, one session id.
