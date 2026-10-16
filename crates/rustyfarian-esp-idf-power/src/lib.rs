@@ -9,6 +9,7 @@
 //! - [`EspSleepManager`] — enters deep sleep with configured wake sources
 //! - [`EspWakeCauseSource`] — reads the reason for the last wake
 //! - [`EspResetReasonSource`] — reads the reason for the last reset, which gates [`RetainedCell::load`]
+//! - [`EspRtcClock`] — the RTC timer in microseconds, which keeps counting through deep sleep
 //! - [`EspChargingMonitor`] — resolves charging state from MCP73831 STAT + USB VBUS pins
 //!
 //! Everything public in [`stoker`] (the traits, config, state types, and the
@@ -75,9 +76,11 @@ pub use stoker::{
 mod esp_adc;
 mod esp_charging;
 mod esp_reset;
+mod esp_rtc;
 mod esp_sleep;
 
 pub use esp_adc::EspAdcBatteryMonitor;
 pub use esp_charging::EspChargingMonitor;
 pub use esp_reset::EspResetReasonSource;
+pub use esp_rtc::EspRtcClock;
 pub use esp_sleep::{EspSleepError, EspSleepManager, EspWakeCauseSource};

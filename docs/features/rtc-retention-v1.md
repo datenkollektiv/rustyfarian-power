@@ -90,3 +90,4 @@ The envelope must carry this payload through GPIO and timer wake events, softwar
 - 2026-10-14 — Folded the spookhouse request into `Consumer Requirements`; review-queue copies retired.
 - 2026-10-16 — Both tiers landed (`EspResetReasonSource`, `EspHalResetReasonSource`, `RtcRetainedCell`, `PWR_GLITCH` → `Brownout`, `idf_c3_rtc_retention`, `hal_c3_rtc_retention`, `just serial-capture`); placement proven by `nm` on both, four reset kinds plus power-on benched on the C3, R1 answered; four-lens reviews applied.
 - 2026-10-16 — Review P1/P2 applied: `RetainedCell` synchronised with `critical-section` (stoker's only dependency), bench R1 accepts only `DeepSleep`/`Timer` boots; both tiers re-benched on the C3.
+- 2026-10-16 — Spookhouse follow-up done: `stoker::reset::from_esp_idf_code` + `esp_idf_code` with host tests and `const` pins in the tier, `EspRtcClock::now_us()` with the RTC clock benched across the reset matrix.
