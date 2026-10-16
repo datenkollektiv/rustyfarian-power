@@ -18,7 +18,7 @@ desk-work: available
 | `SleepError` gains `NoWakeSource`, `Rejected`, `TimerTooShort`, `TimerTooLong`, `PinNotBound`, `ForeignWakePin`, `UartBusy` (kind `Platform`), `IsolationConflict` (ADR-001 § 3-4) | Additive on a `#[non_exhaustive]` enum; the hal tier uses `SleepError` directly                                | Hal-local error enum                 |
 
 ## Constraints
-- `stoker` stays `#![no_std]` with no dependencies.
+- `stoker` stays `#![no_std]` with no dependencies (since 2026-10-16: `critical-section` only, for `RetainedCell`).
 - The `type Error` change and the `ErrorType`/`kind()` convention ship in the same release (0.3.0); the no_std chunk is not released on its own.
 - The kind enum is `#[non_exhaustive]` and `Copy`, like embedded-hal's `ErrorKind`.
 - `SleepError` keeps its variants and messages; it implements the new error trait.

@@ -21,7 +21,8 @@ name = "rustyfarian_esp_idf_power"
 stoker.workspace = true
 anyhow.workspace = true
 log.workspace = true
-esp-idf-hal.workspace = true
+# `critical-section` links esp-idf-hal's FreeRTOS critical-section implementation, which `stoker::RetainedCell` needs.
+esp-idf-hal = { workspace = true, features = ["critical-section"] }
 
 [build-dependencies]
 embuild.workspace = true

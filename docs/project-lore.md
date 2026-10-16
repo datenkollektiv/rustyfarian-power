@@ -147,3 +147,27 @@ Fix: cap requests in software (`MAX_TIMER_MS`); see ADR-001 § 4a.
 `init_gpio` disables the output driver and calls `set_pad_hold(false)` first, then `set_level` runs (`gpio/mod.rs:658-668`, `1728-1736`).
 On a wake boot the pad is therefore briefly undriven, and the rail is not glitch-free as a "drive, then release" reading suggests.
 Fix: call `Output::set_pad_hold(true)` again after re-creating the drivers (`gpio/mod.rs:857-866`, unstable), and expect the brief undriven window; the earlier raw-register version passed the bench 3/3, the `set_pad_hold` version is not yet re-benched.
+
+---
+
+## stoker — RTC retention cell
+
+**A `Sync` cell with safe `&self` methods that do unsynchronised volatile copies is a data race from safe code, and no documented single-context rule makes it sound.**
+`RetainedCell` first shipped that way (volatile access, fences and a CRC catch a torn copy, but the race itself is undefined behaviour); an external review flagged it after the hal wrapper widened the surface.
+Fix: every `load`, `store` and `invalidate` copies inside `critical_section::with`, which is also the only portable lock on riscv32imc (no compare-and-swap); `stoker` takes `critical-section` as its single dependency.
+
+**A missing `critical-section` implementation fails only at link time, never under `cargo check`.**
+The symptom is an undefined `_critical_section_1_0_acquire`; esp-hal supplies the implementation through its `rt` feature, esp-idf-hal only through its non-default `critical-section` feature, and the host through the crate's `std` feature as a dev-dependency.
+Fix: enable `esp-idf-hal/critical-section` in the IDF crate and treat `just build-example` as the gate for the retention code, not `check`.
+
+---
+
+## Bench tooling — C3 bench driver
+
+**Bench R1 reported PASS on a run with no deep-sleep wake at all, because its only check was "counter incremented".**
+A software reset, panic or watchdog reset also keeps a retained counter once the record lives in `.rtc_noinit` or `.rtc_fast.persistent`, so `Sleeping:` followed by `reset=Software cause=PowerOn` passed.
+Fix: R1 requires `reset=DeepSleep` and `cause=Timer` on every judged boot besides the increment; the `R1 warm reset` self-test injects the software-reset sequence and expects one FAIL.
+
+**Opening the CP210x port of the ESP32-C3-DevKitM-1 resets the chip through EN even with DTR and RTS driven low, and ESP-IDF and esp-hal both report it as a power-on reset.**
+Every `just serial-capture` therefore starts with `reset=PowerOn` and a fresh retention session, which is indistinguishable from a USB replug in the log.
+Fix: start the capture before the sequence under test and read the power-on boot at the top as the port open, not as evidence.

@@ -45,3 +45,5 @@ ESP-IDF reports both as `ESP_RST_POWERON`, the record is refused the same way, a
 - GPIO wake: the example has no wake pin; the PIR example covers the wake path and the record is independent of the wake source.
 - Brownout: needs a bench supply that can dip the rail; `load` refuses it by reset reason, which the host tests cover.
 - The task watchdog cannot be used for a reset here because `CONFIG_ESP_TASK_WDT_PANIC` is unset in the generated sdkconfig; it only warns.
+
+Re-run 2026-10-16 after `RetainedCell` moved its volatile copies into `critical_section::with` (review finding P1): three cycles, every warm boot `load=ok`, one session id; behaviour unchanged.

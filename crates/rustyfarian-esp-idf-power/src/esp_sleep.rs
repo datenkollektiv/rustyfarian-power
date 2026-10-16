@@ -75,7 +75,7 @@
 //! validates the record on every `load` instead.
 //! Read the reset reason first; `load` refuses the record after a power-on or
 //! brownout, when the memory holds arbitrary or partial data.
-//! Use a cell from one task only (see the [`RetainedCell`][crate::RetainedCell] concurrency contract).
+//! The cell serialises its callers in a critical section, so it may be shared by tasks and interrupts.
 //!
 //! ```rust,ignore
 //! use rustyfarian_esp_idf_power::{EspResetReasonSource, ResetReasonSource, RetainedCell};

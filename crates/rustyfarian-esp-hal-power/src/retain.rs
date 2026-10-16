@@ -25,8 +25,8 @@
 //!
 //! # Concurrency
 //!
-//! Call `load`, `store` and `invalidate` from one execution context only.
-//! The cell does not synchronise its callers; see the contract on [`stoker::RetainedCell`].
+//! `load`, `store` and `invalidate` run inside a critical section, so callers from several tasks or an interrupt are serialised.
+//! esp-hal's `rt` feature supplies the `critical-section` implementation; see [`stoker::RetainedCell`].
 
 pub use stoker::retain::*;
 
@@ -34,7 +34,7 @@ use stoker::ResetReason;
 
 /// A [`RetainedCell`] that esp-hal accepts in `.rtc_fast.persistent`.
 ///
-/// See the [module docs](self) for the placement recipe and the single-context contract.
+/// See the [module docs](self) for the placement recipe and the concurrency note.
 /// The methods forward to [`RetainedCell`] unchanged.
 #[repr(transparent)]
 pub struct RtcRetainedCell<const N: usize>(RetainedCell<N>);

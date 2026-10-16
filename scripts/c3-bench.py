@@ -425,7 +425,12 @@ class W2(CaseMachine):
 
 
 class R1(W2):
-    """RTC-fast boot counter: `cycle` must be previous + 1 on every boot of a W2-style run."""
+    """RTC-fast boot counter through deep sleep.
+
+    Every judged boot must be a `DeepSleep` reset with `cause=Timer` and carry `cycle` = previous + 1.
+    A warm reset that keeps the counter (software reset, panic, watchdog) is a FAIL: it proves nothing
+    about sleep retention, so the counter alone is not an acceptance signal.
+    """
 
     name = "R1"
 
@@ -441,8 +446,8 @@ class R1(W2):
         r = Reaction()
         if self.state == "sleeping" and self.prev is not None:
             d = ts - self.sleep_ts
-            ok = b.cycle == self.prev + 1
-            r = self.complete(PASS if ok else FAIL, dt_s=d, note=f"cycle {self.prev}->{b.cycle} cause={b.cause}")
+            ok = b.cycle == self.prev + 1 and b.reset == "DeepSleep" and b.cause == "Timer"
+            r = self.complete(PASS if ok else FAIL, dt_s=d, note=f"cycle {self.prev}->{b.cycle} reset={b.reset} cause={b.cause}")
         self.prev = b.cycle
         self.state = "await_sleep"
         return r
@@ -1473,6 +1478,8 @@ class SimConfig:
     """reject | sleep | alternate: what an attempt does with GPIO4 already high."""
     stall_at_boot: Optional[int] = None
     panic_at_boot: Optional[int] = None
+    warm_reset_at_boot: Optional[int] = None
+    """R1 negative: this boot restarts right after `Sleeping:` and the counter survives the warm reset."""
     foreign_wakes: bool = False
     uart_busy_s: float = 0.2
     h5_timer_ms: int = 5
@@ -1567,6 +1574,10 @@ def sim_firmware(case: str, fw_case: str, b: SimBoot, cfg: SimConfig) -> Iterato
 
     def retry(timer_ms: int, log_each: bool) -> Iterator[object]:
         yield Print(f"Sleeping: GPIO4 AnyHigh + {timer_ms} ms timer")
+        if cfg.warm_reset_at_boot == b.index:
+            yield Delay(0.05)
+            yield Restart()
+            return
         rejected = 0
         while True:
             yield Attempt(True, timer_ms)
@@ -1652,7 +1663,10 @@ class SimBench:
     # firmware execution
 
     def _boot(self, t: float, reset: str, cause: str, mask: int) -> None:
-        self.rtc = self.rtc + 1 if reset == "DeepSleep" else 0
+        # A retained counter survives warm resets when the R1 negative scenario is on; otherwise the
+        # bench firmware's RTC_CYCLE resets to 0 on anything but a deep-sleep wake.
+        keeps = reset == "DeepSleep" or (reset == "Software" and self.cfg.warm_reset_at_boot is not None)
+        self.rtc = self.rtc + 1 if keeps else 0
         boot = SimBoot(self.boots, reset, cause, mask, self.rtc)
         self.boots += 1
         self.fw = sim_firmware(self.case, self.cfg.firmware_case or self.case, boot, self.cfg)
@@ -1877,6 +1891,7 @@ def self_test() -> int:
     run("R1", "R1", 5, 0, extra=lambda r, s, c: [int(x["cycle"]) for x in rows(c)][-1] >= 5)
     run("W2 hang", "W2", 5, 1, SimConfig(stall_at_boot=3), extra=lambda r, s, c: r.hangs == 1 and s.resets == 1 and sum(x.verdict == PASS for x in r.m.results) == 4)
     run("R1 after hang", "R1", 4, 1, SimConfig(stall_at_boot=2), extra=lambda r, s, c: r.hangs == 1 and sum(x.verdict == PASS for x in r.m.results) == 3)
+    run("R1 warm reset", "R1", 5, 1, SimConfig(warm_reset_at_boot=2), extra=lambda r, s, c: sum(x.verdict == FAIL for x in r.m.results) == 1 and any("reset=Software" in x.note for x in r.m.results if x.verdict == FAIL))
     run("H5 panic", "H5", 5, 1, SimConfig(panic_at_boot=2), extra=lambda r, s, c: r.m.panics == 1 and len(r.m.results) == 5)
     run("wrong firmware", "W1", 3, 2, SimConfig(firmware_case="W2"))
 
