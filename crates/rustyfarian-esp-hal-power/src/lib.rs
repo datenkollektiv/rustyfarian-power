@@ -12,7 +12,9 @@
 //! # Status
 //!
 //! The `sleep` module (deep sleep with GPIO and timer wake) exists for the ESP32-C3 and
-//! ESP32-S3 (`docs/features/esp-hal-sleep-tier-v1.md`). The ADC battery monitor and charging
+//! ESP32-S3 (`docs/features/esp-hal-sleep-tier-v1.md`). The `reset` and `retain` modules
+//! (`EspHalResetReasonSource`, `RtcRetainedCell`) place a `stoker` retention record in RTC fast
+//! memory (`docs/features/rtc-retention-v1.md`). The ADC battery monitor and charging
 //! monitor are still pending (`docs/features/esp-hal-parity-v1.md`).
 //!
 //! # Chip features
@@ -54,7 +56,36 @@ compile_error!(
 #[doc(inline)]
 pub use stoker::*;
 
-#[cfg(all(target_os = "none", any(feature = "esp32c3", feature = "esp32s3")))]
+// The drivers need esp-hal's unstable `rtc_cntl` module, sleep API and `Persistable` trait, so
+// they are gated on `unstable` as well; without it the crate is only the `stoker` re-export
+// (`just check-hal` builds that surface once).
+#[cfg(all(
+    target_os = "none",
+    feature = "unstable",
+    any(feature = "esp32c3", feature = "esp32s3")
+))]
+pub mod reset;
+#[cfg(all(
+    target_os = "none",
+    feature = "unstable",
+    any(feature = "esp32c3", feature = "esp32s3")
+))]
+pub use reset::EspHalResetReasonSource;
+
+#[cfg(all(target_os = "none", feature = "unstable"))]
+pub mod retain;
+#[cfg(all(target_os = "none", feature = "unstable"))]
+pub use retain::RtcRetainedCell;
+
+#[cfg(all(
+    target_os = "none",
+    feature = "unstable",
+    any(feature = "esp32c3", feature = "esp32s3")
+))]
 pub mod sleep;
-#[cfg(all(target_os = "none", any(feature = "esp32c3", feature = "esp32s3")))]
+#[cfg(all(
+    target_os = "none",
+    feature = "unstable",
+    any(feature = "esp32c3", feature = "esp32s3")
+))]
 pub use sleep::{BoundSleep, EspHalSleepManager, EspHalWakeCauseSource};

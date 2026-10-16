@@ -14,6 +14,7 @@ re-exports `stoker`'s public surface so firmware needs only one import.
 - `EspAdcBatteryMonitor` — battery voltage via the ESP-IDF ADC oneshot driver
 - `EspSleepManager` — deep sleep with configured wake sources
 - `EspWakeCauseSource` — the reason for the last wake
+- `EspResetReasonSource` — the reason for the last reset, which gates `RetainedCell::load`
 - `EspChargingMonitor` — charging state from MCP73831 STAT + USB VBUS pins
 
 ## Supported boards / examples
@@ -23,6 +24,7 @@ re-exports `stoker`'s public surface so firmware needs only one import.
 | Heltec WiFi LoRa 32 V3.1  | ESP32-S3 | `idf_esp32s3_battery`    |
 | Adafruit ESP32 Feather V2 | ESP32    | `idf_esp32_battery`      |
 | ESP32-C3-DevKitM-1        | ESP32-C3 | `idf_c3_deep_sleep_gpio` |
+| ESP32-C3-DevKitM-1        | ESP32-C3 | `idf_c3_rtc_retention`   |
 | CrowPanel 1.28" HMI       | ESP32-S3 | `idf_s3_deep_sleep_gpio` |
 
 ```rust,ignore

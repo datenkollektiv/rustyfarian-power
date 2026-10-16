@@ -22,12 +22,18 @@
 //! | `ResetReason` | ESP-IDF `esp_reset_reason()`                                   | esp-hal `rtc_cntl::reset_reason` (`SocResetReason`)              |
 //! |:--------------|:---------------------------------------------------------------|:-----------------------------------------------------------------|
 //! | `PowerOn`     | `ESP_RST_POWERON`, `ESP_RST_UNKNOWN`                           | `ChipPowerOn`, `None`                                            |
-//! | `Brownout`    | `ESP_RST_BROWNOUT`                                             | `SysBrownOut`                                                    |
+//! | `Brownout`    | `ESP_RST_BROWNOUT`, `ESP_RST_PWR_GLITCH`                       | `SysBrownOut`, `CorePwrGlitch`                                   |
 //! | `DeepSleep`   | `ESP_RST_DEEPSLEEP`                                            | `CoreDeepSleep`                                                  |
-//! | `Software`    | `ESP_RST_SW`                                                   | `CoreSw`, `Cpu0Sw`                                               |
+//! | `Software`    | `ESP_RST_SW`                                                   | `CoreSw`, `Cpu0Sw` (C3), `CpuSw` (S3)                            |
 //! | `Panic`       | `ESP_RST_PANIC`                                                | not reported, see below                                          |
-//! | `Watchdog`    | `ESP_RST_INT_WDT`, `ESP_RST_TASK_WDT`, `ESP_RST_WDT`           | every `*Wdt*` variant                                            |
-//! | `Other`       | `ESP_RST_EXT`, `ESP_RST_SDIO`, USB, JTAG, eFuse, power glitch, CPU lockup | everything else (USB, JTAG, eFuse CRC, clock or power glitch) |
+//! | `Watchdog`    | `ESP_RST_INT_WDT`, `ESP_RST_TASK_WDT`, `ESP_RST_WDT`           | every `*Wdt*` variant (`Core*`, `Sys*`, C3 `Cpu0*`, S3 `Cpu*`)   |
+//! | `Other`       | `ESP_RST_EXT`, `ESP_RST_SDIO`, USB, JTAG, eFuse, CPU lockup    | everything else (USB, JTAG, eFuse CRC, clock glitch)             |
+//!
+//! A power glitch maps to `Brownout` on both tiers (`ESP_RST_PWR_GLITCH`,
+//! `CorePwrGlitch`) because it may corrupt RTC memory the same way.
+//! ESP-IDF v5.3.3 reports `ESP_RST_PWR_GLITCH` only on chips whose port decodes
+//! that hardware code; on the C3 and S3 it arrives as `ESP_RST_UNKNOWN`, which is
+//! `PowerOn` and refused as well.
 //!
 //! **`Panic` is best-effort.**
 //! ESP-IDF records a panic-handler reset separately from a clean `esp_restart()`.
@@ -55,7 +61,7 @@ pub enum ResetReason {
     ///
     /// RTC memory holds arbitrary bits after a power-on.
     PowerOn,
-    /// Brownout detector reset.
+    /// Brownout detector reset, or a power-glitch reset on platforms that report one.
     ///
     /// RTC memory may hold a partially written record.
     Brownout,

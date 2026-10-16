@@ -18,6 +18,24 @@ The wake cause is `Gpio(mask)` on the C3 and `Ext1(mask)` on the S3, the same as
 Firmware binaries need esp-hal's `rt` feature for the critical-section implementation.
 The module documentation covers wake pads, pulls, and the interrupt contract.
 
+## Retention
+
+`RtcRetainedCell<N>` wraps `stoker::RetainedCell` so it satisfies esp-hal's `Persistable` and can live in a `#[esp_hal::ram(unstable(rtc_fast, persistent))]` static.
+`EspHalResetReasonSource` reads the reset reason that gates `load`; a panic that restarts arrives as `Software`, never `Panic`.
+The runtime zeroes the persistent section on power-on, and `load` refuses the record after a power-on or brownout anyway.
+The example `hal_c3_rtc_retention` is the twin of the ESP-IDF `idf_c3_rtc_retention`.
+
+```rust,ignore
+use rustyfarian_esp_hal_power::{EspHalResetReasonSource, ResetReasonSource, RtcRetainedCell};
+
+#[esp_hal::ram(unstable(rtc_fast, persistent))]
+static BOOTS: RtcRetainedCell<4> = RtcRetainedCell::new();
+
+let reset = EspHalResetReasonSource.last_reset_reason();
+let boots = BOOTS.load::<u32>(reset).unwrap_or(0).wrapping_add(1);
+BOOTS.store(&boots).expect("4 bytes fit in RtcRetainedCell<4>");
+```
+
 ## Chip features
 
 Exactly one chip feature must be enabled; they are mutually exclusive.

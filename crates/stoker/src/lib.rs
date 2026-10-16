@@ -6,7 +6,7 @@
 //! `stoker` is the pure, host-buildable core of the rustyfarian power stack: it
 //! has no ESP-IDF dependency and is fully testable on the host. The ESP-IDF
 //! hardware drivers (`EspAdcBatteryMonitor`, `EspSleepManager`,
-//! `EspWakeCauseSource`, `EspChargingMonitor`) live in the companion
+//! `EspWakeCauseSource`, `EspResetReasonSource`, `EspChargingMonitor`) live in the companion
 //! `rustyfarian-esp-idf-power` crate, which re-exports everything here so device
 //! firmware needs only a single import.
 //!

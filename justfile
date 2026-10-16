@@ -55,17 +55,18 @@ check-ide:
 check-esp32:
     MCU=esp32 CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p rustyfarian-esp-idf-power --target {{ esp32_target }}
 
-# check the ESP-IDF power crate and its C3 example for the ESP32-C3 target (ESP32-C3-DevKitM-1, requires espup)
+# check the ESP-IDF power crate and its C3 examples for the ESP32-C3 target (ESP32-C3-DevKitM-1, requires espup)
 check-c3:
-    MCU=esp32c3 CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p rustyfarian-esp-idf-power --target {{ c3_target }} --lib --example idf_c3_deep_sleep_gpio
+    MCU=esp32c3 CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p rustyfarian-esp-idf-power --target {{ c3_target }} --lib --example idf_c3_deep_sleep_gpio --example idf_c3_rtc_retention
 
 # verify device-side rustdoc snippets type-check for the ESP32 target (requires espup)
 # run this whenever touching rust,ignore doc snippets or esp-idf-gated code
 check-docs-esp32:
     MCU=esp32 CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p rustyfarian-esp-idf-power --target {{ esp32_target }}
 
-# check the esp-hal crate for all four chips (C3, C6, ESP32, S3; esp toolchain, no espup)
+# check the esp-hal crate for all four chips (C3, C6, ESP32, S3; esp toolchain, no espup); the first line is the stoker-only surface without `unstable`
 check-hal:
+    cargo check {{ hal_std }} {{ hal_crate }} --target {{ hal_c3_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32c3
     cargo check {{ hal_std }} {{ hal_crate }} --target {{ hal_c3_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32c3,unstable
     cargo check {{ hal_std }} {{ hal_crate }} --target {{ hal_c6_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32c6,unstable
     cargo check {{ hal_std }} {{ hal_crate }} --target {{ hal_esp32_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32,unstable
@@ -140,6 +141,11 @@ flash-hal-esp32 example features="esp32,unstable,examples": (build-example-hal-e
 [positional-arguments]
 bench-c3 *args:
     uv run scripts/c3-bench.py "$@"
+
+# capture a serial port for N seconds with DTR/RTS held low (wraps `uv run scripts/serial-capture.py`); e.g. just serial-capture /dev/cu.usbserial-210 30
+[positional-arguments]
+serial-capture port seconds baud="115200":
+    uv run scripts/serial-capture.py "$@"
 
 # erase the connected device's flash completely (use before reflashing on boot failures)
 [confirm]
