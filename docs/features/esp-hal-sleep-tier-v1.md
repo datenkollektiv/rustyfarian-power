@@ -41,7 +41,7 @@ Facts verified 2026-10-12 against esp-hal 1.2.2 in the cargo registry (`sleep_de
 
 ## Open Questions
 - [x] Does the hal manager borrow `&mut Input` wake pins at sleep time, or own them? Borrow per attempt; spike in `src/spike_pin_borrow.rs`, ADR-001 § 2 (the pin lifetime must be its own parameter, not the manager's `'d`).
-- [ ] Does esp-hal 1.2.2 deep sleep keep RTC fast memory on the C3 given `rtc_fastmem_pd_en` is never applied (bench; decides the retention feature's esp-hal half)?
+- [x] Does esp-hal 1.2.2 deep sleep keep RTC fast memory on the C3 given `rtc_fastmem_pd_en` is never applied — yes, bench R1 on 2026-10-16: 23 consecutive wakes kept an `RtcRetainedCell` record (`docs/bench/c3-hal-rtc-retention-bench-v1.md`).
 - [ ] Which esp-rs issue numbers track the three findings once filed?
 
 ## State

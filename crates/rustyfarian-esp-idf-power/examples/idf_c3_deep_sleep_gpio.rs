@@ -68,7 +68,7 @@
 //! Built with `C3_BENCH_LOG=1`; without it the per-attempt `BENCH ... result=err:Rejected` lines are absent.
 //!
 //! ```text
-//! Reset reason: 5 (deep sleep)
+//! Reset reason: DeepSleep
 //! Wake cause: Gpio — fired pins: 0x10, GPIO4 fired: true
 //! BENCH case=demo tier=idf cycle=0 reset=DeepSleep cause=Gpio mask=0x10 result=boot guard_us=0 drain_us=0
 //! Sleeping: GPIO4 AnyHigh + 60000 ms timer
@@ -87,8 +87,9 @@ use esp_idf_hal::gpio::{PinDriver, Pull};
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_hal::sys;
 use rustyfarian_esp_idf_power::{
-    Error, EspSleepManager, EspWakeCauseSource, GpioWakeLevel, SleepErrorKind, SleepManager,
-    WakeCause, WakeCauseSource, WakeSource, MAX_TIMER_MS,
+    Error, EspResetReasonSource, EspSleepManager, EspWakeCauseSource, GpioWakeLevel,
+    ResetReasonSource, SleepErrorKind, SleepManager, WakeCause, WakeCauseSource, WakeSource,
+    MAX_TIMER_MS,
 };
 
 /// PIR output pin; bit position in the wake mask.
@@ -134,21 +135,6 @@ const fn parse_u64(s: &str) -> u64 {
     v
 }
 
-/// Short name of the IDF reset reason for the BENCH line.
-fn reset_name(reason: sys::esp_reset_reason_t) -> &'static str {
-    match reason {
-        sys::esp_reset_reason_t_ESP_RST_POWERON => "PowerOn",
-        sys::esp_reset_reason_t_ESP_RST_SW => "Software",
-        sys::esp_reset_reason_t_ESP_RST_PANIC => "Panic",
-        sys::esp_reset_reason_t_ESP_RST_DEEPSLEEP => "DeepSleep",
-        sys::esp_reset_reason_t_ESP_RST_BROWNOUT => "Brownout",
-        sys::esp_reset_reason_t_ESP_RST_INT_WDT
-        | sys::esp_reset_reason_t_ESP_RST_TASK_WDT
-        | sys::esp_reset_reason_t_ESP_RST_WDT => "Watchdog",
-        _ => "Other",
-    }
-}
-
 fn cause_name(cause: WakeCause) -> (&'static str, u64) {
     match cause {
         WakeCause::PowerOn => ("PowerOn", 0),
@@ -170,12 +156,11 @@ fn main() -> anyhow::Result<()> {
     // Capture the wake cause first (ADR-001): a later sleep attempt, even a
     // rejected one, can clear the hardware wake status.
     let wake_cause = EspWakeCauseSource.last_wake_cause();
-    // SAFETY: esp_reset_reason only reads a value latched at boot.
-    let reset = unsafe { sys::esp_reset_reason() };
-    let reset_str = reset_name(reset);
+    let reset = EspResetReasonSource.last_reset_reason();
+    let reset_str = format!("{reset:?}");
     let (cause_str, mask) = cause_name(wake_cause);
 
-    println!("Reset reason: {} ({})", reset, reset_str);
+    println!("Reset reason: {reset:?}");
     match wake_cause {
         WakeCause::Gpio(m) => println!(
             "Wake cause: Gpio — fired pins: 0x{:x}, GPIO{} fired: {}",

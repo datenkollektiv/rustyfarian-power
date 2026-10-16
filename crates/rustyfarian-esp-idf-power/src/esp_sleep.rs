@@ -68,13 +68,29 @@
 //!
 //! # Persisting state across deep sleep
 //!
-//! Deep sleep clears all RAM except the RTC slow memory.
-//! Place variables in the RTC domain to retain them across a sleep/wake cycle:
+//! Deep sleep clears all RAM except the RTC memory.
+//! Place a [`RetainedCell`][crate::RetainedCell] in `.rtc_noinit` so the record also survives
+//! watchdog and software resets, not only a sleep/wake cycle.
+//! The section is `NOLOAD`: the initialiser is never applied, and the cell
+//! validates the record on every `load` instead.
+//! Read the reset reason first; `load` refuses the record after a power-on or
+//! brownout, when the memory holds arbitrary or partial data.
+//! Use a cell from one task only (see the [`RetainedCell`][crate::RetainedCell] concurrency contract).
 //!
 //! ```rust,ignore
-//! #[link_section = ".rtc.data"]
-//! static mut BOOT_COUNT: u32 = 0;
+//! use rustyfarian_esp_idf_power::{EspResetReasonSource, ResetReasonSource, RetainedCell};
+//!
+//! #[link_section = ".rtc_noinit"]
+//! static BOOTS: RetainedCell<4> = RetainedCell::new();
+//!
+//! fn main() {
+//!     let reset = EspResetReasonSource.last_reset_reason();
+//!     let boots = BOOTS.load::<u32>(reset).unwrap_or(0).wrapping_add(1);
+//!     BOOTS.store(&boots).expect("4 bytes fit in RetainedCell<4>");
+//! }
 //! ```
+//!
+//! A complete example is `examples/idf_c3_rtc_retention.rs`.
 //!
 //! # Usage
 //!

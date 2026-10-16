@@ -8,6 +8,7 @@
 //! - [`EspAdcBatteryMonitor`] — reads battery voltage via the ESP-IDF ADC oneshot driver
 //! - [`EspSleepManager`] — enters deep sleep with configured wake sources
 //! - [`EspWakeCauseSource`] — reads the reason for the last wake
+//! - [`EspResetReasonSource`] — reads the reason for the last reset, which gates [`RetainedCell::load`]
 //! - [`EspChargingMonitor`] — resolves charging state from MCP73831 STAT + USB VBUS pins
 //!
 //! Everything public in [`stoker`] (the traits, config, state types, and the
@@ -65,15 +66,18 @@
 // Re-export the platform-agnostic surface so consumers import from one crate.
 pub use stoker::{
     BatteryConfig, BatteryMonitor, BatteryStatus, ChargingMonitor, ChargingSource, ChargingState,
-    Error, GpioWakeLevel, GpioWakeMask, NoopBatteryMonitor, NoopChargingMonitor, NoopSleepManager,
-    PowerSource, SleepError, SleepErrorKind, SleepManager, WakeCause, WakeCauseSource, WakeSource,
-    MAX_TIMER_MS,
+    Error, GpioWakeLevel, GpioWakeMask, Invalid, NoopBatteryMonitor, NoopChargingMonitor,
+    NoopResetReasonSource, NoopSleepManager, PowerSource, ResetReason, ResetReasonSource,
+    Retainable, Retained, RetainedCell, SleepError, SleepErrorKind, SleepManager, StoreError,
+    WakeCause, WakeCauseSource, WakeSource, MAX_TIMER_MS,
 };
 
 mod esp_adc;
 mod esp_charging;
+mod esp_reset;
 mod esp_sleep;
 
 pub use esp_adc::EspAdcBatteryMonitor;
 pub use esp_charging::EspChargingMonitor;
+pub use esp_reset::EspResetReasonSource;
 pub use esp_sleep::{EspSleepError, EspSleepManager, EspWakeCauseSource};

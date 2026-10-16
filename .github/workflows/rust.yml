@@ -63,3 +63,5 @@ jobs:
         run: just check-c3
       - name: Build and link the C3 example
         run: just build-example idf_c3_deep_sleep_gpio
+      - name: Build and link the C3 retention example
+        run: just build-example idf_c3_rtc_retention

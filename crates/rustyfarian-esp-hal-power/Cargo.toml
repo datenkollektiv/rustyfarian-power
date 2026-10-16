@@ -77,6 +77,10 @@ name = "hal_c3_deep_sleep_gpio"
 required-features = ["esp32c3", "unstable", "examples"]
 
 [[example]]
+name = "hal_c3_rtc_retention"
+required-features = ["esp32c3", "unstable", "examples"]
+
+[[example]]
 name = "hal_c3_sleep_bench"
 required-features = ["esp32c3", "unstable", "examples", "bench"]
 
