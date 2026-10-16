@@ -31,6 +31,9 @@ fn main() {
     // Emitted on chips with EXT1 wakeup (ESP32, ESP32-S3, ESP32-C6); together with
     // the cfg above it selects the C2/C3 deep-sleep GPIO wake path.
     println!("cargo:rustc-check-cfg=cfg(esp_idf_soc_pm_support_ext1_wakeup)");
+    // esp-idf-sys relays CONFIG_FREERTOS_PORTMUX_DEBUG as this cfg; `esp_critical_section.rs`
+    // adds the debug fields of `portMUX_TYPE` under it.
+    println!("cargo:rustc-check-cfg=cfg(esp_idf_freertos_portmux_debug)");
 
     let target = std::env::var("TARGET").unwrap_or_default();
     match target.as_str() {

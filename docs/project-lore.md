@@ -157,8 +157,12 @@ Fix: call `Output::set_pad_hold(true)` again after re-creating the drivers (`gpi
 Fix: every `load`, `store` and `invalidate` copies inside `critical_section::with`, which is also the only portable lock on riscv32imc (no compare-and-swap); `stoker` takes `critical-section` as its single dependency.
 
 **A missing `critical-section` implementation fails only at link time, never under `cargo check`.**
-The symptom is an undefined `_critical_section_1_0_acquire`; esp-hal supplies the implementation through its `rt` feature, esp-idf-hal only through its non-default `critical-section` feature, and the host through the crate's `std` feature as a dev-dependency.
-Fix: enable `esp-idf-hal/critical-section` in the IDF crate and treat `just build-example` as the gate for the retention code, not `check`.
+The symptom is an undefined `_critical_section_1_0_acquire`; esp-hal supplies the implementation through its `rt` feature, the host through the crate's `std` feature as a dev-dependency, and the IDF tier through its own `critical-section-impl` feature.
+Fix: keep that feature on (or link exactly one other provider) and treat `just build-example` as the gate for the retention code, not `check`.
+
+**esp-idf-hal's `critical-section` provider is a task-level recursive mutex, not a critical section, so it cannot serialise a task against an ISR.**
+FreeRTOS forbids taking that mutex from an interrupt, and an interrupt that preempts the holder runs as the same task and re-enters it, so the exclusion `RetainedCell` relies on is silently lost.
+Fix: the IDF tier provides the `critical-section` implementation over the FreeRTOS port critical section (`vPortEnterCritical`/`xPortEnterCriticalTimeout` on a `portMUX`), which masks interrupts and spins out the other core.
 
 ---
 

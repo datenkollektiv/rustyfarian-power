@@ -332,9 +332,12 @@ fn reset_gate(reset: ResetReason) -> Result<(), Invalid> {
 /// tasks, or `main` and an interrupt) are serialised and the safe `&self` API
 /// is sound; riscv32imc has no compare-and-swap, so a critical section is the
 /// portable lock.
-/// The platform supplies the `critical-section` implementation: esp-hal with
-/// its `rt` feature, esp-idf-hal with its `critical-section` feature, and the
-/// crate's `std` feature on the host (a dev-dependency here).
+/// The platform supplies the `critical-section` implementation, and it must be
+/// interrupt-safe: esp-hal provides one with its `rt` feature, the
+/// `rustyfarian-esp-idf-power` tier provides one over the FreeRTOS port
+/// critical section (esp-idf-hal's own provider is a task-level mutex that an
+/// ISR may not take), and the crate's `std` feature serves the host (a
+/// dev-dependency here).
 /// The section lasts for one volatile copy of `N + 12` bytes; serialising the
 /// payload happens outside it.
 ///
