@@ -114,16 +114,16 @@ Remove or update entries that are superseded.
 - **Light sleep vs deep sleep for LoRaWAN:** Deep sleep is the correct choice for a sensor transmitting every few minutes.
   Light sleep preserves RAM and peripheral state but consumes ~800 µA–2 mA (too high for months-long battery life).
   Deep sleep with timer wakeup achieves the lowest average current.
-- **Heltec V3 SX1262 radio power:** The SX1262 is powered by a dedicated GPIO-controlled MOSFET/LDO on the Heltec V3 board.
-  GPIO 3 (VEXT) controls external power to the radio and OLED display on some Heltec board revisions; the specific power control GPIO must be verified against the V3 schematic.
-  The SX1262 has its own sleep mode (400 nA) accessible via SPI command — `SetSleep(0x00)`.
+- **Heltec V3 power rails (verified 2026-10-24 against the Zephyr board DTS `heltec_wifi_lora32_v3_procpu.dts`):** the SX1262 sits on the always-on 3V3 rail and has no GPIO power control.
+  Only Vext is switchable, through a P-MOSFET driven by GPIO36 (`Vext_Ctrl`, active-low, pulled up); it feeds the OLED and the Ve header pins, so a rail gate on this board saves the OLED/sensor load, never the radio.
+  The SX1262 has its own sleep mode (~400 nA) via the SPI command `SetSleep(0x00)`; that belongs to the network radio driver, not to the power gate (`docs/features/power-rail-gate-v1.md`).
   For deep sleep of the ESP32, the SPI bus must be fully idle and the radio must be put to sleep first.
 
 ## Trait Design Decisions
 
 - **BatteryMonitor infallible convention:** `BatteryMonitor::read` returns `BatteryStatus` (not `Result`) by absorbing ADC errors into `PowerSource::Unknown`.
   New traits that read best-effort status (e.g., `ChargingMonitor::read_charging_state`) should follow the same convention for consistency.
-  Traits whose failure is operationally critical (e.g., `SleepManager::sleep`, or the planned radio power gate's `power_on`) return `Result<(), Self::Error>` with a typed `stoker` error for the pure implementation; `SleepManager::Error` is bounded by `stoker::sleep::Error` (`Debug` + `kind()`), and `EspSleepManager` uses its own `EspSleepError` (since 2026-10-12, 0.3.0).
+  Traits whose failure is operationally critical (e.g., `SleepManager::sleep`, or `PowerRailGate::power_on`) return `Result<(), Self::Error>` with a typed `stoker` error for the pure implementation; `SleepManager::Error` is bounded by `stoker::sleep::Error` (`Debug` + `kind()`), and `EspSleepManager` uses its own `EspSleepError` (since 2026-10-12, 0.3.0).
 - **Sleep/wake asymmetry:** On ESP32, `esp_deep_sleep_start()` never returns.
   This means `WakeCause` cannot be returned from a `sleep()` call — it must be read at the next boot via a separate `WakeCauseSource` trait.
   Always keep `SleepManager` and `WakeCauseSource` as two distinct traits; merging them implies a round-trip that does not exist in hardware.
@@ -143,12 +143,12 @@ Remove or update entries that are superseded.
   `SocResetReason` CPU-local names differ per chip: C3 `Cpu0Sw`/`Cpu0Mwdt0`/`Cpu0Mwdt1`/`Cpu0RtcWdt`, S3 `CpuSw`/`CpuMwdt0`/`CpuMwdt1`/`CpuRtcWdt` (no `Cpu1*` variants); `EspHalResetReasonSource` cfg-splits those arms, and it never reports `Panic` because the examples' panic handler restarts through `software_reset()` (`CoreSw`).
   `esp_hal::init` disables every watchdog, so a self-inflicted watchdog reset must arm one: `TimerGroup::new(TIMG0).wdt`, `set_timeout(MwdtStage::Stage0, 500 ms)`, `enable()`, spin → `TG0WDT_SYS_RST` / `CoreMwdt0` → `Watchdog`.
   The generated sdkconfig has `CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT=y` (a Rust panic reboots as `ESP_RST_PANIC`) but no `CONFIG_ESP_TASK_WDT_PANIC`: a starved task only warns, so a self-inflicted watchdog reset must trip the 300 ms interrupt watchdog (`esp_idf_hal::interrupt::free` around a spin loop → `ESP_RST_INT_WDT`).
-- **Radio power gating — who implements the trait:** `rustyfarian-power` defines and implements `RadioPowerGate`; `rustyfarian-network` holds a reference to it.
+- **Power rail gating — who implements the trait:** `rustyfarian-power` defines and implements `PowerRailGate` (named `RadioPowerGate` in early plans; renamed 2026-10-24 because the Heltec V3 cannot gate its radio); `rustyfarian-network` holds a reference to it.
   Dependencies must flow downward: application -> network -> power.
   The power crate must never import `rustyfarian-network`.
-- **Reference-counted radio gate:** When multiple subsystems share one power rail, use a coordinator that wraps `RadioPowerGate` with a reference count.
+- **Reference-counted rail gate:** When multiple subsystems share one power rail, use a coordinator that wraps `PowerRailGate` with a reference count.
   The radio powers on when the count goes 0 -> 1 and off when the count returns to 0.
-  The `RadioPowerGate` trait itself exposes only the primitive three methods (`power_on`, `power_off`, `is_powered`); coordination is the implementor's concern.
+  The `PowerRailGate` trait itself exposes only the primitive three methods (`power_on`, `power_off`, `is_powered`); coordination is the implementor's concern.
 - **ChargingState vs PowerSource are orthogonal:** `PowerSource` answers "what supplies energy now"; `ChargingState` answers "what is the battery's charge trajectory".
   They can vary independently (e.g., on solar with a full battery: `PowerSource::Solar`, `ChargingState::Full`).
   Do not merge them.
@@ -175,8 +175,8 @@ Remove or update entries that are superseded.
 - **⚠️ On the Heltec V3.1, "no battery" is undetectable in software while USB is connected — it masquerades as a ~80 % battery.** With USB power and no cell, the always-on divider sees the charger/BMS rail, so GPIO1 reads ~711–735 mV → ×5.55 → ~3946–4079 mV → classified as `Battery` ~78–89 % (verified on hardware 2026-06-19). A real ~4 V cell reads identically; the only (heuristic, unreliable) tell is *instability* — the no-cell reading jumps ~130–180 mV between 2 s samples, while a real LiPo holds within a few mV. Bench artifact only: in field use (no USB) a missing cell just means the board is off. Mirrors the Feather V2 no-battery masquerade.
   VBAT sense path (measured on a spare **Heltec V3.1**): GPIO1 (ADC1_CH0) reads the divided battery voltage and the divider is **always-on** — toggling GPIO37/ADC_CTRL HIGH vs LOW had no effect (706 vs 707 mV), disproving the community "pull GPIO37 LOW to enable" model for V3.1 (it may still apply to V3.0/V3.2 — revisions differ). Read GPIO1 directly; no GPIO37 handling needed.
   The physical divider is ~390 kΩ/100 kΩ (textbook ≈4.9), but the ~80 kΩ source impedance makes the esp-idf oneshot ADC read ~11% low, so the *effective* `divider_ratio` is higher (~5.5). Calibrate it as metered_VBAT ÷ raw_pin_mV, not from the resistor values.
-- **Module layout for new traits:** New trait modules (`sleep.rs`, `radio_gate.rs`, `charging.rs`) are unconditionally compiled (no feature gate).
-  ESP-IDF implementations (`esp_sleep.rs`, `esp_radio.rs`, `esp_charging.rs`) are feature-gated behind `esp-idf`.
+- **Module layout for new traits:** New trait modules (`sleep.rs`, `gate.rs`, `charging.rs`) are unconditionally compiled (no feature gate).
+  ESP-IDF implementations (`esp_sleep.rs`, `esp_gate.rs`, `esp_charging.rs`) are feature-gated behind `esp-idf`.
   This mirrors the existing `lib.rs` / `esp_adc.rs` split.
 - **WakeSource::GpioLevel uses `pin_mask: u64` (decision record):** Mirrors the ESP-IDF `esp_sleep_enable_ext1_wakeup_io()` API directly; preserves `WakeSource: Copy` (consistent with `Timer { duration_ms: u64 }`).
   Range validation (pins 0–21 only, non-zero mask) is enforced in `EspSleepManager::sleep()` before the FFI call with a clear error message.
