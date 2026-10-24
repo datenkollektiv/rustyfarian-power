@@ -21,6 +21,8 @@ stoker = { path = "crates/stoker", version = "0.2" }
 # External dependencies
 anyhow = "1"
 log = "0.4"
+# Digital `OutputPin` trait the power rail gates drive; both HAL tiers implement it for their output pins.
+embedded-hal = "1"
 
 # ESP-IDF dependencies — September 2026 wave, in step with the sibling
 # rustyfarian repos. esp-idf-hal 0.47 pulls esp-idf-sys 0.38 (a `links` crate:

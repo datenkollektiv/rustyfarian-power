@@ -1,7 +1,8 @@
 //! Battery voltage monitoring and power management for embedded projects.
 //!
 //! Provides battery voltage reading, percentage estimation, power source
-//! detection (battery vs USB), and deep sleep management.
+//! detection (battery vs USB), deep sleep management, and power rail gating
+//! ([`PowerRailGate`], [`GatedSleep`]).
 //!
 //! `stoker` is the pure, host-buildable core of the rustyfarian power stack: it
 //! has no ESP-IDF dependency and is fully testable on the host. The ESP-IDF
@@ -42,12 +43,16 @@ extern crate std;
 
 pub mod charging;
 pub mod config;
+pub mod gate;
 pub mod reset;
 pub mod retain;
 pub mod sleep;
 
 pub use charging::{ChargingMonitor, ChargingSource, ChargingState, NoopChargingMonitor};
 pub use config::BatteryConfig;
+pub use gate::{
+    GateError, GateErrorKind, GatedSleep, GatedSleepError, NoopPowerRailGate, PowerRailGate,
+};
 pub use reset::{NoopResetReasonSource, ResetReason, ResetReasonSource};
 pub use retain::{Invalid, Retainable, Retained, RetainedCell, StoreError};
 pub use sleep::{

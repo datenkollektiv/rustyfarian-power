@@ -113,6 +113,16 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 - `stoker::reset::from_esp_idf_code(u32) -> ResetReason` (pure, `const`) and the `stoker::reset::esp_idf_code` constants for the sixteen ESP-IDF v5.3.3 `esp_reset_reason_t` values, with one host test per table row plus the out-of-range case; `EspResetReasonSource` forwards the code it reads and pins every generated `esp_reset_reason_t_ESP_RST_*` constant to those codes with `const` assertions, so an ESP-IDF renumbering fails the build.
 - `EspRtcClock::now_us()` in `rustyfarian-esp-idf-power`: the RTC timer in microseconds via a documented `extern "C"` declaration of `esp_rtc_get_time_us()` (not in the esp-idf-sys 0.38 bindings); it keeps counting through deep sleep and warm resets for slept-time accounting. `idf_c3_rtc_retention` prints `RTC rtc_us=<n>` on every boot.
 - `just serial-capture <port> <seconds> [baud]` (`scripts/serial-capture.py`, pyserial via `uv`): timed, timestamped UART capture that keeps DTR and RTS low, for bench runs that must not reset the board on every read.
+- `stoker::gate` (unconditionally compiled, `no_std`): the `PowerRailGate` trait with `power_on`, `power_off` and a cached, infallible `is_powered`; the fallible methods use `type Error: gate::Error` with `kind()`.
+- `stoker::gate::GateError` (`Refused`) and `GateErrorKind` (`Platform`, `Other`), re-exported at the crate root; `GateError` implements `core::error::Error`.
+- `stoker::gate::NoopPowerRailGate`: host mock with `off()` and `on()`, `fail_next_on()` and `fail_next_off()` injected failures, and `on_calls()` and `off_calls()` counters.
+- `stoker::gate::GatedSleep<G, S>`: coordinator that implements `SleepManager` by powering the rail off before sleep and restoring its pre-call state when sleep fails or `try_sleep` returns `Rejected`; `new`, `into_parts`, `gate_mut` and `sleep_mut` are provided.
+- `stoker::gate::GatedSleepError<G, S>` (`Gate`, `Sleep`) implements `sleep::Error` and forwards `kind()`.
+- `rustyfarian-esp-idf-power` `GpioRailGate<P: OutputPin>` with `Polarity` and `GpioRailGateError`, plus `heltec_v3_vext` (GPIO36, active-low, ESP32-S3 only) and `HELTEC_V3_VEXT_GPIO`.
+- Example `idf_s3_power_rail_gate`: holds the Vext rail on and off in 10 s steps, then sleeps through `GatedSleep` with a 30 s timer wake.
+- `rustyfarian-esp-hal-power::gate`: `GpioRailGate<P: OutputPin>` and `Polarity` with the same contract, plus `heltec_v3_vext` over esp-hal's `Output`; the module is gated on `unstable`.
+- Example `hal_s3_power_rail_gate`: the esp-hal twin of `idf_s3_power_rail_gate`, with matching `BENCH` lines.
+- ADR-002 (power rail gate contract) records the trait shape, error type, coordinator semantics and tier placement.
 
 ### Changed
 - Workspace: `default-members` keeps the hal tier out of the host and ESP-IDF builds (bare `cargo`, `check-all`, `build-all`, `clippy-all`); new `just` recipes `check-hal`, `check-hal-c3`, `clippy-hal`, `clean-hal`, `release-dry-run-hal` and `release-publish-hal` build into `target/hal` with `-Zbuild-std=core,alloc`.
@@ -129,6 +139,7 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 - `rustyfarian-esp-hal-power` gates `sleep`, `reset` and `retain` on its `unstable` feature (they use esp-hal's unstable `rtc_cntl`, sleep API and `Persistable`); a build without `unstable` is the `stoker` re-export only instead of a compile failure, and `just check-hal` builds that surface once.
 - The `stoker::reset` mapping table names the per-chip esp-hal variants: `Cpu0Sw`/`Cpu0*Wdt` on the C3 and `CpuSw`/`Cpu*Wdt` on the S3, and `CorePwrGlitch` under `Brownout`.
 - Example `idf_c3_deep_sleep_gpio` reports the reset through `EspResetReasonSource` instead of its own `esp_reset_reason()` mapping; the `BENCH` `reset=` names are unchanged for the resets the bench drives, while `ESP_RST_UNKNOWN` (which is how ESP-IDF v5.3.3 reports a power glitch on the C3) now reads `PowerOn` instead of `Other`, and the `Reset reason:` line drops the raw code.
+- The planned `RadioPowerGate` is named `PowerRailGate`, because the Heltec V3 cannot gate its radio; only the Vext rail is switchable.
 
 ## [0.2.0] - 2026-09-26
 

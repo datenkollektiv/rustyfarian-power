@@ -1,6 +1,5 @@
 ---
-gate: hardware
-gate-note: Heltec V3 on the bench with a current meter, to measure Vext off vs on and prove the rail stays off through deep sleep
+gate: none
 desk-work: available
 ---
 
@@ -23,6 +22,9 @@ Verified 2026-10-24 (Zephyr board DTS): on the Heltec V3 the SX1262 has no power
 |                                                    No settle delay in trait or coordinator | Load-dependent; the consumer delays after `power_on`          | Off → Powering → Ready state machine              |
 |                                                    Ships in the 0.3.0 `[Unreleased]` train | One CHANGELOG cut with the error convention it builds on      | Separate 0.4.0                                    |
 |                                ADR-002 records the trait shape, error type and coordinator | Cross-repo contract consumed by `rustyfarian-network`         | —                                                 |
+|    Coordinator `GatedSleep<G, S>` owns gate and sleep manager, `into_parts()` returns them | Simple lifetimes across a sleep call                          | Borrowed `&mut` view                              |
+|                                              `is_powered` returns cached state, infallible | `OutputPin` cannot read itself back on every HAL              | `StatefulOutputPin` read-back                     |
+|                                                     `&mut self` receivers, no `Send` bound | Mirrors `SleepManager` and `BatteryMonitor`                   | `&self` with interior mutability                  |
 
 ## Constraints
 - `stoker` stays `#![no_std]` with `critical-section` as its only dependency.
@@ -35,19 +37,21 @@ Verified 2026-10-24 (Zephyr board DTS): on the Heltec V3 the SX1262 has no power
 ## Open Questions
 - [ ] Does the GPIO36 pull-up keep Vext off through deep sleep on IDF and esp-hal, or does the pad need hold or isolation? Bench on the V3.
 - [ ] How much does Vext off save on the V3 with the OLED idle versus `displayOff`? Decides whether the bench number is meaningful.
-- [ ] Does the coordinator own or borrow the gate and sleep manager, and does it fit the esp-hal async sleep path?
-- [ ] What does `rustyfarian-network` need from the trait (`Send`, `&mut self` vs `&self`) before its LoRa feature can accept it?
-- [ ] Does `is_powered` read the pin back or return cached state?
+- [x] Coordinator owns both by value (2026-10-24); the esp-hal async sleep path is a later addition.
+- [x] Network takes `&mut impl PowerRailGate`; `Send` is the consumer's choice (2026-10-24).
+- [x] `is_powered` returns cached state (2026-10-24).
 
 ## State
 - [x] Design approved (2026-10-24 dialog)
-- [ ] ADR-002 written and accepted
-- [ ] `stoker`: trait, error type, `NoopPowerRailGate`, coordinator, host tests (double on, off while off, power-on failure, sleep sequencing)
-- [ ] IDF tier: `GpioRailGate`, Heltec V3 Vext preset, example
-- [ ] esp-hal tier: `GpioRailGate`, Heltec V3 Vext preset, example
+- [x] ADR-002 written and accepted
+- [x] `stoker`: trait, error type, `NoopPowerRailGate`, coordinator, host tests (double on, off while off, power-on failure, sleep sequencing)
+- [x] IDF tier: `GpioRailGate`, Heltec V3 Vext preset, example
+- [x] esp-hal tier: `GpioRailGate`, Heltec V3 Vext preset, example
 - [ ] Heltec V3 bench: Vext current off vs on, rail off through deep sleep
-- [ ] Tests passing (`just verify`, `just check-all`, `just check-hal`)
-- [ ] Documentation: CHANGELOG, README family diagram (planned → wired), VISION wording, key-insights
+- [x] Tests passing (`just verify`, `just check-all`, `just check-hal`, both S3 example builds, 2026-10-24)
+- [x] Documentation: CHANGELOG, README family diagram (planned → wired), VISION wording, key-insights
 
 ## Session Log
 - 2026-10-24 — Feature doc created via /feature dialog; Vext vs SX1262 rail verified, trait renamed to `PowerRailGate`
+- 2026-10-24 — Updated: bench gate cleared (V3 and meter ready), coordinator ownership, `is_powered` and receiver decided; implementation starts
+- 2026-10-24 — Implemented: stoker gate module, both tiers, ADR-002, docs; bench pending

@@ -12,7 +12,7 @@
 [![cargo audit](https://github.com/datenkollektiv/rustyfarian-power/actions/workflows/audit.yml/badge.svg)](https://github.com/datenkollektiv/rustyfarian-power/actions/workflows/audit.yml)
 
 A Rust library for power management on ESP32 microcontrollers, targeting the **Heltec WiFi LoRa 32 V3**.
-Powers the rustyfarian ecosystem's battery-driven field deployments — from battery monitoring to deep sleep and radio power gating.
+Powers the rustyfarian ecosystem's battery-driven field deployments — from battery monitoring to deep sleep and power rail gating.
 
 > **Note:** Large parts of this library (and its documentation) were developed with the assistance of AI tools.
 > All generated code has been reviewed and curated by the maintainer.
@@ -27,20 +27,20 @@ graph TD
     app["rustyfarian-rgb-clock<br/>(reference application)"]
     net["rustyfarian-network<br/>Wi-Fi · MQTT · ESP-NOW · OTA"]
     leds["rustyfarian-ws2812<br/>WS2812 / NeoPixel effects"]
-    pwr["rustyfarian-power<br/>battery · deep sleep · radio gating<br/>(this repo)"]
+    pwr["rustyfarian-power<br/>battery · deep sleep · rail gating<br/>(this repo)"]
     app --> net
     app --> leds
-    net -.->|"planned: RadioPowerGate"| pwr
+    net -->|"PowerRailGate"| pwr
 ```
 
-| Repo | Role |
-|:-----|:-----|
-| **rustyfarian-power** (this repo) | Battery monitoring, deep sleep, radio power gating |
-| [rustyfarian-network](https://github.com/datenkollektiv/rustyfarian-network) | Wi-Fi, MQTT, LoRa, ESP-NOW, OTA |
-| [rustyfarian-ws2812](https://github.com/datenkollektiv/rustyfarian-ws2812) | WS2812 / NeoPixel LED effects |
+| Repo                                                                             | Role                                               |
+|:---------------------------------------------------------------------------------|:---------------------------------------------------|
+| **rustyfarian-power** (this repo)                                                | Battery monitoring, deep sleep, power rail gating  |
+| [rustyfarian-network](https://github.com/datenkollektiv/rustyfarian-network)     | Wi-Fi, MQTT, LoRa, ESP-NOW, OTA                    |
+| [rustyfarian-ws2812](https://github.com/datenkollektiv/rustyfarian-ws2812)       | WS2812 / NeoPixel LED effects                      |
 | [rustyfarian-rgb-clock](https://github.com/datenkollektiv/rustyfarian-rgb-clock) | Reference application tying the libraries together |
 
-The `network → power` link (radio power gating via `RadioPowerGate`) is **planned**, not yet wired up — see [VISION.md](./VISION.md).
+The `network → power` link uses `PowerRailGate`, which `stoker` defines and both ESP32 tiers implement; the network side lives in `rustyfarian-network`, see [VISION.md](./VISION.md).
 
 ## Vision
 
@@ -50,7 +50,7 @@ The `network → power` link (radio power gating via `RadioPowerGate`) is **plan
 
 **Long-term goals:**
 - Deep sleep with configurable wake-up sources as first-class primitives
-- Radio power gating that coordinates cleanly with `rustyfarian-network` crates
+- Power rail gating that coordinates cleanly with `rustyfarian-network` crates
 - Solar-assisted deployment support via charging/boost input awareness
 
 **Out of scope:** Wi-Fi, MQTT, and LoRaWAN protocol logic — these belong in `rustyfarian-network`.
@@ -181,7 +181,7 @@ This repository publishes three crates, one per tier (see [release-plan.md](rele
 
 | Crate                                                           | Tier                         | Contents                                                                                                                                                                                                                                                                                                                                                                                                               | crates.io                                                                                                                         | Docs                                                                                                   |
 |:----------------------------------------------------------------|:-----------------------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------|
-| [`stoker`](crates/stoker)                                       | Pure / host-buildable        | `BatteryConfig`, `BatteryStatus`, `PowerSource`, the `BatteryMonitor` / `ChargingMonitor` / `SleepManager` / `WakeCauseSource` traits, `ChargingState`, `WakeCause` / `WakeSource`, sleep validation, and the `Noop*` host mocks. No ESP-IDF dependency; fully host-testable.                                                                                                                                          | [![crates.io](https://img.shields.io/crates/v/stoker.svg)](https://crates.io/crates/stoker)                                       | [![docs.rs](https://img.shields.io/docsrs/stoker)](https://docs.rs/stoker)                             |
+| [`stoker`](crates/stoker)                                       | Pure / host-buildable        | `BatteryConfig`, `BatteryStatus`, `PowerSource`, the `BatteryMonitor` / `ChargingMonitor` / `SleepManager` / `WakeCauseSource` / `PowerRailGate` traits, `GatedSleep`, `ChargingState`, `WakeCause` / `WakeSource`, sleep validation, and the `Noop*` host mocks. No ESP-IDF dependency; fully host-testable.                                                                                                          | [![crates.io](https://img.shields.io/crates/v/stoker.svg)](https://crates.io/crates/stoker)                                       | [![docs.rs](https://img.shields.io/docsrs/stoker)](https://docs.rs/stoker)                             |
 | [`rustyfarian-esp-idf-power`](crates/rustyfarian-esp-idf-power) | ESP-IDF (std)                | `EspAdcBatteryMonitor`, `EspSleepManager`, `EspWakeCauseSource`, `EspResetReasonSource`, `EspChargingMonitor`, plus the hardware examples. Re-exports `stoker`'s surface, so firmware imports from one crate.                                                                                                                                                                                                          | [![crates.io](https://img.shields.io/crates/v/rustyfarian-esp-idf-power.svg)](https://crates.io/crates/rustyfarian-esp-idf-power) | [![readme](https://img.shields.io/badge/docs-readme-blue)](crates/rustyfarian-esp-idf-power/README.md) |
 | [`rustyfarian-esp-hal-power`](crates/rustyfarian-esp-hal-power) | Bare-metal (esp-hal, no_std) | Chip features `esp32c3` / `esp32c6` / `esp32` / `esp32s3`, re-exports `stoker`. The `sleep` module (`EspHalSleepManager`, `EspHalWakeCauseSource`) covers the C3 and S3 per [ADR-001](docs/adr/001-hal-neutral-sleep-contract.md); `EspHalResetReasonSource` and `RtcRetainedCell` place a `stoker` retention record in RTC fast memory; ADC drivers land per [esp-hal-parity-v1](docs/features/esp-hal-parity-v1.md). | [![crates.io](https://img.shields.io/crates/v/rustyfarian-esp-hal-power.svg)](https://crates.io/crates/rustyfarian-esp-hal-power) | [![readme](https://img.shields.io/badge/docs-readme-blue)](crates/rustyfarian-esp-hal-power/README.md) |
 

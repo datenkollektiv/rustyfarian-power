@@ -89,3 +89,8 @@ pub mod sleep;
     any(feature = "esp32c3", feature = "esp32s3")
 ))]
 pub use sleep::{BoundSleep, EspHalSleepManager, EspHalWakeCauseSource};
+
+#[cfg(all(target_os = "none", feature = "unstable"))]
+pub mod gate;
+#[cfg(all(target_os = "none", feature = "unstable"))]
+pub use gate::{GpioRailGate, GpioRailGateError, Polarity, HELTEC_V3_VEXT_GPIO};
