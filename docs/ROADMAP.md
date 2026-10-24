@@ -33,14 +33,15 @@ timeline
               : esp-hal sleep tier v1 — ADR first, C3 sleep module in the hal crate before ADC, hal_c3_deep_sleep_gpio (feature-doc)
               : ESP32-S3 deep sleep GPIO wake v1 — knob U4, S3 arm of the hal sleep module, hal/idf S3 examples, CrowPanel bench (feature-doc)
               : RTC retention v1 — validity-checked envelope in stoker, ResetReasonSource, .rtc_noinit + esp-hal placement (feature-doc)
+              : esp-hal RTC clock v1 — EspHalRtcClock::now_us() with IDF-style tick accumulation in RTC memory, slept time drift-free across boots (feature-doc)
+              : Power rail gate v1 — PowerRailGate + sleep coordinator in stoker, GpioRailGate per tier, Heltec V3 Vext preset and bench (feature-doc)
 
-    Near term : Verify Heltec V3 schematic — battery/USB power-path confirmed; still need VEXT GPIO, charge-controller IC marking, and CHRG/STAT GPIO
+    Near term : Verify Heltec V3 schematic — battery/USB power-path confirmed; VEXT = GPIO36 active-low (2026-10-24); still need charge-controller IC marking and CHRG/STAT GPIO
               : Add dual-target CI matrix — separate build jobs for xtensa-esp32s3-espidf and xtensa-esp32-espidf
               : Harden EspWakeCauseSource multi-source disambiguation
               : Calibration example — raw ADC readings with statistics
 
-    Mid term  : Radio power gating — GPIO-controlled MOSFET for SX1262 and OLED, SX1262 sleep sequencing via SPI
-              : Heltec V3 EspChargingMonitor — blocked on schematic verification above
+    Mid term  : Heltec V3 EspChargingMonitor — blocked on schematic verification above
               : Extend BatteryMonitor trait for multi-cell battery packs
               : Contract test scaffold — shared test fn run against both NoopBatteryMonitor and EspAdcBatteryMonitor
 
