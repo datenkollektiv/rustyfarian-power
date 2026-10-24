@@ -58,6 +58,7 @@ bench = []
 
 [dependencies]
 stoker = { workspace = true }
+embedded-hal = { workspace = true }
 
 # Bare-metal only. The workspace default target (and so the IDE's) is
 # `xtensa-esp32s3-espidf`, where `xtensa-lx-rt`'s build script (via esp-hal)
@@ -70,6 +71,10 @@ esp-println = { workspace = true, optional = true, features = ["auto"] }
 
 [[example]]
 name = "hal_s3_deep_sleep_gpio"
+required-features = ["esp32s3", "unstable", "examples"]
+
+[[example]]
+name = "hal_s3_power_rail_gate"
 required-features = ["esp32s3", "unstable", "examples"]
 
 [[example]]

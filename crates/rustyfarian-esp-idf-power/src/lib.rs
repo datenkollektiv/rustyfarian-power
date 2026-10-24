@@ -10,6 +10,7 @@
 //! - [`EspWakeCauseSource`] — reads the reason for the last wake
 //! - [`EspResetReasonSource`] — reads the reason for the last reset, which gates [`RetainedCell::load`]
 //! - [`EspRtcClock`] — the RTC timer in microseconds, which keeps counting through deep sleep
+//! - [`GpioRailGate`] — switches a power rail (such as the Heltec V3 `Vext`) from one GPIO
 //! - [`EspChargingMonitor`] — resolves charging state from MCP73831 STAT + USB VBUS pins
 //!
 //! With the default feature `critical-section-impl` the crate also provides the
@@ -78,17 +79,22 @@ pub use stoker::{
     Retainable, Retained, RetainedCell, SleepError, SleepErrorKind, SleepManager, StoreError,
     WakeCause, WakeCauseSource, WakeSource, MAX_TIMER_MS,
 };
+pub use stoker::{
+    GateError, GateErrorKind, GatedSleep, GatedSleepError, NoopPowerRailGate, PowerRailGate,
+};
 
 mod esp_adc;
 mod esp_charging;
 #[cfg(feature = "critical-section-impl")]
 mod esp_critical_section;
+mod esp_gate;
 mod esp_reset;
 mod esp_rtc;
 mod esp_sleep;
 
 pub use esp_adc::EspAdcBatteryMonitor;
 pub use esp_charging::EspChargingMonitor;
+pub use esp_gate::{GpioRailGate, GpioRailGateError, Polarity, HELTEC_V3_VEXT_GPIO};
 pub use esp_reset::EspResetReasonSource;
 pub use esp_rtc::EspRtcClock;
 pub use esp_sleep::{EspSleepError, EspSleepManager, EspWakeCauseSource};

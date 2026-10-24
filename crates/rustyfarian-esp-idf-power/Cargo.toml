@@ -29,6 +29,7 @@ critical-section-impl = ["dep:critical-section"]
 stoker.workspace = true
 anyhow.workspace = true
 log.workspace = true
+embedded-hal.workspace = true
 esp-idf-hal.workspace = true
 critical-section = { workspace = true, features = ["restore-state-none"], optional = true }
 

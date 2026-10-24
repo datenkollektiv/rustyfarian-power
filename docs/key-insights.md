@@ -149,6 +149,14 @@ Remove or update entries that are superseded.
 - **Reference-counted rail gate:** When multiple subsystems share one power rail, use a coordinator that wraps `PowerRailGate` with a reference count.
   The radio powers on when the count goes 0 -> 1 and off when the count returns to 0.
   The `PowerRailGate` trait itself exposes only the primitive three methods (`power_on`, `power_off`, `is_powered`); coordination is the implementor's concern.
+- **PowerRailGate / GatedSleep (since 2026-10-24):** `is_powered` returns the cached state of the last successful call and cannot fail, because `OutputPin` has no read-back on every HAL.
+  A failed `power_on` or `power_off` leaves the cache unchanged.
+  `GpioRailGate::new` drives the rail off immediately, so `is_powered` starts `false` and matches the pin.
+  `GatedSleep` powers the rail off before `sleep` and restores it when sleep returns an error or `try_sleep` returns `Rejected`; a failed restore is ignored because the sleep error wins.
+  On hardware deep sleep never returns, so "on after wake" is the consumer's `power_on` at boot.
+  No settle delay is modelled; the consumer waits after `power_on`.
+  `stoker` has no `embedded-hal` dependency, so each tier defines its own `GpioRailGate`.
+  `heltec_v3_vext` takes the typed `Gpio36` pad on IDF (esp-idf-hal 0.47's `PinDriver` has no pin type parameter) but any `Output` on esp-hal.
 - **ChargingState vs PowerSource are orthogonal:** `PowerSource` answers "what supplies energy now"; `ChargingState` answers "what is the battery's charge trajectory".
   They can vary independently (e.g., on solar with a full battery: `PowerSource::Solar`, `ChargingState::Full`).
   Do not merge them.

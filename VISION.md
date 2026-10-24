@@ -5,7 +5,7 @@ Give every rustyfarian application on ESP32 a single, ergonomic power management
 
 ## Long-Term Goals
 - Provide deep sleep with configurable wake-up sources (timer, GPIO, touch, and more) as first-class primitives.
-- Offer radio power gating interfaces that coordinate cleanly with `rustyfarian-network` crates without duplicating network logic.
+- Offer power rail gating (switched rails such as Vext) that coordinates cleanly with `rustyfarian-network` crates without duplicating network logic.
 - Surface battery status (voltage, percentage, power source) with hardware-independent abstractions that any rustyfarian app can consume.
 - Support solar-assisted deployments by detecting and exposing charging/boost input state.
 - Keep the API ergonomic enough that a new rustyfarian application can integrate power management in under a day.
