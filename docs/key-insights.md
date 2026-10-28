@@ -274,6 +274,10 @@ Remove or update entries that are superseded.
 - **`stoker` is `#![no_std]` with `critical-section` as its only dependency (since 2026-10-12, dependency added 2026-10-16):** validators return `SleepError`; `SleepManager::Error: stoker::sleep::Error`, and since the orphan rule forbids implementing that trait for `anyhow::Error`, implementors (including `EspSleepManager`, via `EspSleepError`) need a local error type; `?` into `anyhow` in firmware still works through `core::error::Error`. Still open: `build.rs` only matches `*-espidf` triples, so a `*-none-elf` ESP32 build would silently get the S3 wake-pin mask.
 - **ADC and GPIO port easily:** calibrated mV on ESP32 (`AdcCalLine` only), S3/C3/C6 (`Line`/`Curve`; C6 also `Basic`); `Input` + `Pull` are stable.
 - **Joining means exact-pinning `esp-hal` in lockstep with network/ws2812/peripherals** (all `=1.2.2` since 2026-09-26), or apps combining the hal tiers will not resolve.
+- **esp-hal RTC clock inputs (since 2026-10-28):** `EspHalRtcClock` reads the boot calibration from `LPWR::regs().store1()`, which is valid only after `esp_hal::init`.
+  Calibration runs once per boot, so the period can differ on every boot.
+  The `RTC_TIMER` and `STORE1` register paths are esp-hal 1.2.2 internals and must be re-checked on every esp-hal bump.
+  `Rtc::time_since_power_up()` drifts after an hour of uptime (−8.5 %..+6.1 % for 60 s sleeps) because each boot re-converts the whole tick count; use `EspHalRtcClock::now_us()` for slept time (`docs/features/esp-hal-rtc-clock-v1.md`).
 
 ## Known Gotchas
 

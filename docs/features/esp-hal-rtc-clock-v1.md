@@ -12,13 +12,16 @@ Measured on the DevKitM-1: `Rtc::time_since_power_up()` differences for a 60 s s
 ESP-IDF avoids this by keeping accumulated microseconds and the last tick count in RTC memory and converting only the ticks since the last read (`esp_clk.c`); the consumer measured +0.7 % steady on the IDF tier.
 
 ## Decisions
-|                                                                       Decision | Reason                                                                            | Rejected Alternative                                                       |
-|-------------------------------------------------------------------------------:|:----------------------------------------------------------------------------------|:---------------------------------------------------------------------------|
-|         IDF-style accumulation of `(last_ticks, accumulated_us)` in RTC memory | Error proportional to the interval, same bound as IDF; monotonic across boots     | Raw ticks with one fixed period: no state, but drifts with temperature     |
-|           The tier reads `RTC_TIMER` and the calibration store register itself | esp-hal 1.2.2 keeps `time_since_boot_raw` and `rtc_ticks_to_us` `pub(crate)`      | Upstream esp-hal change; the consumer pins 1.2.2                           |
-| Period from esp-hal's boot calibration in `LP_AON STORE1` (19 fractional bits) | Same source esp-hal and IDF use; applied to delta ticks only, so uptime drops out | Longer per-boot calibration: shrinks scatter, keeps uptime proportionality |
-|                 Shape `EspHalRtcClock::now_us() -> u64`, twin of `EspRtcClock` | One consumer call site for both tiers                                             | `WakeCause::Timer { slept_ms }`, rejected in ADR-001                       |
-|                                          esp-hal clock only, no `stoker` trait | One consumer; ADR-001 reserves an additive trait for a second one                 | `RtcClock` trait in `stoker` now                                           |
+|                                                                       Decision | Reason                                                                             | Rejected Alternative                                                       |
+|-------------------------------------------------------------------------------:|:-----------------------------------------------------------------------------------|:---------------------------------------------------------------------------|
+|         IDF-style accumulation of `(last_ticks, accumulated_us)` in RTC memory | Error proportional to the interval, same bound as IDF; monotonic across boots      | Raw ticks with one fixed period: no state, but drifts with temperature     |
+|           The tier reads `RTC_TIMER` and the calibration store register itself | esp-hal 1.2.2 keeps `time_since_boot_raw` and `rtc_ticks_to_us` `pub(crate)`       | Upstream esp-hal change; the consumer pins 1.2.2                           |
+| Period from esp-hal's boot calibration in `LP_AON STORE1` (19 fractional bits) | Same source esp-hal and IDF use; applied to delta ticks only, so uptime drops out  | Longer per-boot calibration: shrinks scatter, keeps uptime proportionality |
+|                 Shape `EspHalRtcClock::now_us() -> u64`, twin of `EspRtcClock` | One consumer call site for both tiers                                              | `WakeCause::Timer { slept_ms }`, rejected in ADR-001                       |
+|                                          esp-hal clock only, no `stoker` trait | One consumer; ADR-001 reserves an additive trait for a second one                  | `RtcClock` trait in `stoker` now                                           |
+|                         CRC-32 envelope on `Accum` (`Retainable`, 20 bytes LE) | Rejects garbage after flashing and torn writes; reuses `stoker::retain`            | Two plain persistent `u64`, as IDF does                                    |
+|                 `frac_q19` keeps the sub-µs remainder (deviates from the pair) | Frequent polling does not lose about 1 µs per call                                 | Whole-µs pair `(last_ticks, accumulated_us)` only                          |
+|            The clock reads the reset reason itself on the first call of a boot | ROM latches the cause, so a late first call still works; `Retained::load` needs it | Consumer passes the reset reason in                                        |
 
 ## Constraints
 - esp-hal stays pinned at 1.2.2; no upstream change is required.
@@ -29,12 +32,12 @@ ESP-IDF avoids this by keeping accumulated microseconds and the last tick count 
 - Module docs state what survives which reset, as the IDF module does.
 
 ## Open Questions
-- [ ] Where the accumulator lives: a private static inside the crate so `now_us()` stays argument-free, or a cell the consumer passes in.
-- [ ] How the clock learns the reset reason to zero itself on `PowerOn`/`Brownout`: read the latched ROM reset cause on the first call of a boot, or take it from the consumer.
-- [ ] Whether the accumulator uses the CRC envelope (`RtcRetainedCell` with a `Retainable` pair) or two plain persistent `u64` as IDF does.
-- [ ] Release: 0.3.0, or additive in 0.3.x with the ADR-001 slept-time paragraph amended with the uptime-drift finding.
-- [ ] Whether a consumer's own `Rtc::time_since_power_up()` call races the tier's snapshot read (esp-hal takes a private lock); document or forbid mixing them.
-- [ ] A compile-only spike against esp-hal 1.2.2 answers the first three before the module is written.
+- [x] Where the accumulator lives: a private `RtcRetainedCell<20>` static, so `now_us()` takes no arguments.
+- [x] How the clock learns the reset reason: it reads the latched ROM cause on the first call of each boot through `EspHalResetReasonSource`.
+- [x] CRC envelope: yes, `Accum` implements `stoker::retain::Retainable` (see Decisions).
+- [x] Release: an additive `[Unreleased]` Added entry folded into the pending 0.3.0; ADR-001 slept-time paragraph amended.
+- [x] Mixing with `Rtc::time_since_power_up()`: documented, not forbidden; safe on C3, and on S3 call it from one core only.
+- [x] Compile-only spike against esp-hal 1.2.2 answered the first three; it compiled for C3 and S3.
 
 ## Acceptance
 - Ten consecutive 60 s timer sleeps after at least one hour since power-on: every difference within ±1 % of the wall clock.
@@ -43,12 +46,13 @@ ESP-IDF avoids this by keeping accumulated microseconds and the last tick count 
 
 ## State
 - [x] Design approved
-- [ ] Spike: register read, calibration read and retained accumulator compile for C3 and S3
-- [ ] Core implementation: `EspHalRtcClock` module, re-export, module docs
-- [ ] Example prints `rtc_us` at each boot (extend `hal_c3_rtc_retention` or a twin)
+- [x] Spike: register read, calibration read and retained accumulator compile for C3 and S3
+- [x] Core implementation: `EspHalRtcClock` module, re-export, module docs
+- [x] Example prints `rtc_us` at each boot (extend `hal_c3_rtc_retention` or a twin)
 - [ ] Bench on the hal C3 retention rig per Acceptance, results in `docs/bench/`
-- [ ] ADR-001 slept-time paragraph amended; CHANGELOG `[Unreleased]` Added entry
-- [ ] Tests passing (`just verify`, `just check-hal`, `just build-example-hal-c3` for the example)
+- [x] ADR-001 slept-time paragraph amended; CHANGELOG `[Unreleased]` Added entry
+- [x] Tests passing (`just verify`, `just check-hal`, `just build-example-hal-c3` for the example)
 
 ## Session Log
 - 2026-10-24 — Feature doc created via /feature dialog from the upstream request; approach fixed to IDF-style accumulation, storage and release questions left open
+- 2026-10-28 — Spike compiled for C3 and S3 against esp-hal 1.2.2; `stoker::rtc_clock` core and host tests landed; Open Questions resolved per the approved plan; bench and verification pending

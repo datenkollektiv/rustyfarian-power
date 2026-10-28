@@ -123,6 +123,8 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 - `rustyfarian-esp-hal-power::gate`: `GpioRailGate<P: OutputPin>` and `Polarity` with the same contract, plus `heltec_v3_vext` over esp-hal's `Output`; the module is gated on `unstable`.
 - Example `hal_s3_power_rail_gate`: the esp-hal twin of `idf_s3_power_rail_gate`, with matching `BENCH` lines.
 - ADR-002 (power rail gate contract) records the trait shape, error type, coordinator semantics and tier placement.
+- `rustyfarian-esp-hal-power::EspHalRtcClock::now_us() -> u64`, the esp-hal twin of `EspRtcClock` on ESP32-C3 and ESP32-S3; the error scales with the interval since the last read, not with uptime.
+- `stoker::rtc_clock`: host-tested, `no_std` accumulator core (`Accum`, `ticks_to_q19`, `period_is_plausible`) behind `EspHalRtcClock`, with a CRC-protected `Retainable` record.
 
 ### Changed
 - Workspace: `default-members` keeps the hal tier out of the host and ESP-IDF builds (bare `cargo`, `check-all`, `build-all`, `clippy-all`); new `just` recipes `check-hal`, `check-hal-c3`, `clippy-hal`, `clean-hal`, `release-dry-run-hal` and `release-publish-hal` build into `target/hal` with `-Zbuild-std=core,alloc`.

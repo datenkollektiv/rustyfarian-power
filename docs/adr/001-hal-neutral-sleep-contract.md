@@ -3,6 +3,7 @@
 ## Status
 Proposed (2026-10-12), revised after review rounds 1 and 2 (2026-10-12): § 4 rewritten, spike attempts 3 and 4 added.
 Amended 2026-10-14: scope widened to the ESP32-S3 (§ 6), knob request U4.
+Amended 2026-10-28: the esp-hal slept-time recipe (§ 5) now points to `EspHalRtcClock`.
 Acceptance waits for the bench values of the timer constants in § 4c and the bench cases of § 4b-4d.
 
 Pinned to esp-hal `=1.2.2` (unstable sleep API) and ESP-IDF v5.3.3.
@@ -312,7 +313,11 @@ A knob firmware that must not loop should wait for touch release or reconfigure 
   Re-run on the bench with the pre-check (2026-10-13): 5 of 5 held wakes returned `Rejected` and the boot loop is gone.
   A second named case, `wake-cause-survives-rejection`, checks whether `caused_wakeup()` and `wakeup_cause()` still report the boot wake after one rejection on esp-hal; the code reading says they do not.
 - **Slept time.** Out of scope for `stoker` and both tiers in 0.3.0.
-  Recipe: esp-hal `Rtc::time_since_power_up()` (the RTC timer runs through deep sleep and every reset except power-up, `rtc_cntl/mod.rs:257-264`), IDF `esp_rtc_get_time_us()`; the firmware stores the pre-sleep stamp in the RTC retention envelope and subtracts after the wake.
+  Recipe: IDF `esp_rtc_get_time_us()`, and on esp-hal `EspHalRtcClock::now_us()` (amended 2026-10-28, see below); the firmware stores the pre-sleep stamp in the RTC retention envelope and subtracts after the wake.
+  Amended 2026-10-28: the earlier esp-hal recipe, `Rtc::time_since_power_up()`, is no longer recommended.
+  The RTC timer runs through deep sleep and every reset except power-up (`rtc_cntl/mod.rs:257-264`), but each boot converts the whole 48-bit count with its own calibrated period.
+  A 60 s sleep measured after one hour of uptime drifted to −8.5 %..+6.1 % on the DevKitM-1.
+  `EspHalRtcClock::now_us()` in `rustyfarian-esp-hal-power` converts only the ticks since the last read, so the error scales with the interval, not with uptime (`docs/features/esp-hal-rtc-clock-v1.md`).
   If a second consumer needs it, an additive `stoker` trait in a 0.3.x release is the path; `WakeCause::Timer { slept_ms }` is rejected because it would break the enum again.
 
 ## Consequences

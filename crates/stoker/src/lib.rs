@@ -46,6 +46,7 @@ pub mod config;
 pub mod gate;
 pub mod reset;
 pub mod retain;
+pub mod rtc_clock;
 pub mod sleep;
 
 pub use charging::{ChargingMonitor, ChargingSource, ChargingState, NoopChargingMonitor};
