@@ -14,7 +14,9 @@
 //! The `sleep` module (deep sleep with GPIO and timer wake) exists for the ESP32-C3 and
 //! ESP32-S3 (`docs/features/esp-hal-sleep-tier-v1.md`). The `reset` and `retain` modules
 //! (`EspHalResetReasonSource`, `RtcRetainedCell`) place a `stoker` retention record in RTC fast
-//! memory (`docs/features/rtc-retention-v1.md`). The ADC battery monitor and charging
+//! memory (`docs/features/rtc-retention-v1.md`). The `clock` module (`EspHalRtcClock`) is a
+//! drift-free microsecond clock across resets and deep sleep
+//! (`docs/features/esp-hal-rtc-clock-v1.md`). The ADC battery monitor and charging
 //! monitor are still pending (`docs/features/esp-hal-parity-v1.md`).
 //!
 //! # Chip features
@@ -94,3 +96,16 @@ pub use sleep::{BoundSleep, EspHalSleepManager, EspHalWakeCauseSource};
 pub mod gate;
 #[cfg(all(target_os = "none", feature = "unstable"))]
 pub use gate::{GpioRailGate, GpioRailGateError, Polarity, HELTEC_V3_VEXT_GPIO};
+
+#[cfg(all(
+    target_os = "none",
+    feature = "unstable",
+    any(feature = "esp32c3", feature = "esp32s3")
+))]
+pub mod clock;
+#[cfg(all(
+    target_os = "none",
+    feature = "unstable",
+    any(feature = "esp32c3", feature = "esp32s3")
+))]
+pub use clock::EspHalRtcClock;

@@ -63,6 +63,8 @@
 //! Action: Sleep
 //! ```
 //!
+//! Each boot also prints `RTC rtc_us=<n>` after init and just before the action; `n` keeps growing across every reset kind except a power-on.
+//!
 //! After a USB power cycle the record is refused and a new session starts:
 //!
 //! ```text
@@ -86,9 +88,9 @@ use esp_hal::{
 };
 use esp_println::println;
 use rustyfarian_esp_hal_power::{
-    EspHalResetReasonSource, EspHalSleepManager, EspHalWakeCauseSource, Invalid, ResetReason,
-    ResetReasonSource, Retainable, RtcRetainedCell, SleepManager, WakeCause, WakeCauseSource,
-    WakeSource, MAX_TIMER_MS,
+    EspHalResetReasonSource, EspHalRtcClock, EspHalSleepManager, EspHalWakeCauseSource, Invalid,
+    ResetReason, ResetReasonSource, Retainable, RtcRetainedCell, SleepManager, WakeCause,
+    WakeCauseSource, WakeSource, MAX_TIMER_MS,
 };
 
 /// The retained record.
@@ -303,11 +305,14 @@ fn main() -> ! {
         println!("Previous boot began with reset code {code}");
     }
 
+    println!("RTC rtc_us={}", EspHalRtcClock::now_us());
+
     let action = resolve(ACTION, session.boots);
     println!("Action: {action:?}");
 
     // Let the UART drain so the lines above are readable before the reset.
     delay.delay_millis(1_000);
+    println!("RTC rtc_us={}", EspHalRtcClock::now_us());
 
     match action {
         Action::Sleep | Action::Cycle => {
