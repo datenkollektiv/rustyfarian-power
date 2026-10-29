@@ -14,8 +14,8 @@
 //! tasks and from ISRs.
 //!
 //! Exactly one `critical-section` implementation may be linked into a firmware.
-//! Disable the `critical-section-impl` feature if the firmware brings another provider; do not
-//! pair it with esp-idf-hal's `critical-section` feature.
+//! Enable the opt-in `critical-section-impl` feature only when the firmware brings no other
+//! provider; do not pair it with esp-idf-hal's `critical-section` feature.
 
 use esp_idf_hal::sys;
 

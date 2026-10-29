@@ -37,9 +37,19 @@ if [ "$chip" != "c3" ]; then
     setup_xtensa_toolchain
 fi
 
-printf 'Building %s for %s...\n' "$example" "$target"
+# Enable only the features the example declares in `[[example]] required-features`, so every
+# other example links with the crate defaults (no critical-section provider) as firmware would.
+features=$(awk -v ex="$example" '
+    /^\[\[example\]\]/ { in_example = 1; name = ""; next }
+    /^\[/ { in_example = 0 }
+    in_example && /^name *=/ { name = $0; gsub(/^name *= *"|".*$/, "", name) }
+    in_example && /^required-features *=/ && name == ex { gsub(/^required-features *= *\[|\].*$|"| /, ""); print }
+' "$SCRIPT_DIR/../crates/rustyfarian-esp-idf-power/Cargo.toml")
+
+printf 'Building %s for %s%s...\n' "$example" "$target" "${features:+ with features $features}"
 export CARGO_TARGET_DIR="$idf_dir"
 MCU="$mcu" cargo build --release \
+    ${features:+--features "$features"} \
     --target "$target" \
     --example "$example" \
     -p rustyfarian-esp-idf-power

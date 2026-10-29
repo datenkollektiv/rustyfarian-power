@@ -75,7 +75,8 @@
 //! validates the record on every `load` instead.
 //! Read the reset reason first; `load` refuses the record after a power-on or
 //! brownout, when the memory holds arbitrary or partial data.
-//! The cell serialises its callers in a critical section, so it may be shared by tasks and interrupts.
+//! The cell serialises its callers in a critical section, so it may be shared by tasks and interrupts
+//! when the firmware links an interrupt-safe provider such as the `critical-section-impl` feature.
 //!
 //! ```rust,ignore
 //! use rustyfarian_esp_idf_power::{EspResetReasonSource, ResetReasonSource, RetainedCell};

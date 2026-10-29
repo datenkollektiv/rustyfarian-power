@@ -157,8 +157,12 @@ Fix: call `Output::set_pad_hold(true)` again after re-creating the drivers (`gpi
 Fix: every `load`, `store` and `invalidate` copies inside `critical_section::with`, which is also the only portable lock on riscv32imc (no compare-and-swap); `stoker` takes `critical-section` as its single dependency.
 
 **A missing `critical-section` implementation fails only at link time, never under `cargo check`.**
-The symptom is an undefined `_critical_section_1_0_acquire`; esp-hal supplies the implementation through its `rt` feature, the host through the crate's `std` feature as a dev-dependency, and the IDF tier through its own `critical-section-impl` feature.
-Fix: keep that feature on (or link exactly one other provider) and treat `just build-example` as the gate for the retention code, not `check`.
+The symptom is an undefined `_critical_section_1_0_acquire` (no provider) or a duplicate one (two providers); esp-hal supplies the implementation through its `rt` feature, the host through the crate's `std` feature as a dev-dependency, and the IDF tier through its opt-in `critical-section-impl` feature.
+Fix: the firmware links exactly one provider; the retention examples require `critical-section-impl` via `required-features`, and `just build-example` is the gate for the retention code, not `check`.
+
+**A library that enables a `critical-section` provider by default breaks every firmware whose graph already has one.**
+`rustyfarian-esp-idf-network`'s `lora` feature enables esp-idf-hal's `critical-section`, so with `critical-section-impl` in our `default` a LoRa firmware failed to link with a duplicate `_critical_section_1_0_acquire` (beekeeper, 2026-10-29); `cargo check` passed.
+Fix: `critical-section-impl` is opt-in; only the final firmware picks the provider, as the `critical-section` crate prescribes.
 
 **esp-idf-hal's `critical-section` provider is a task-level recursive mutex, not a critical section, so it cannot serialise a task against an ISR.**
 FreeRTOS forbids taking that mutex from an interrupt, and an interrupt that preempts the holder runs as the same task and re-enters it, so the exclusion `RetainedCell` relies on is silently lost.
