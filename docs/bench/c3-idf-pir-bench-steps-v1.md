@@ -154,6 +154,81 @@ In one boot GPIO4 read Low at boot and HIGH about 11 ms later, so that attempt w
 Open: the plan's 1000 rejections need the pot at maximum and continuous waving.
 `try_sleep` is never rejected for a held GPIO4, so the retry loop is never entered and no `rejected` line can appear.
 
+## SuperMini investigation: GPIO wake missing on an ESP32-C3 SuperMini
+
+Consumer report (rustbox-spookhouse, pinned at `76a1856`, 2026-10-23): the same IDF firmware wakes on the PIR on an ESP32-C3-DevKitM-1 (chip v0.3, CP2102 console) but never on an ESP32-C3 SuperMini (chip v0.4, native USB-Serial-JTAG), while the 60 s timer wakes and sleep entry work on both.
+Outcome: the SuperMini wakes on GPIO4 once a different HC-SR501 is wired; the first PIR unit never drove GPIO4 High in this rig (rows 1c to 1e, W1 below).
+The SuperMini console is UART0 (GPIO21), read with a 3.3 V USB-UART adapter whose DTR/RTS are not wired, so opening the port never resets the chip.
+The native USB console disappears on every deep sleep.
+Build for the awake check: `C3_AWAKE_PROBE_MS=30000 just flash idf_c3_deep_sleep_gpio` (prints the GPIO0-5 levels for 30 s before the first sleep, `PROBE t=<ms> GPIO0=L ... GPIO5=L` once a second and `GPIO<n> changed -> High|Low` on every edge).
+Add `C3_PROBE_PULL=up` to probe with pull-ups: an open or unsoldered pin reads `H` the whole time, a pin wired to the PIR output reads `L` at rest and `H` on motion, and a pin held `L` without ever changing has a dead or shorted source.
+Add `C3_PIR_PIN=<0-5>` to move the PIR pin for W1 once the probe shows where the signal lands.
+
+### SuperMini rig
+
+```mermaid
+graph LR
+    subgraph Mac["Mac (host)"]
+        USB1["USB-C port A"]
+        USB2["USB-C port B"]
+        CAP["serial-capture.py<br/>/dev/cu.usbserial-0001<br/>115200 baud"]
+    end
+
+    subgraph SM["ESP32-C3 SuperMini (chip v0.4)<br/>firmware: idf_c3_deep_sleep_gpio<br/>C3_AWAKE_PROBE_MS=30000, 60 s timer"]
+        USJ["native USB Serial/JTAG<br/>/dev/cu.usbmodem2101<br/>(flash only, drops in deep sleep)"]
+        P5V["5V pin (VBUS)"]
+        P3V3["3V3 pin"]
+        GND_SM["GND"]
+        G21["GPIO21 = UART0 TX"]
+        G4["GPIO4<br/>input, internal pull-down<br/>deep-sleep wake AnyHigh"]
+    end
+
+    subgraph CP["CP2102 USB-UART (3.3 V)"]
+        RXD["RXD"]
+        GND_CP["GND"]
+        TXD["TXD (unconnected)"]
+        VCC["VCC (unconnected)"]
+    end
+
+    subgraph PIR["HC-SR501 PIR"]
+        PVCC["VCC"]
+        POUT["OUT"]
+        PGND["GND"]
+    end
+
+    R10k["10 kΩ pull-down<br/>(added for step 2b)"]
+
+    USB1 -->|"USB (power + flash)"| USJ
+    USB2 -->|"USB"| CP
+    CP -->|"UART0 console"| CAP
+    G21 -->|"3.3 V TTL"| RXD
+    GND_SM --- GND_CP
+    P5V --> PVCC
+    POUT -->|"motion -> HIGH ~3.3 V"| G4
+    PGND --- GND_SM
+    G4 --- R10k
+    R10k --- GND_SM
+```
+
+The CP2102's DTR and RTS are not wired, so opening its port never resets the chip.
+Watch the console by hand with `just console /dev/cu.usbserial-0001 60`: timestamped lines until Ctrl-C, a banner when the 60 s PIR warm-up is over, and it reopens the port after a re-plug.
+A CP2102 that was hot-unplugged can come back with a wedged driver instance (`tcsetattr: Invalid argument` even from `stty`); unplug and re-plug the adapter.
+espflash's USB-Serial-JTAG reset leaves this board in download mode (`rst:0x15`, `boot:0x5`), so after `just flash` the app starts only after a physical RST tap or a USB power cycle.
+
+| Step                                                                  | Date       | Commit                                | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+|:----------------------------------------------------------------------|:-----------|:--------------------------------------|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1 Awake sanity: GPIO4 follows the PIR while waving                    | 2026-10-23 | `76a1856` + awake probe (uncommitted) | FAIL on the SuperMini. 4 probe windows of 30 s (1 power-on boot, 3 timer-wake boots, PIR warmed up after the first), polled every 100 ms with motion in front of the PIR: GPIO4 read Low in every sample, 0 level changes. Logs `tmp/supermini-step1-probe-boot1.log`, `tmp/supermini-step1-probe-pir-waves.log`. The PIR level never reaches GPIO4 while the chip is awake, so the deep-sleep wake has nothing to see; the fault is upstream of the sleep code (PIR output, its wire, or the pad). The PIR and this firmware are proven on the Mini-1, so the open question is the SuperMini board or its header contact; no meter wanted. Next: `C3_AWAKE_PROBE_MS=30000 C3_PROBE_PULL=up just flash idf_c3_deep_sleep_gpio`, power-cycle, and read the probe lines (see the build notes above). |
+| 1b Pull-up probe (`C3_PROBE_PULL=up`), PIR + 10 kΩ pull-down on GPIO4 | 2026-10-23 | same                                  | GPIO0-3 and GPIO5 read `H`, GPIO4 read `L` for the whole window, no change on motion (`tmp/supermini-step1-pullup-flash.log`). Inconclusive on its own: the 10 kΩ alone explains the Low.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 1c Pull-up probe, PIR alone on GPIO4 (resistor removed)               | 2026-10-23 | same                                  | 2 windows, 64 samples: GPIO4 `L` throughout, all other pins `H`, no change on motion; both wakes Timer (`tmp/supermini-step1-pullup-no-resistor.log`). GPIO4 is held Low by the PIR output and never released, so the PIR produces no High in this rig.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 1d Pull-up probe, nothing on GPIO4                                    | 2026-10-23 | same                                  | 32 samples: GPIO4 `H` like every other pin (`tmp/supermini-step1-pullup-gpio4-open.log`). The pad is intact; the fault is on the PIR side of the wire.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 1e Second HC-SR501 on GPIO4, 5V, GND (no resistor)                    | 2026-10-23 | same                                  | PASS. The first `try_sleep` after boot was rejected by the pre-sleep level read (GPIO4 High, PIR output held) and the H4 retry loop ran 1520 rejections, about 76 s, without hang, panic or restart; once the PIR released the chip slept. The awake path sees this PIR.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| W1 on the SuperMini (same build, second PIR)                          | 2026-10-23 | same                                  | PASS. About 3.5 s after sleep entry a wave woke the board: `rst:0x5 (DSLEEP)`, `Wake cause: Gpio — fired pins: 0x10, GPIO4 fired: true`, `cause=Gpio mask=0x10`; the post-wake probe read GPIO4 High for the PIR hold time. One wave observed by the owner on the `just console` output.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 2a W1, internal pull-down only                                        | 2026-10-23 | same                                  | 3 of 3 sleeps woke on the 60 s timer (`cause=Timer mask=0x0`), 0 GPIO wakes, 0 rejections, slept 59.9 s each. Consistent with step 1: nothing to wake on.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 2b W1, external 10 kΩ pull-down                                       | 2026-10-23 | same                                  | same outcome: 1 probe window all Low, 1 timer wake, 0 GPIO wakes, 0 rejections (`tmp/supermini-step2b-ext-pulldown.log`, capture cut short when the rig was unplugged).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 3 W1, USB as power only (no USB-Serial-JTAG host)                     |            |                                       | not run: step 1 already explains the symptom.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 4 Chip revision v0.4 vs v0.3                                          | 2026-10-23 | `76a1856`                             | ruled out as a documented cause. Espressif's ESP32-C3 errata (esp-chip-errata, `02-errata-summary`) lists only CPU-863, ADC-183 and ADC-270, each affecting every revision v0.0 to v1.1; nothing on sleep, GPIO wake, pad hold, RTC_CNTL or USB-Serial-JTAG. v0.3 to v0.4 is a minor-number bump (software-compatible by Espressif's scheme); the breaking change is v1.1 (ROM, AR2024-009). In IDF v5.3.3 the only C3 revision gate in the sleep path is `rtc_sleep.c` (`eco2_workaround`, revisions below v0.3) and our build has `CONFIG_ESP32C3_REV_MIN_FULL=3`, so v0.3 and v0.4 run identical sleep code. `gpio_ll_deepsleep_wakeup_enable`, `gpio_ll_hold_en` (GPIO0-5 via `RTC_CNTL_PAD_HOLD_REG`) and `gpio_deep_sleep_wakeup_prepare` have no revision branches.                         |
+| 5 Code fix in `try_sleep` or the arming path                          | 2026-10-23 | `76a1856`                             | no code change needed: with a working PIR the SuperMini wakes on GPIO4 exactly like the DevKitM-1. Cause of the report: the first PIR unit held GPIO4 Low and never went High in this rig (1c), while the pad reads High when open (1d) and a second PIR wakes the board (1e, W1). Why that unit works on the Mini-1 rig was not investigated. Only the example changed (awake probe, `C3_PROBE_PULL`, `C3_PIR_PIN`) plus the `just console` recipe.                                                                                                                                                                                                                                                                                                                                               |
+
 ## What a real PIR cannot show
 
 | Plan requirement                 | Here                                                            |

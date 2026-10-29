@@ -82,6 +82,8 @@ The envelope must carry this payload through GPIO and timer wake events, softwar
 - [x] IDF tier: `EspResetReasonSource`, `.rtc_noinit` placement docs, retention re-exports, `idf_c3_rtc_retention` example in `check-c3`
 - [x] esp-hal tier: `EspHalResetReasonSource`, `RtcRetainedCell` (`Persistable`), `hal_c3_rtc_retention` example, stoker table lists the S3 variant names
 - [ ] Hardware check on the C3 for both tiers: GPIO wake, timer wake, watchdog reset, bench brownout, power cycle — both tiers done 2026-10-16 for timer wake, software reset, panic, watchdog and power-on (`docs/bench/c3-idf-rtc-retention-bench-v1.md`, `docs/bench/c3-hal-rtc-retention-bench-v1.md`); GPIO wake and brownout open
+- [x] IDF tier: `idf_s3_rtc_retention` example for the Heltec V3 (S3 `.rtc_noinit` is RTC slow memory, a different domain from the C3)
+- [ ] Hardware check on the Heltec V3 (IDF tier): placement, reset matrix, 15-minute timer sleep, sleep on battery, RTC clock drift, brownout — requested by rustyfarian-beekeeper
 - [ ] Tests passing (`just verify`)
 - [x] CHANGELOG `[Unreleased]`: Added (envelope, `ResetReasonSource`, `EspResetReasonSource`, example); docs drop the `static mut` recipe in `sleep.rs`, `esp_sleep.rs` and `docs/hardware-setup.md`
 

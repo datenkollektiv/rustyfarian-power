@@ -147,6 +147,11 @@ bench-c3 *args:
 serial-capture port seconds baud="115200":
     uv run scripts/serial-capture.py "$@"
 
+# stream a serial console with timestamps until Ctrl-C, with a banner when the PIR warm-up is over (default 60 s); DTR/RTS held low, reopens a dropped port; e.g. just console /dev/cu.usbserial-0001 60
+[positional-arguments]
+console port warmup="60" baud="115200":
+    uv run scripts/serial-console.py "$@"
+
 # erase the connected device's flash completely (use before reflashing on boot failures)
 [confirm]
 erase-flash:
