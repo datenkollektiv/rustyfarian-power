@@ -11,10 +11,15 @@ Usage (from the repository root):
     just serial-capture /dev/cu.usbserial-210 30 115200
 
 Each line is prefixed with the seconds since the capture started.
-DTR and RTS are driven low at open and never touched again during the capture.
+DTR and RTS are left at their open-time defaults (both asserted) and never touched.
+Lowering DTR before RTS resets an ESP32-S3 on USB-Serial-JTAG; see
+docs/project-lore.md -> Bench tooling.
 Opening the port may still pulse EN once on boards with a CP210x auto-reset
 circuit (the ESP32-C3-DevKitM-1 showed a POWERON boot at open); start the
 capture before the sequence you want to observe.
+
+When the port vanishes (a USB-Serial-JTAG board in deep sleep), the capture logs
+"--- port lost", reopens the port once it re-enumerates, and logs "--- port back".
 
 Exit codes: 0 capture finished, 2 bad arguments or the port could not be opened.
 """
@@ -23,6 +28,8 @@ import sys
 import time
 
 import serial
+
+REOPEN_POLL_S = 0.2
 
 
 def usage(message):
@@ -43,14 +50,8 @@ def main():
     if seconds <= 0 or baud <= 0:
         return usage("<seconds> and [baud] must be positive")
 
-    ser = serial.Serial()
-    ser.port = port
-    ser.baudrate = baud
-    ser.timeout = 0.5
-    ser.dtr = False
-    ser.rts = False
     try:
-        ser.open()
+        ser = serial.Serial(port, baud, timeout=0.5)
     except serial.SerialException as exc:
         return usage(f"cannot open {port}: {exc}")
 
@@ -63,7 +64,23 @@ def main():
 
     try:
         while time.monotonic() - start < seconds:
-            chunk = ser.read(4096)
+            if ser is None:
+                try:
+                    ser = serial.Serial(port, baud, timeout=0.5)
+                except serial.SerialException:
+                    time.sleep(REOPEN_POLL_S)
+                    continue
+                emit(b"--- port back")
+            try:
+                chunk = ser.read(4096)
+            except serial.SerialException:
+                ser.close()
+                ser = None
+                if buf:
+                    emit(buf)
+                    buf = b""
+                emit(b"--- port lost")
+                continue
             if not chunk:
                 continue
             buf += chunk
@@ -73,7 +90,8 @@ def main():
         if buf:
             emit(buf)
     finally:
-        ser.close()
+        if ser is not None:
+            ser.close()
     return 0
 
 
