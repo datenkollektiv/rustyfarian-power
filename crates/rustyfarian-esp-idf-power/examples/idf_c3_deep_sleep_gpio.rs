@@ -100,12 +100,14 @@ use rustyfarian_esp_idf_power::{
 
 /// PIR output pin; bit position in the wake mask: `C3_PIR_PIN` at build time (0-5), else GPIO4.
 const PIR_PIN: u8 = match option_env!("C3_PIR_PIN") {
-    Some(s) => parse_u64(s) as u8,
+    Some(s) => {
+        // Only GPIO0-5 can wake the C3 from deep sleep; range-check before the cast truncates.
+        let pin = parse_u64(s);
+        assert!(pin <= 5, "C3_PIR_PIN must be between 0 and 5");
+        pin as u8
+    }
     None => 4,
 };
-
-// Only GPIO0-5 can wake the C3 from deep sleep.
-const _: () = assert!(PIR_PIN <= 5, "C3_PIR_PIN must be between 0 and 5");
 
 /// Number of deep-sleep wake-capable pins on the C3 (GPIO0-5), all polled by the awake probe.
 const WAKE_PIN_COUNT: u8 = 6;

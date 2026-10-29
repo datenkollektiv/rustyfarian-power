@@ -14,6 +14,10 @@ Usage (from the repository root):
 Each line is prefixed with the seconds since the console opened.
 After <warmup> seconds (default 60, the HC-SR501 settling time) a banner line marks that the
 PIR output can be trusted and waving may start.
+The countdown starts when the port first opens, not when the script starts: on a board with an
+on-board bridge (DevKitM-1) the port appears at power-up, so that is the PIR power-up moment.
+With an external adapter (the SuperMini rig) the port is always present, so start the console
+before powering the board.
 DTR and RTS are driven low at open and never touched again, so an adapter whose DTR/RTS are
 unwired (the SuperMini rig) never resets the chip.
 Do not use it on a USB-Serial-JTAG port (S3 native USB): lowering DTR before RTS resets the
@@ -59,6 +63,7 @@ def main():
         return usage("[warmup_seconds] must be >= 0 and [baud] positive")
 
     start = time.monotonic()
+    warmup_start = None
     warmup_done = warmup == 0
     ser = None
     buf = b""
@@ -72,6 +77,8 @@ def main():
             if ser is None:
                 try:
                     ser = open_port(port, baud)
+                    if warmup_start is None:
+                        warmup_start = time.monotonic()
                     print(f"{stamp()}  [port open]", flush=True)
                 # termios.error (a wedged CP2102 after a hot unplug) is neither of the two.
                 except Exception as exc:  # noqa: BLE001
@@ -86,7 +93,7 @@ def main():
                 ser = None
                 buf = b""
                 continue
-            if not warmup_done and time.monotonic() - start >= warmup:
+            if not warmup_done and time.monotonic() - warmup_start >= warmup:
                 warmup_done = True
                 print(f"{stamp()}  === PIR warm-up over ({warmup:.0f} s): output is valid, start waving ===", flush=True)
             if data:

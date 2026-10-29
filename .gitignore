@@ -5,7 +5,6 @@ Cargo.lock
 
 .claude/
 CLAUDE.md
-archive/
 review-queue/
 .idea/
 release/
