@@ -18,6 +18,7 @@
 //!
 //! The console is the S3's native USB-Serial-JTAG (`esp-println`, feature `auto`), which drops
 //! off the bus during deep sleep.
+//! The example stays awake 3 s after each boot so the host can reopen the re-enumerated port.
 //! Bench results: `docs/bench/s3-crowpanel-touch-sleep-bench-steps-v1.md`.
 //!
 //! ## Run
@@ -45,6 +46,9 @@ use rustyfarian_esp_hal_power::{
 
 /// CST816S touch INT pin; bit position in the wake mask.
 const TOUCH_INT_PIN: u8 = 5;
+
+/// Time awake after each boot; the USB-Serial-JTAG port needs ~0.5-2 s to re-enumerate.
+const AWAKE_MS: u32 = 3_000;
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
@@ -82,6 +86,7 @@ fn main() -> ! {
     // per-pin wake record.
     let wake_cause = EspHalWakeCauseSource::capture(&[&touch_int]).last_wake_cause();
     println!("Wake cause: {:?}", wake_cause);
+    delay.delay_millis(AWAKE_MS);
 
     let mut manager = EspHalSleepManager::new(peripherals.LPWR);
     let sources = [

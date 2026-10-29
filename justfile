@@ -142,7 +142,7 @@ flash-hal-esp32 example features="esp32,unstable,examples": (build-example-hal-e
 bench-c3 *args:
     uv run scripts/c3-bench.py "$@"
 
-# capture a serial port for N seconds with DTR/RTS held low (wraps `uv run scripts/serial-capture.py`); e.g. just serial-capture /dev/cu.usbserial-210 30
+# capture a serial port for N seconds, DTR/RTS untouched, reopening after re-enumeration (wraps `uv run scripts/serial-capture.py`); e.g. just serial-capture /dev/cu.usbserial-210 30
 [positional-arguments]
 serial-capture port seconds baud="115200":
     uv run scripts/serial-capture.py "$@"

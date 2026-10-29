@@ -34,9 +34,10 @@ Request origin: `rustyfarian-knob` esp-hal parity quest (milestone M9), https://
 - [x] Design approved and shape decided
 - [x] Core implementation found in esp-hal 1.2.2 (`Output::set_pad_hold`, unstable)
 - [x] `hal_s3_deep_sleep_gpio` example converted to use `Output::set_pad_hold()`
-- [ ] Bench validation: CrowPanel touch wake with GPIO1/13 held (open for user)
+- [x] Bench validation: CrowPanel touch wake with GPIO1/13 held (knob run, 2026-10-28, `docs/bench/s3-crowpanel-touch-sleep-bench-steps-v1.md`)
 
 ## Session Log
 
 - 2026-10-14 — Feature doc created from the knob U4b request
 - 2026-10-15 — Design panel found esp-hal 1.2.2 already has Output::set_pad_hold; scope reduced to example + docs (user decision)
+- 2026-10-28 — Knob bench passed: 3/3 touch wakes and a 60.2 s timer wake with GPIO1/13 held through `set_pad_hold`

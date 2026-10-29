@@ -7,12 +7,14 @@ Examples `idf_s3_deep_sleep_gpio` and `hal_s3_deep_sleep_gpio`, sleeping on GPIO
 ## How it was run
 
 The bench builds carried extra logging (a boot `BENCH` line, a 2 s console wait, per-attempt rejection lines, and a hal switch that skipped the touch bring-up) and a passive serial logger.
-That tooling was removed after the run; the committed examples are lightweight demos.
+That tooling was removed after the run.
+The committed examples print the wake cause and stay awake 3 s, so `just serial-capture` sees every wake.
 
 - The board's USB-C reaches the S3's native USB-Serial-JTAG (`/dev/cu.usbmodem*`), not a CH340 as the knob docs say.
 - The port drops off the bus in deep sleep and re-enumerates on wake; boot output sent before the host reopens it is lost.
 - `espflash monitor` (4.3) cannot follow that without resetting the chip; see `docs/project-lore.md` → Bench tooling.
 - A sleeping board, or one spinning in a rejection loop, is flashed from download mode: unplug, hold BOOT, plug in, release.
+- After that flash the chip stays in download mode (`boot:0x10 (DOWNLOAD(USB/UART0))`), even through `espflash reset`: unplug and replug without BOOT, or press RESET.
 - Sleep duration was read from host timestamps of the port vanishing and reappearing.
 
 ## Results
@@ -82,3 +84,16 @@ Covered by the host-tested validators; not run on the board.
 | `wake-cause-survives-rejection`, `foreign-wake-pin` | not run on the S3           |
 | `short-timer-sweep`, `held-level-custom-handler`    | not run on the S3           |
 | Touch count                                         | by hand, 3 per tier         |
+
+## Pad-hold follow-up (knob, 2026-10-28)
+
+`rustyfarian-knob` re-ran the touch wake at `31c52fb` with `Output::set_pad_hold` holding GPIO1 and GPIO13 (`hal_esp32s3_knob_sleep`).
+
+| Case           | Result                                                  |
+|:---------------|:--------------------------------------------------------|
+| Touch wake ×3  | 3/3 `Ext1(GpioWakeMask(32))`, retained count 1 → 2 → 3  |
+| Timer wake     | `Timer` 60.2 s after sleep entry, count 4               |
+| Finger resting | Re-wake ~0.7 s after each sleep entry, no `Rejected`    |
+| INT held LOW   | Never seen                                              |
+
+The CST816S answered every tap after deep sleep, so both holds kept the controller powered and out of reset.

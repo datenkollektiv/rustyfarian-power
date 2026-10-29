@@ -17,6 +17,7 @@
 //! A level already LOW at sleep entry is rejected by the hardware; the example retries.
 //!
 //! The console is the S3's native USB-Serial-JTAG, which drops off the bus during deep sleep.
+//! The example stays awake 3 s after each boot so the host can reopen the re-enumerated port.
 //! Bench results: `docs/bench/s3-crowpanel-touch-sleep-bench-steps-v1.md`.
 //!
 //! ## Run
@@ -44,6 +45,9 @@ const LCD_RAIL_PIN: i32 = 1;
 
 /// CST816S reset, active low.
 const TOUCH_RST_PIN: i32 = 13;
+
+/// Time awake after each boot; the USB-Serial-JTAG port needs ~0.5-2 s to re-enumerate.
+const AWAKE_MS: u32 = 3_000;
 
 /// Print a line via `esp_rom_printf`; Rust `println!` does not reach the S3 console
 /// (`docs/project-lore.md` → ESP-IDF / Rust on ESP32-S3).
@@ -107,6 +111,7 @@ fn main() -> anyhow::Result<()> {
         },
     ];
 
+    FreeRtos::delay_ms(AWAKE_MS);
     loop {
         // On success the chip is asleep and this call does not return.
         match manager.try_sleep(&sources) {

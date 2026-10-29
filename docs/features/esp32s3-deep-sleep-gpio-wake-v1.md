@@ -40,7 +40,7 @@ Knob maintainer contributes the implementation; contribution is offered.
 - [x] Does the S3 refuse deep sleep with the ext1 pin at its wake level? Yes, on both tiers; no pre-check needed.
 - [x] Does GPIO5 keep its idle level in deep sleep? Yes, held HIGH, once `LCD_3V3` and touch RST are on and held.
 - [x] Normalise the wake cause? Per chip: S3 reports `Ext1(mask)` on both tiers, C3 `Gpio(mask)` (ADR-001 § 1).
-- [ ] A resting finger pulses INT and loops wakes; which CST816S IRQ mode or firmware wait should the knob use?
+- [x] A resting finger pulses INT and loops wakes; which CST816S IRQ mode or firmware wait should the knob use? — Measured 0.3–0.6 s here and ~0.7 s in the knob run; the IRQ mode or wait is the knob's decision.
 
 ## Acceptance Criteria
 - `just check-hal` and the clippy recipe pass for `esp32s3` with the sleep module enabled.
@@ -64,3 +64,4 @@ Knob maintainer contributes the implementation; contribution is offered.
 - 2026-10-14 — Implemented both tiers; CrowPanel bench passed W1/W2/H1 on IDF and esp-hal; open questions answered
 - 2026-10-14 — Bench tooling removed; examples reduced to lightweight demos; bench doc kept as a record
 - 2026-10-14 — Folded the knob U4 request into this doc; review-queue copy retired
+- 2026-10-28 — Knob feedback: examples stay awake 3 s per boot, `serial-capture` keeps DTR/RTS and reopens the port, resting-finger re-wake ~0.7 s
