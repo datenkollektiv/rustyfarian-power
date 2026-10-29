@@ -65,3 +65,28 @@ jobs:
         run: just build-example idf_c3_deep_sleep_gpio
       - name: Build and link the C3 retention example
         run: just build-example idf_c3_rtc_retention
+  # Same toolchain as check-c3; a separate job so the S3 ESP-IDF build runs in
+  # parallel. Only the retention example exists for the S3, and it links against
+  # a different RTC memory layout than the C3 twin.
+  check-s3:
+    runs-on: ubuntu-latest
+    env:
+      RUSTUP_TOOLCHAIN: esp
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Setup ESP-RS toolchain
+        uses: esp-rs/xtensa-toolchain@v1.7.0
+        with:
+          default: true
+          ldproxy: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+      - name: Setup cargo config
+        run: cp .cargo/config.toml.dist .cargo/config.toml
+      - name: Setup just
+        uses: extractions/setup-just@v4
+      - name: Build and link the S3 retention example
+        run: just build-example idf_s3_rtc_retention

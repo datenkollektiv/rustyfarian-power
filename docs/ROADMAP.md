@@ -31,7 +31,6 @@ timeline
               : embedded-hal error convention v1 — ErrorType + kind() on SleepManager, 0.3.0, before C3 try_sleep (feature-doc)
               : C3 GPIO deep-sleep wake v1 — C3/C6 wake path, chip masks, WakeCause::Gpio(mask), try_sleep, check-c3 in CI (feature-doc)
               : esp-hal sleep tier v1 — ADR first, C3 sleep module in the hal crate before ADC, hal_c3_deep_sleep_gpio (feature-doc)
-              : ESP32-S3 deep sleep GPIO wake v1 — knob U4, S3 arm of the hal sleep module, hal/idf S3 examples, CrowPanel bench (feature-doc)
               : RTC retention v1 — validity-checked envelope in stoker, ResetReasonSource, .rtc_noinit + esp-hal placement (feature-doc)
               : esp-hal RTC clock v1 — EspHalRtcClock::now_us() with IDF-style tick accumulation in RTC memory, slept time drift-free across boots (feature-doc)
               : Power rail gate v1 — PowerRailGate + sleep coordinator in stoker, GpioRailGate per tier, Heltec V3 Vext preset and bench (feature-doc)

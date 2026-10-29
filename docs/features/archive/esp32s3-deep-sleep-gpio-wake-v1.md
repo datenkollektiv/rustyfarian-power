@@ -8,7 +8,7 @@ desk-work: available
 S3 deep sleep with a GPIO wake on both tiers, upstream request U4 from rustyfarian-knob.
 Scope extension of the C3-first esp-hal sleep tier; size M.
 Origin: rustyfarian-knob request U4 (filed 2026-10-13), https://github.com/datenkollektiv/rustyfarian-knob/blob/main/docs/ROADMAP.md.
-Follows [esp-hal sleep tier v1](esp-hal-sleep-tier-v1.md) and ADR-001 (amended to C3+S3).
+Follows [esp-hal sleep tier v1](../esp-hal-sleep-tier-v1.md) and ADR-001 (amended to C3+S3).
 
 ## Decisions
 |                                                Decision | Reason                                                             | Rejected Alternative                       |
