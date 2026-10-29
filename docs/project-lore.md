@@ -166,6 +166,19 @@ Fix: the IDF tier provides the `critical-section` implementation over the FreeRT
 
 ---
 
+## Bench tooling — ESP32-C3 SuperMini
+
+**espflash's USB-Serial-JTAG reset leaves the ESP32-C3 SuperMini in download mode; the app never starts by itself after `just flash` or `espflash reset`.**
+UART0 showed `rst:0x15 (USB_UART_CHIP_RESET),boot:0x5 (DOWNLOAD(USB/UART0/1))` after every espflash reset (2026-10-23, espflash 4.3, chip v0.4), and the USB device never dropped, so the chip sat in the ROM downloader until a USB power cycle; the board's RST tap did not produce a boot on UART0 either.
+Open the USB-Serial-JTAG port only to flash, read the console on UART0 (GPIO21) with a USB-UART adapter whose DTR/RTS are unwired, and power-cycle the board to start the app.
+
+**A deep-sleep GPIO wake that "never fires" can be a sensor that never drives the pin; probe the pin while awake, with a pull-up, before suspecting the sleep path.**
+On the SuperMini the W1 PIR wake never fired while the DevKitM-1 woke 8 times in 30 s on the same firmware (spookhouse, 2026-10-23).
+The example's build-time `C3_AWAKE_PROBE_MS` probe polled GPIO0-5 for 30 s per boot: with the internal pull-down GPIO4 read Low in 5 windows; with `C3_PROBE_PULL=up` it still read Low while GPIO0-3 and 5 read High, and it read High once the PIR wire was pulled, so the pad was fine and the PIR output was holding the pin Low without ever going High.
+A second HC-SR501 on the same pins woke the board on the first wave (`cause=Gpio mask=0x10`), after a 1520-rejection H4 loop while its output was held.
+The wake registers, chip revision (v0.4 vs v0.3: no erratum, IDF v5.3.3's only C3 sleep gate is below v0.3) and `try_sleep` were never the fault.
+Rule: with a pull-up probe an open pin reads High, a pin wired to a push-pull sensor reads Low at rest and High on motion, and a pin stuck Low has a dead or unpowered source; `C3_PIR_PIN` moves the wake pin if the signal lands on a neighbouring header pin.
+
 ## Bench tooling — C3 bench driver
 
 **Bench R1 reported PASS on a run with no deep-sleep wake at all, because its only check was "counter incremented".**
