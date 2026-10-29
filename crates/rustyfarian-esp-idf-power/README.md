@@ -16,10 +16,19 @@ re-exports `stoker`'s public surface so firmware needs only one import.
 - `EspWakeCauseSource` — the reason for the last wake
 - `EspResetReasonSource` — the reason for the last reset, which gates `RetainedCell::load`
 - `EspRtcClock` — the RTC timer in microseconds, for slept-time accounting across deep sleep
-
-The default feature `critical-section-impl` provides the firmware's `critical-section` implementation over the FreeRTOS port critical section, which `RetainedCell` needs to exclude interrupts and the other core.
-Disable it if the firmware links another provider; esp-idf-hal's own `critical-section` feature is a task-level mutex and is not interrupt-safe.
 - `EspChargingMonitor` — charging state from MCP73831 STAT + USB VBUS pins
+
+## Features
+
+The opt-in feature `critical-section-impl` provides the firmware's `critical-section` implementation over the FreeRTOS port critical section, which `RetainedCell` needs to exclude interrupts and the other core.
+A firmware links exactly one provider, and `RetainedCell` is only as safe as that provider.
+Enable this feature unless the graph already links a provider; that provider must then also exclude interrupts and the other core before a cell is shared with an ISR.
+esp-idf-hal's `critical-section` feature (enabled, for example, by `rustyfarian-esp-idf-network`'s `lora`) is a task-level mutex that does not.
+Leaving this feature off avoids the duplicate symbols but makes `RetainedCell` safe between tasks only; resolve the feature conflict before an interrupt touches the cell.
+
+```toml
+rustyfarian-esp-idf-power = { git = "https://github.com/datenkollektiv/rustyfarian-power", features = ["critical-section-impl"] }
+```
 
 ## Supported boards / examples
 

@@ -45,7 +45,7 @@ check:
 
 # check all code including ESP-IDF hardware implementations (requires espup)
 check-all:
-    CARGO_TARGET_DIR="{{ idf_dir }}" cargo check
+    CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p rustyfarian-esp-idf-power --features critical-section-impl
 
 # check every workspace member against the default target, as the IDE does (requires espup)
 check-ide:
@@ -53,16 +53,16 @@ check-ide:
 
 # check the ESP-IDF power crate for the ESP32 target (Adafruit Feather V2, requires espup)
 check-esp32:
-    MCU=esp32 CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p rustyfarian-esp-idf-power --target {{ esp32_target }}
+    MCU=esp32 CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p rustyfarian-esp-idf-power --features critical-section-impl --target {{ esp32_target }}
 
 # check the ESP-IDF power crate and its C3 examples for the ESP32-C3 target (ESP32-C3-DevKitM-1, requires espup)
 check-c3:
-    MCU=esp32c3 CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p rustyfarian-esp-idf-power --target {{ c3_target }} --lib --example idf_c3_deep_sleep_gpio --example idf_c3_rtc_retention
+    MCU=esp32c3 CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p rustyfarian-esp-idf-power --features critical-section-impl --target {{ c3_target }} --lib --example idf_c3_deep_sleep_gpio --example idf_c3_rtc_retention
 
 # verify device-side rustdoc snippets type-check for the ESP32 target (requires espup)
 # run this whenever touching rust,ignore doc snippets or esp-idf-gated code
 check-docs-esp32:
-    MCU=esp32 CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p rustyfarian-esp-idf-power --target {{ esp32_target }}
+    MCU=esp32 CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p rustyfarian-esp-idf-power --features critical-section-impl --target {{ esp32_target }}
 
 # check the esp-hal crate for all four chips (C3, C6, ESP32, S3; esp toolchain, no espup); the first line is the stoker-only surface without `unstable`
 check-hal:
@@ -85,7 +85,7 @@ build:
 
 # build all code including ESP-IDF hardware implementations (requires espup)
 build-all:
-    CARGO_TARGET_DIR="{{ idf_dir }}" cargo build
+    CARGO_TARGET_DIR="{{ idf_dir }}" cargo build -p rustyfarian-esp-idf-power --features critical-section-impl
 
 # --- Examples -------------------------------------------------------------
 
@@ -165,7 +165,7 @@ clippy:
 
 # run clippy on all code including ESP-IDF (requires espup)
 clippy-all:
-    CARGO_TARGET_DIR="{{ idf_dir }}" cargo clippy -- -D warnings
+    CARGO_TARGET_DIR="{{ idf_dir }}" cargo clippy -p stoker -p rustyfarian-esp-idf-power --features rustyfarian-esp-idf-power/critical-section-impl -- -D warnings
 
 # run clippy on the esp-hal crate for all four chips (C3, C6, ESP32, S3; esp toolchain, no espup)
 clippy-hal:

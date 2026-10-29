@@ -156,7 +156,8 @@ Deep sleep clears all RAM except the RTC memory.
 Place a `RetainedCell` in `.rtc_noinit` so the record also survives watchdog and software resets, not only a sleep/wake cycle.
 The section is `NOLOAD`: the initialiser is never applied, and the cell validates the record on every `load` instead.
 Read the reset reason first; `load` refuses the record after a power-on or brownout, when the memory holds arbitrary or partial data.
-The cell serialises its callers in a critical section, so tasks and interrupts may share it.
+The cell serialises its callers in a critical section, so tasks and interrupts may share it once the firmware links an interrupt-safe provider.
+Enable the opt-in `critical-section-impl` feature of `rustyfarian-esp-idf-power` for that, unless another crate already links a provider.
 
 ```rust
 use rustyfarian_esp_idf_power::{EspResetReasonSource, ResetReasonSource, RetainedCell};

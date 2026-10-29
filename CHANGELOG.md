@@ -11,7 +11,8 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 
 ### Migration
 - **Breaking:** `stoker` is `#![no_std]`, its validators return `stoker::SleepError` instead of `anyhow`, and `SleepManager` gains `type Error: stoker::sleep::Error` plus a required `try_sleep`; implementors wrap `anyhow::Error` in a newtype with `kind()` or use `stoker::SleepError` (ADR-001).
-- **Breaking:** `EspSleepManager::Error` is `EspSleepError`, `sleep(&[])` returns `NoWakeSource`, timers above `MAX_TIMER_MS` return `TimerTooLong`, isolation plus `GpioLevel` returns `IsolationConflict`, and `WakeCause::Gpio` carries a `GpioWakeMask`.
+- **Breaking:** `EspSleepManager::Error` is `EspSleepError`, `sleep(&[])` returns `NoWakeSource`, timers above `MAX_TIMER_MS` return `TimerTooLong`, isolation plus `GpioLevel` returns `IsolationConflict`, and `WakeCause::Gpio` carries a `GpioWakeMask`; the new error types are re-exported from `rustyfarian-esp-idf-power`.
+- Firmware that uses `RetainedCell` on the IDF tier enables `critical-section-impl` or links another interrupt- and multicore-safe provider; pre-release git pins that relied on the earlier default must opt in.
 
 ### Added
 - ESP32-C3/C2 deep-sleep GPIO wake on the IDF tier, with a pre-sleep held-pin check that returns `Rejected`, `WakeCause::Gpio(mask)`, and `just check-c3` in CI.
@@ -23,7 +24,10 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 - Examples and bench tooling: C3/S3 deep-sleep, retention and rail-gate examples on both tiers, `just serial-capture`, `just console`, `just bench-c3`, and records in `docs/bench/`.
 
 ### Changed
-- `stoker` drops `anyhow` for `critical-section`, the IDF tier ships an ISR-safe `critical-section` provider by default, and the hal tier gates `sleep`/`reset`/`retain` on `unstable` outside `default-members`.
+- `stoker` drops `anyhow` for `critical-section`, the IDF tier ships an ISR-safe `critical-section` provider behind the opt-in `critical-section-impl` feature, and the hal tier gates `sleep`/`reset`/`retain` on `unstable` outside `default-members`.
+
+### Fixed
+- `GpioWakeMask::contains_pin` returns `false` for `pin >= 64` instead of overflowing, and `EspSleepManager` validates every mask before the first ESP-IDF call.
 
 ## [0.2.0] - 2026-09-26
 
