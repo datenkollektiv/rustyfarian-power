@@ -13,7 +13,7 @@
 //!
 //! The pin mask is validated before any ESP-IDF call.
 //! Implementation notes against ESP-IDF v5.3.3 are in
-//! `docs/features/c3-gpio-deep-sleep-wake-v1.md`.
+//! `docs/features/archive/c3-gpio-deep-sleep-wake-v1.md`.
 //!
 //! # GPIO isolation
 //!
@@ -26,8 +26,8 @@
 //! refused with `SleepError::IsolationConflict` on every chip, so set
 //! `isolate_gpio: false` when using GPIO wake sources.
 //! On EXT1 chips isolation may prevent the wake pin from triggering; on ESP32-C2/C3
-//! the two may coexist, but that is unverified on hardware, so the refusal stays
-//! until bench case I4 decides.
+//! the two may coexist, but that is unverified on hardware, and the refusal stays
+//! by decision; bench case I4 can relax it if a consumer needs the current saving.
 //!
 //! # Rejection-aware sleep
 //!
@@ -238,8 +238,7 @@ pub struct EspSleepManager {
     /// Isolate all digital GPIO pins before entering sleep.
     ///
     /// Must be `false` when a [`WakeSource::GpioLevel`] source is used, on every
-    /// chip; see the module docs for the per-chip reasons (ESP32-C2/C3 pending
-    /// bench case I4).
+    /// chip; see the module docs for the per-chip reasons.
     ///
     /// When `true` (default), calls `esp_sleep_config_gpio_isolate()` just
     /// before entering deep sleep to prevent floating inputs from leaking
