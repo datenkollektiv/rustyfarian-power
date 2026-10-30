@@ -34,7 +34,7 @@ Capability findings: `docs/key-insights.md` § esp-hal tier.
 - [ ] Is async a separate `AsyncBatteryMonitor` trait in `stoker`, or inherent async methods on the hal driver, and does esp-hal 1.2.2 offer async ADC at all?
 - [ ] Which battery-equipped C3/C6 boards get `BatteryConfig` presets and hardware validation, or are they compile-only?
 - [ ] Which esp-hal calibration scheme per chip matches the IDF tier's mV readings within tolerance?
-- [x] How should `stoker`'s `build.rs` derive the wake-pin mask for `*-none-elf` triples — caller-supplied mask with chip constants, decided in `c3-gpio-deep-sleep-wake-v1.md`.
+- [x] How should `stoker`'s `build.rs` derive the wake-pin mask for `*-none-elf` triples — caller-supplied mask with chip constants, decided in `archive/c3-gpio-deep-sleep-wake-v1.md`.
 
 ## State
 - [x] Design approved

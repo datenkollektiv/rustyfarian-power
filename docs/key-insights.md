@@ -63,6 +63,9 @@ Remove or update entries that are superseded.
   Both `xtensa-esp32s3-espidf` and `xtensa-esp32-espidf` must have `linker = "ldproxy"` in `.cargo/config.toml`.
 - **Host tests:** Run with `cargo test -p stoker` (no cross-compilation needed).
   `stoker` is the pure crate with no ESP-IDF dependency, so host tests run without the ESP-IDF build tooling. The ESP-IDF `rustyfarian-esp-idf-power` crate cannot build on the host at all.
+- **Example features come from `Cargo.toml` (since 2026-10-30):** `scripts/build-example.sh` passes only the features an example lists in its `[[example]] required-features`, so every other example links with the crate defaults, as a firmware would.
+  Gate a new example that needs `critical-section-impl` (or any other feature) there, not in the script.
+- **`cargo clippy -p <crate>` lints only the selected packages:** a crate compiled as a dependency is built but not linted, so narrowing a recipe with `-p` silently drops lint coverage; `clippy-all` names `stoker` and the IDF crate for that reason (`stoker` sets chip cfgs in its `build.rs`, so an ESP-target lint differs from the host one).
 
 ## ESP32-S3 Sleep and Power Management
 

@@ -11,7 +11,7 @@ desk-work: available
 |                                                                                                                                    `SleepManager` has `type Error` now (0.2 style) | IDF impl keeps `anyhow`; landed with the no_std step                                                           | Fixed `SleepError` with IDF variants |
 |                                                                                                                               Adopt embedded-hal 1.0 shape: `ErrorType` + `kind()` | Generic code can tell config errors from platform failures                                                     | Bare `type Error: Debug` long-term   |
 |                                                                                                                                               Land in 0.3.0, before C3 `try_sleep` | `SleepManager` breaks once; reject error is a `kind()` from day one                                            | 0.4.0 after the hal tier             |
-|                                                    Kinds `InvalidConfig`, `Unsupported`, `Rejected`, `Platform`, `Other` ([ADR-001](../adr/001-hal-neutral-sleep-contract.md) § 3) | Config, rejection and platform failures are the branches a consumer takes; `Unsupported` is reserved           | Three kinds only                     |
+|                                                    Kinds `InvalidConfig`, `Unsupported`, `Rejected`, `Platform`, `Other` ([ADR-001](../../adr/001-hal-neutral-sleep-contract.md) § 3) | Config, rejection and platform failures are the branches a consumer takes; `Unsupported` is reserved           | Three kinds only                     |
 |                                                                                             `trait sleep::Error: Debug { fn kind() }`, no `core::error::Error` bound (ADR-001 § 3) | embedded-hal 1.0 shape; keeps `defmt`-only errors possible; `SleepError` still implements `core::error::Error` | Require `core::error::Error`         |
 |                                                                                                `ESP_ERR_SLEEP_REJECT` maps to `Rejected` by call site, never by code (ADR-001 § 3) | It aliases `ESP_ERR_INVALID_STATE` (`0x103`) in v5.3.3                                                         | Match on the code                    |
 |                                                                IDF tier: `EspSleepError { Config(SleepError), Idf { code, kind } }` replaces `anyhow` in the manager (ADR-001 § 3) | `anyhow::Error` cannot implement the trait (orphan rule)                                                       | Wrapper around `anyhow::Error`       |
@@ -36,7 +36,7 @@ desk-work: available
 - [x] Design questions closed by ADR-001; this feature is implementation only
 - [x] Error trait + kind enum in `stoker`, implemented for `SleepError`
 - [x] `EspSleepManager` error provides `kind()` (`EspSleepError`)
-- [ ] Tests passing (`just verify`, device checks)
+- [x] Tests passing (`just verify`, `just check-all`, `just check-c3` on 2026-10-30; device checks: S3 call-site `Rejected` and C3 pre-check `kind=Rejected`)
 - [x] Documentation updated (CHANGELOG, key-insights)
 
 ## Session Log
@@ -45,3 +45,4 @@ desk-work: available
 - 2026-10-12 — All open questions answered by ADR-001 § 3 (kinds, no `core::error::Error` bound, `EspSleepError`, reject mapping by call site); implementation only from here
 - 2026-10-12 — ADR-001 review round 2: `TimerOverflow` replaced by `TimerTooLong`; `ForeignWakePin` and `UartBusy` (the only `Platform` variant) added
 - 2026-10-12 — Implemented: `stoker::sleep::Error` + `SleepErrorKind`, eight new `SleepError` variants, `EspSleepError` replaces `anyhow` in `EspSleepManager`; `just verify`, `check-all`, `check-esp32`, `check-hal-c3` exit 0; device checks open
+- 2026-10-30 — Closed: `just verify`, `just check-all` and `just check-c3` exit 0. Device checks were already on record: on the S3 CrowPanel `try_sleep` returned `Rejected` from the `esp_deep_sleep_try_to_start` call site more than 800 times (2026-10-14, `docs/project-lore.md`), and on the C3 the manager's pre-check printed `kind=Rejected` 5 of 5 (2026-10-13, `docs/bench/c3-idf-pir-bench-steps-v1.md`). Archived.
