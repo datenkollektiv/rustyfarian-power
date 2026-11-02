@@ -40,7 +40,10 @@ jobs:
   # overrides the workflow-level `stable`. The example build links, which `check`
   # cannot verify (a missing SDK symbol only fails at link time), so ldproxy is needed.
   check-c3:
-    runs-on: ubuntu-latest
+    # Pinned to 24.04: `ubuntu-latest` moved to 26.04 (libxml2 2.14, soname libxml2.so.16),
+    # where ESP-IDF v5.3.3's prebuilt esp-clang 16 fails to load libxml2.so.2 during
+    # `idf_tools.py install`, so every esp-idf-sys build dies (CI breakage 2026-11-02).
+    runs-on: ubuntu-24.04
     env:
       RUSTUP_TOOLCHAIN: esp
     steps:
@@ -69,7 +72,10 @@ jobs:
   # parallel. Only the retention example exists for the S3, and it links against
   # a different RTC memory layout than the C3 twin.
   check-s3:
-    runs-on: ubuntu-latest
+    # Pinned to 24.04: `ubuntu-latest` moved to 26.04 (libxml2 2.14, soname libxml2.so.16),
+    # where ESP-IDF v5.3.3's prebuilt esp-clang 16 fails to load libxml2.so.2 during
+    # `idf_tools.py install`, so every esp-idf-sys build dies (CI breakage 2026-11-02).
+    runs-on: ubuntu-24.04
     env:
       RUSTUP_TOOLCHAIN: esp
     steps:

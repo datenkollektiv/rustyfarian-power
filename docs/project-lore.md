@@ -15,6 +15,13 @@ With no config file present, `cargo-deny` 0.19 defaults to an empty license allo
 This blocks `just deny`, `just ci`, and `just verify` regardless of the dependency tree, so it is unrelated to whatever change you are validating.
 Fix: add a `deny.toml` with a `[licenses]` `allow` list (MIT, Apache-2.0, Unlicense, BSD-2-Clause, BSD-3-Clause, …) before relying on `just deny`.
 
+**The GitHub `ubuntu-latest` runner moved to Ubuntu 26.04, where the ESP-IDF tool install in CI fails on `esp-clang`.**
+Ubuntu 26.04 ships libxml2 2.14 with soname `libxml2.so.16`, but ESP-IDF v5.3.3's prebuilt `esp-clang` 16 is linked against `libxml2.so.2`; `idf_tools.py` self-checks every installed tool and treats the exit-127 loader error ("Failed to check the tool while installed") as fatal, so every `esp-idf-sys` build dies — both `check-c3` (riscv32 install) and `check-s3` (`build-example`, xtensa install) fail this way.
+`apt-get install libxml2` does NOT fix it on 26.04: the distro package provides the new soname only.
+The image changed between 2026-10-30 (last green run) and 2026-11-02 (first failure), and the failing PR changed only doc comments, so a locally green `just check-c3` plus doc-only diffs is the signature of this failure, not a code regression.
+Fix: pin `runs-on: ubuntu-24.04` on every CI job that builds ESP-IDF code; this is the family-canonical fix (rustyfarian-network, commit 06c5bd2, breakage 2026-10-30; this repo 2026-11-02).
+Repos whose CI builds only esp-hal/AVR targets are unaffected (rustyfarian-ws2812 stayed green on `ubuntu-latest`).
+
 **Host-side gates (`just check` / `test` / `clippy`) never compile the ESP-IDF driver code.**
 These recipes run with `--no-default-features`, which drops the default `esp-idf` feature, so `esp_adc.rs`, `esp_charging.rs`, and `esp_sleep.rs` are excluded from the build — a green host run says nothing about whether the hardware drivers still compile.
 Fix: validate any change to a feature-gated `esp_*.rs` module with `just check-all` (ESP32-S3) and `just check-esp32` (original ESP32); the host gates only cover the platform-independent modules.
