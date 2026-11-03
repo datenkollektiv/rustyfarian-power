@@ -45,6 +45,14 @@
 //!
 //! The boot `BENCH` line is always printed; set `C3_BENCH_LOG=1` at build time to also print one
 //! per `try_sleep` return, which is 20 lines per second while the PIR is held.
+//! `C3_REJECT_HOLD_MS=<ms>` (bench case R2) enables a pin-read window on the first `Rejected`:
+//! the wake pin is read every 10 ms for that long through its existing driver, then the normal retry loop resumes.
+//! It must be 0 (off, the default) or at least `C3_SLEEP_TIMER_MS` + 2000, or the build fails.
+//! The window prints `PINREAD start tier=hal pin=<n> level=<H|L> t_ms=<n>`, one
+//! `PINREAD edge tier=hal pin=<n> <H->L|L->H> t_ms=<n>` per level change, and
+//! `PINREAD end tier=hal pin=<n> edges=<n> high=<0|1> low=<0|1> t_ms=<n>`, with `t_ms` in ms since boot.
+//! With `C3_BENCH_LOG=1`, an `ATTEMPT tier=hal n=<k> t_ms=<n>` line is also printed right before every retry `try_sleep` (k >= 2).
+//! The last `ATTEMPT` line is the origin for the timer recount.
 //!
 //! ## Run
 //!
@@ -78,9 +86,10 @@ esp_bootloader_esp_idf::esp_app_desc!();
 
 use esp_hal::{
     delay::Delay,
-    gpio::{Input, InputConfig, Pull},
+    gpio::{Input, InputConfig, Level, Pull},
     rtc_cntl::{reset_reason, SocResetReason},
     system::{software_reset, Cpu},
+    time::Instant,
 };
 use esp_println::println;
 use rustyfarian_esp_hal_power::{
@@ -109,6 +118,24 @@ const _: () = assert!(
     "C3_SLEEP_TIMER_MS must be between 1 and MAX_TIMER_MS"
 );
 
+/// Rejection-phase pin-read window in ms: `C3_REJECT_HOLD_MS` at build time, else 0 (off).
+///
+/// On the first `Rejected` the example polls the wake pin every 10 ms for this long and prints
+/// `PINREAD` lines, then resumes the normal retry loop (bench case R2).
+const REJECT_HOLD_MS: u64 = match option_env!("C3_REJECT_HOLD_MS") {
+    Some(s) => parse_u64(s),
+    None => 0,
+};
+
+// The window must outlast the wake timer so the retry that follows it can show the timer recount.
+const _: () = assert!(
+    REJECT_HOLD_MS == 0 || REJECT_HOLD_MS >= TIMER_MS + 2000,
+    "C3_REJECT_HOLD_MS must be 0 or at least C3_SLEEP_TIMER_MS + 2000"
+);
+
+/// Poll period of the rejection-phase pin read.
+const PINREAD_PERIOD_MS: u32 = 10;
+
 /// Print a `BENCH` line for every `try_sleep` return (`C3_BENCH_LOG` set at build time).
 ///
 /// Off by default: while the PIR is held the retry loop would print 20 lines per second.
@@ -129,6 +156,59 @@ const fn parse_u64(s: &str) -> u64 {
         i += 1;
     }
     v
+}
+
+/// Milliseconds since boot.
+fn now_ms() -> u64 {
+    Instant::now().duration_since_epoch().as_millis()
+}
+
+fn level_char(level: Level) -> char {
+    match level {
+        Level::High => 'H',
+        Level::Low => 'L',
+    }
+}
+
+/// Polls the wake pin for `REJECT_HOLD_MS` from `start_ms`, printing `PINREAD` lines (bench case R2).
+///
+/// `start_level` and `start_ms` were sampled right after `try_sleep` returned.
+fn pin_read_window(pir: &Input<'_>, delay: &Delay, start_level: Level, start_ms: u64) {
+    println!(
+        "PINREAD start tier=hal pin={} level={} t_ms={}",
+        PIR_PIN,
+        level_char(start_level),
+        start_ms
+    );
+    let mut last = start_level;
+    let mut edges: u32 = 0;
+    let mut high = start_level == Level::High;
+    let mut low = start_level == Level::Low;
+    while now_ms() - start_ms < REJECT_HOLD_MS {
+        delay.delay_millis(PINREAD_PERIOD_MS);
+        let level = pir.level();
+        high |= level == Level::High;
+        low |= level == Level::Low;
+        if level != last {
+            edges += 1;
+            println!(
+                "PINREAD edge tier=hal pin={} {}->{} t_ms={}",
+                PIR_PIN,
+                level_char(last),
+                level_char(level),
+                now_ms()
+            );
+            last = level;
+        }
+    }
+    println!(
+        "PINREAD end tier=hal pin={} edges={} high={} low={} t_ms={}",
+        PIR_PIN,
+        edges,
+        high as u8,
+        low as u8,
+        now_ms()
+    );
 }
 
 /// Short name of the reset reason for the BENCH line.
@@ -222,9 +302,14 @@ fn main() -> ! {
 
     let mut rejected: u32 = 0;
     loop {
+        if BENCH_LOG && rejected >= 1 {
+            println!("ATTEMPT tier=hal n={} t_ms={}", rejected + 1, now_ms());
+        }
         let mut pins = [&mut pir];
         // On success the chip is asleep and this call does not return.
-        match manager.bind_wake_pins(&mut pins).try_sleep(&sources) {
+        // The BoundSleep borrow ends with this statement, so the pin is readable again below.
+        let res = manager.bind_wake_pins(&mut pins).try_sleep(&sources);
+        match res {
             Ok(()) => {
                 // Only reachable if the platform returned without sleeping.
                 println!(
@@ -234,6 +319,8 @@ fn main() -> ! {
                 break;
             }
             Err(e) if e.kind() == SleepErrorKind::Rejected => {
+                let first_read =
+                    (REJECT_HOLD_MS > 0 && rejected == 0).then(|| (pir.level(), now_ms()));
                 rejected += 1;
                 if rejected == 1 {
                     println!("try_sleep rejected (first): {e}, kind={:?}", e.kind());
@@ -245,6 +332,9 @@ fn main() -> ! {
                         "BENCH case=demo tier=hal cycle=0 reset={} cause={} mask=0x{:x} result=err:Rejected guard_us=0 drain_us=0",
                         reset_str, cause_str, mask
                     );
+                }
+                if let Some((level, t_ms)) = first_read {
+                    pin_read_window(&pir, &delay, level, t_ms);
                 }
                 delay.delay_millis(RETRY_DELAY_MS);
             }

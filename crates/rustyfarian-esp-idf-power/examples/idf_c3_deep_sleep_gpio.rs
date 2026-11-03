@@ -62,6 +62,14 @@
 //! push-pull sensor output reads Low at rest, which tells a missing wire from a dead sensor.
 //! `C3_PIR_PIN=<0-5>` moves the PIR pin (default GPIO4), for example after the probe shows the
 //! signal on a neighbouring header pin.
+//! `C3_REJECT_HOLD_MS=<ms>` (bench case R2) enables a pin-read window on the first `Rejected`:
+//! the wake pin is read every 10 ms for that long through its existing driver, then the normal retry loop resumes.
+//! It must be 0 (off, the default) or at least `C3_SLEEP_TIMER_MS` + 2000, or the build fails.
+//! The window prints `PINREAD start tier=idf pin=<n> level=<H|L> t_ms=<n>`, one
+//! `PINREAD edge tier=idf pin=<n> <H->L|L->H> t_ms=<n>` per level change, and
+//! `PINREAD end tier=idf pin=<n> edges=<n> high=<0|1> low=<0|1> t_ms=<n>`, with `t_ms` in ms since boot.
+//! With `C3_BENCH_LOG=1`, an `ATTEMPT tier=idf n=<k> t_ms=<n>` line is also printed right before every retry `try_sleep` (k >= 2).
+//! The last `ATTEMPT` line is the origin for the timer recount.
 //!
 //! ## Run
 //!
@@ -130,6 +138,24 @@ const _: () = assert!(
     "C3_SLEEP_TIMER_MS must be between 1 and MAX_TIMER_MS"
 );
 
+/// Rejection-phase pin-read window in ms: `C3_REJECT_HOLD_MS` at build time, else 0 (off).
+///
+/// On the first `Rejected` the example polls the wake pin every 10 ms for this long and prints
+/// `PINREAD` lines, then resumes the normal retry loop (bench case R2).
+const REJECT_HOLD_MS: u64 = match option_env!("C3_REJECT_HOLD_MS") {
+    Some(s) => parse_u64(s),
+    None => 0,
+};
+
+// The window must outlast the wake timer so the retry that follows it can show the timer recount.
+const _: () = assert!(
+    REJECT_HOLD_MS == 0 || REJECT_HOLD_MS >= TIMER_MS + 2000,
+    "C3_REJECT_HOLD_MS must be 0 or at least C3_SLEEP_TIMER_MS + 2000"
+);
+
+/// Poll period of the rejection-phase pin read.
+const PINREAD_PERIOD_MS: u32 = 10;
+
 /// Awake probe before the first sleep, in ms: `C3_AWAKE_PROBE_MS` at build time, else off.
 ///
 /// Polls GPIO0-5 every 100 ms for that long and prints every level change plus one line per
@@ -191,6 +217,53 @@ fn level_char(level: Level) -> char {
         Level::High => 'H',
         Level::Low => 'L',
     }
+}
+
+/// Milliseconds since boot.
+fn now_ms() -> u64 {
+    // SAFETY: esp_timer_get_time has no preconditions once the system is up.
+    (unsafe { sys::esp_timer_get_time() } / 1000) as u64
+}
+
+/// Polls the wake pin for `REJECT_HOLD_MS` from `start_ms`, printing `PINREAD` lines (bench case R2).
+///
+/// `start_level` and `start_ms` were sampled right after `try_sleep` returned.
+fn pin_read_window(pir: &PinDriver<'static, Input>, start_level: Level, start_ms: u64) {
+    println!(
+        "PINREAD start tier=idf pin={} level={} t_ms={}",
+        PIR_PIN,
+        level_char(start_level),
+        start_ms
+    );
+    let mut last = start_level;
+    let mut edges: u32 = 0;
+    let mut high = start_level == Level::High;
+    let mut low = start_level == Level::Low;
+    while now_ms() - start_ms < REJECT_HOLD_MS {
+        FreeRtos::delay_ms(PINREAD_PERIOD_MS);
+        let level = pir.get_level();
+        high |= level == Level::High;
+        low |= level == Level::Low;
+        if level != last {
+            edges += 1;
+            println!(
+                "PINREAD edge tier=idf pin={} {}->{} t_ms={}",
+                PIR_PIN,
+                level_char(last),
+                level_char(level),
+                now_ms()
+            );
+            last = level;
+        }
+    }
+    println!(
+        "PINREAD end tier=idf pin={} edges={} high={} low={} t_ms={}",
+        PIR_PIN,
+        edges,
+        high as u8,
+        low as u8,
+        now_ms()
+    );
 }
 
 fn levels_line(levels: &[Level]) -> String {
@@ -319,6 +392,9 @@ fn main() -> anyhow::Result<()> {
 
     let mut rejected: u32 = 0;
     loop {
+        if BENCH_LOG && rejected >= 1 {
+            println!("ATTEMPT tier=idf n={} t_ms={}", rejected + 1, now_ms());
+        }
         // On success the chip is asleep and this call does not return.
         match manager.try_sleep(&sources) {
             Ok(()) => {
@@ -330,6 +406,8 @@ fn main() -> anyhow::Result<()> {
                 break;
             }
             Err(e) if e.kind() == SleepErrorKind::Rejected => {
+                let first_read =
+                    (REJECT_HOLD_MS > 0 && rejected == 0).then(|| (pir.get_level(), now_ms()));
                 rejected += 1;
                 if rejected == 1 {
                     println!("try_sleep rejected (first): {e}, kind={:?}", e.kind());
@@ -341,6 +419,9 @@ fn main() -> anyhow::Result<()> {
                     "BENCH case=demo tier=idf cycle=0 reset={} cause={} mask=0x{:x} result=err:Rejected guard_us=0 drain_us=0",
                         reset_str, cause_str, mask
                     );
+                }
+                if let Some((level, t_ms)) = first_read {
+                    pin_read_window(&pir, level, t_ms);
                 }
                 FreeRtos::delay_ms(RETRY_DELAY_MS);
             }

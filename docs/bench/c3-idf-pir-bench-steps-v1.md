@@ -154,6 +154,74 @@ In one boot GPIO4 read Low at boot and HIGH about 11 ms later, so that attempt w
 Open: the plan's 1000 rejections need the pot at maximum and continuous waving.
 `try_sleep` is never rejected for a held GPIO4, so the retry loop is never entered and no `rejected` line can appear.
 
+## R2: post-rejection pin readability and timer recount (both tiers)
+
+Checks the portable `try_sleep` postcondition of ADR-003 point 1 on the C3, as required by the adapter-change row of `docs/features/tier-parity-v1.md`.
+After a `Rejected` attempt the wake pin must read correctly through its existing digital input driver, and the retry must be a fresh attempt whose `Timer` counts from the retry.
+Runs on both tiers with the twin examples; the esp-hal twin is `hal_c3_deep_sleep_gpio`.
+
+What the C3 proves, per tier:
+- esp-hal: the rejection comes from the hardware (`sleep_deep_with_rejection`), so R2 covers the real arm, reject and disarm cycle, the pin read after the `BoundSleep` borrow ends, and the re-armed timer deadline.
+- ESP-IDF: the C3 rejection comes from the manager's software pre-read in `esp_sleep.rs`, before any pin hold is applied, so R2 covers retry stability through `configure()` and the absence of pin residue on that path.
+- R2 does not exercise the IDF hold release on the hardware-reject branch (unreachable on the C3) or the EXT1 release (`rtc_gpio_hold_dis` and `rtc_gpio_deinit`, compiled only for the S3 and ESP32); those need the S3 and ESP32 benches.
+- The IDF timer recount is weak evidence, because the SDK counts the timer from sleep entry anyway; the esp-hal recount is the strong signal.
+
+Build: `C3_SLEEP_TIMER_MS=5000 C3_REJECT_HOLD_MS=8000 C3_BENCH_LOG=1`, set for the build that is flashed.
+`C3_REJECT_HOLD_MS` must be at least the timer plus 2 s, so the rejection phase always outlasts the timer; the build fails otherwise.
+
+```shell
+C3_SLEEP_TIMER_MS=5000 C3_REJECT_HOLD_MS=8000 C3_BENCH_LOG=1 just flash idf_c3_deep_sleep_gpio
+C3_SLEEP_TIMER_MS=5000 C3_REJECT_HOLD_MS=8000 C3_BENCH_LOG=1 just flash-hal-c3 hal_c3_deep_sleep_gpio
+just serial-capture /dev/cu.usbserial-210 300
+```
+
+After the first rejection of a boot the firmware polls the wake pin every 10 ms for `C3_REJECT_HOLD_MS` and prints:
+
+```text
+PINREAD start tier=<idf|hal> pin=4 level=<H|L> t_ms=<n>
+PINREAD edge tier=<idf|hal> pin=4 <H->L|L->H> t_ms=<n>
+PINREAD end tier=<idf|hal> pin=4 edges=<n> high=<0|1> low=<0|1> t_ms=<n>
+```
+
+Every retry prints `ATTEMPT tier=<idf|hal> n=<k> t_ms=<n>` right before the call; the last `ATTEMPT` line before a boot is the timer-recount origin.
+
+Set the PIR jumper to "H" and the time-delay pot to its minimum (about 3 s), let it warm up, and start with the PIR covered.
+
+1. Variant A (quiet): wave once, then cover the PIR.
+   Expected: a `cause=Gpio mask=0x10` boot, the first rejection, `PINREAD start ... level=H`, one `H->L` edge when the PIR output drops, `PINREAD end` after 8 s, then one retry that sleeps and a `cause=Timer mask=0x0` boot about 5 s later.
+2. Variant B (retrigger): as A, but wave again after the `H->L` edge so an `L->H` edge follows; then stay still and cover the PIR.
+   Expected: as A, with an `L->H` edge, and the retry loop continuing past the window until the PIR drops.
+3. Run 5 cycles of each variant per tier.
+
+Pass, on every cycle:
+- Readability: `PINREAD end` shows `high=1 low=1`, the `H->L` edge follows the PIR hold time, and variant B also shows `L->H`; a stuck or garbage pad would read flat.
+- Recount: from the last `ATTEMPT` line to the ROM `rst:0x5` line is 5000 ± 150 ms by host timestamps, and the wake is `cause=Timer mask=0x0`; a sleep under 1 s means the timer counted from the first attempt.
+- No `err:` other than `Rejected`, no `try_sleep failed`, no panic or reset other than `DeepSleep` after the first boot.
+
+The ± 150 ms band covers the UART drain at sleep entry (about 11 ms per full FIFO) and the `ATTEMPT` line itself; the edge times are 10 ms-polled firmware times.
+`just serial-capture` stamps a line when its 0.5 s read timeout returns, so lines arrive in batches and each stamp can lag by up to about 0.5 s.
+With it the recount resolves to about ± 0.5 s: enough to separate a fresh timer from the fail signature (a `Timer` wake under 1 s), not enough for the ± 150 ms band.
+A `Gpio` wake after the retry is new motion, not a recount result; only `Timer` wakes are scored.
+A window that reads one level throughout (`edges=0`) is inconclusive for readability, not a pass: it shows neither a stuck pad nor both levels.
+
+Result: pass on both tiers with the exclusions below, 2026-11-03, ESP32-C3-MINI-1 board (chip v0.3, CH340 on UART0), firmware `9f51e84`, PIR pot at minimum.
+Variants were not separated by the owner; cycles are classified from the log (an `L->H` edge means a retrigger).
+Logs: `tmp/bench/2026-11-03/r2-idf-run2.log`, `tmp/bench/2026-11-03/r2-hal.log`.
+
+| Tier    | GPIO cycles | Readable (`high=1 low=1`) | Inconclusive (flat `H`) | With `L->H` | Timer recounts |
+|:--------|------------:|--------------------------:|------------------------:|------------:|:---------------|
+| ESP-IDF |          14 |                        12 |                       2 |           5 | 9 of 9 pass    |
+| esp-hal |          12 |                        10 |                       2 |           7 | 5 of 5 pass    |
+
+- Readability passes on every conclusive window (22 of 22); the 4 flat-`H` windows are excluded, not counted as passes.
+  Each of them dropped and slept later, which fits a retriggered PIR, but the window itself did not show both levels.
+- Recount measured as the host-stamp difference from the last `ATTEMPT` line to the ROM `rst:0x5` line in the `serial-capture` log: 5.03 to 5.04 s on every scored cycle, each followed by `cause=Timer mask=0x0`.
+  At the tool's resolution this is 5 s ± about 0.5 s: it passes the fail-signature check (no `Timer` wake under 1 s), and the ± 150 ms band is not established by this run.
+- Three recounts followed a multi-attempt retry phase (IDF n=6 and n=32, esp-hal n=20), so the timer counted from the attempt that slept, not from the first.
+- The other retries ended in `cause=Gpio` wakes 0.5 to 4.5 s later, from new motion.
+- No `err:` other than `Rejected`, no `try_sleep failed`, no panic and no reset other than `DeepSleep` on either tier.
+- The first IDF capture (`r2-idf.log`, PIR covered throughout) ran 67 timer cycles at 5 s with no fault, a W2 regression check of the R2 build.
+
 ## SuperMini investigation: GPIO wake missing on an ESP32-C3 SuperMini
 
 Consumer report (rustbox-spookhouse, pinned at `76a1856`, 2026-10-23): the same IDF firmware wakes on the PIR on an ESP32-C3-DevKitM-1 (chip v0.3, CP2102 console) but never on an ESP32-C3 SuperMini (chip v0.4, native USB-Serial-JTAG), while the 60 s timer wakes and sleep entry work on both.
