@@ -107,13 +107,22 @@ Firmware that must not loop while touched should wait for the touch to release b
 `ext1_wakeup_prepare` runs before the reject decision inside `esp_sleep_start` (IDF v5.3.3, `sleep_modes.c:840`; `rtcio_hal_function_select` at 1890 sets MUX_SEL), and the deep-sleep reject tail restores only CPU frequency and UARTs, so both survive the rejection — with no reset to undo them, and esp-idf-hal's `PinDriver::input` does not call `rtc_gpio_deinit` either.
 The boot-time SDK-private `esp_deep_sleep_wakeup_io_reset()` clears only holds and wake pins, not the routing.
 Fix (implemented 2026-11-03, tier-parity chunk 2 + review fix): on the reject return, `EspSleepManager::try_sleep` calls `rtc_gpio_hold_dis` then `rtc_gpio_deinit` per masked pin (best-effort, the reject path keeps `kind: Rejected`).
-Source-read finding of the 2026-11-03 tier-parity audit; bench confirmation rides with the chunk-3 benches.
+Bench-confirmed 2026-11-03 on the CrowPanel S3 (bench R2-S3): after a hardware rejection, GPIO5 read `L` through its existing `PinDriver` and tracked the `L->H` edge in 9 of 9 forced cycles.
 
 **`esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL)` does not clear `s_config.ext1_rtc_gpio_mask`, so a retry with a changed EXT1 pin/level combination can fail with `ESP_ERR_NOT_ALLOWED` even though the new request alone is valid.**
 The ALL branch skips the per-source clear and the enable call OR-merges the mask (`sleep_modes.c:1544-1559`, `1791-1810`), so stale EXT1 bits survive into the next `configure()` within one boot.
 Same-mask retries (all benched retry loops) are unaffected, which is why it never surfaced.
 Fix (implemented 2026-11-03, tier-parity chunk 2): `configure()` calls `esp_sleep_disable_ext1_wakeup_io(0)` after the disable-all.
-Source-read finding; not observed failing on the bench.
+Bench R2-S3 (2026-11-03) retried with GPIO0 + GPIO5 after a GPIO5-only rejection: 8 of 8 `Rejected`, no `ESP_ERR_NOT_ALLOWED`; the pre-fix failure itself was not reproduced.
+
+**A rejected deep sleep hangs the ESP32-S3 while the global digital-pad hold (`RTC_CNTL_DG_PAD_AUTOHOLD_EN`) is enabled — on both tiers.**
+With the hold enabled, sleep entry isolates every unheld digital pad, the flash (MSPI) pads included (IDF `esp_sleep_isolate_digital_gpio`, `sleep_gpio.c:117-153`; esp-hal `isolate_pads_for_deep_sleep`), and a rejection never restores them.
+IDF: `esp_deep_sleep_try_to_start` never returns, garbage `0xFF` bytes reach the console, and the interrupt watchdog resets the chip (`rst:0x8 TG1WDT_SYS_RST`); the pre-change adapter `8669290` hangs the same way.
+esp-hal: the chip stalls silently inside `sleep_deep_with_rejection` with the USB port still enumerated (no watchdog).
+`gpio_deep_sleep_hold_en()` sets the bit; it lives in RTC_CNTL, survives flashing and USB resets (`reset=Other`), and esp-hal never clears it, so an esp-hal firmware flashed after an IDF one inherits it (`autohold_en=1` read at boot).
+Fix: clear it before any attempt that may be rejected (IDF `gpio_deep_sleep_hold_dis()`, esp-hal a write to `RTC_CNTL_DIG_ISO_REG` bit 11) and re-enable it only for a sleep that will not be rejected; per-pin holds (`gpio_hold_en`, `set_pad_hold`) are not the trigger.
+The mechanism (flash pads isolated) is read from the source and fits the `0xFF` output; the trigger and the fix are bench-confirmed (bench R2-S3, CrowPanel 1.28", 2026-11-03).
+Downstream: any firmware that enables `gpio_deep_sleep_hold_en` and retries rejected sleeps (rustyfarian-knob's IDF sleep path) resets instead of retrying when the wake pin is asserted at entry.
 
 **The bench CrowPanel's USB-C reaches the S3's native USB-Serial-JTAG (`/dev/cu.usbmodem*`), not a CH340 as the knob docs say.**
 `esp-println` built with `uart` prints nowhere visible; use `auto` (or `jtag-serial`).
@@ -145,7 +154,7 @@ See `docs/adr/001-hal-neutral-sleep-contract.md` § 2.
 **A rejected `sleep_deep_with_rejection` overwrites the boot's wake record, so `caused_wakeup()` read after a rejection no longer names the pin that woke the chip.**
 Sleep entry clears the per-pin wake status, and the rejected sleep then runs `record_wakeup()` again.
 Fix: capture the wake cause and its pin mask at boot, before the first `try_sleep`.
-Not yet bench-confirmed on the C3; bench case `wake-cause-survives-rejection` in ADR-001 § 5.
+Bench-confirmed on the S3 (bench R2-S3, 2026-11-03): a re-capture after a rejection read `Ext1(0x0)` in 6 of 6 `Ext1(0x20)` wakes; the ESP-IDF tier showed the same in 1 of 1, so the rule applies to both tiers on the S3. Not yet bench-confirmed on the C3.
 
 **A custom esp-hal GPIO handler that calls `unlisten()` on a wake pin silently removes it from the deep-sleep wake set.**
 `Input::listen` enables the CPU interrupt immediately, so a pin already at its wake level runs the handler before sleep entry.

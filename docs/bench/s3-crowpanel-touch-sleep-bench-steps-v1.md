@@ -81,7 +81,7 @@ Covered by the host-tested validators; not run on the board.
 |:----------------------------------------------------|:----------------------------|
 | Deep-sleep current                                  | not measured                |
 | Wake latency                                        | not measured                |
-| `wake-cause-survives-rejection`, `foreign-wake-pin` | not run on the S3           |
+| `foreign-wake-pin`                                  | not run on the S3           |
 | `short-timer-sweep`, `held-level-custom-handler`    | not run on the S3           |
 | Touch count                                         | by hand, 3 per tier         |
 
@@ -97,3 +97,43 @@ Covered by the host-tested validators; not run on the board.
 | INT held LOW   | Never seen                                              |
 
 The CST816S answered every tap after deep sleep, so both holds kept the controller powered and out of reset.
+
+## R2-S3: `try_sleep` post-rejection postcondition (tier parity, 2026-11-03)
+
+Checks ADR-003 point 1 on the S3, where the hardware rejects and the IDF adapter's EXT1 release (`rtc_gpio_hold_dis` + `rtc_gpio_deinit`) runs; the C3 R2 bench could not reach that code.
+Firmware: `idf_s3_deep_sleep_gpio` and `hal_s3_deep_sleep_gpio` built with `S3_R2=1 S3_SLEEP_TIMER_MS=5000` on top of `94dcde1`; see the examples' doc comments for the line formats.
+The esp-hal run used the then-opt-in `S3_CLEAR_AUTOHOLD=1`; the committed example clears the bit unconditionally, the same behaviour.
+
+```shell
+S3_R2=1 S3_SLEEP_TIMER_MS=5000 just flash idf_s3_deep_sleep_gpio
+S3_R2=1 S3_SLEEP_TIMER_MS=5000 just flash-hal-s3 hal_s3_deep_sleep_gpio
+just serial-capture /dev/cu.usbmodem2101 240
+```
+
+Method:
+- The firmware makes the stimulus: odd cycles and every `Ext1` wake are forced cycles, which cut `LCD_3V3` (GPIO1) and hold touch reset (GPIO13) LOW, so INT (GPIO5) reads `L` and the S3 rejects the sleep.
+- Right after the rejection the firmware reads GPIO5 through its existing input driver, re-reads the wake cause, and (IDF) retries once with GPIO0 + GPIO5 in the mask.
+- Two seconds into an 8 s window it restores the rail and reset, which gives an `L->H` edge on GPIO5, then retries until the sleep succeeds.
+- The recount is measured in firmware: the RTC time of each sleep entry is kept in RTC memory and subtracted from the RTC clock at the next `Timer` boot (`EspRtcClock`, `EspHalRtcClock`), at 1 ms resolution.
+  `SLEPT` includes the boot time up to the measurement, the same on forced and plain cycles, so forced cycles are compared with plain ones.
+- Touches by hand gave the `Ext1` wakes; the stimulus needs no hands.
+- Logs: `tmp/bench/2026-11-03/s3-idf-r2.log`, `tmp/bench/2026-11-03/s3-hal-r2.log`.
+
+| Check                                | ESP-IDF                                                      | esp-hal                                  |
+|:-------------------------------------|:-------------------------------------------------------------|:-----------------------------------------|
+| Hardware rejection on forced cycles  | 8 of 8 logged `Deep sleep request is rejected`; 1 unobserved | 12 of 12 reached the post-rejection read |
+| GPIO5 `L` at rejection, then `L->H`  | 9 of 9                                                       | 12 of 12                                 |
+| Changed-mask retry                   | 8 of 8 `err:Rejected`; 1 unobserved                          | not run (IDF-only bug)                   |
+| `SLEPT` after forced vs plain cycles | 5400-5402 ms (7) vs 5401-5402 ms (9)                         | 5146-5158 ms (2) vs 5149-5160 ms (5)     |
+| Wake cause re-read after a rejection | `Ext1(0x20)` → `Ext1(0x0)`, 1 of 1                           | `Ext1(0x20)` → `Ext1(0x0)`, 6 of 6       |
+| Faults                               | none                                                         | none                                     |
+
+- Recount: forced and plain cycles agree within 2 ms (IDF) and 14 ms (esp-hal), inside the ± 150 ms band, so the timer counts from the retry.
+- Unobserved: in one IDF forced cycle the USB port dropped during the rejected attempt and its lines up to `MASKRETRY` were lost; its `L->H` edge and `high=1 low=1` arrived.
+- esp-hal prints no `PINREAD end` or second `ATTEMPT`: the chip sleeps before the USB-Serial-JTAG buffer drains; `start=L` plus the `L->H` edge carry the readability result.
+- Some `Ext1` wakes on esp-hal followed a forced cycle's rail restore without a touch; they are real `Ext1` wakes (mask `0x20`) and count as wake-cause samples, but not every one was a finger.
+- Wake cause: on both tiers a rejection keeps the cause and clears the pin mask, so the capture-before-the-first-`try_sleep` rule applies to the IDF tier too.
+
+Finding: a rejected deep sleep hangs the S3 while the global digital-pad hold (`DG_PAD_AUTOHOLD_EN`) is enabled, on both tiers; see `docs/project-lore.md` → ESP-IDF tier — ESP32-S3 deep sleep.
+The first IDF runs reset by interrupt watchdog on every forced cycle (`LASTSTAGE stage=3`, inside `try_sleep`), and the pre-change adapter `8669290` did the same; the first esp-hal runs stalled silently with `autohold_en=1` inherited from the IDF firmware.
+Both examples now clear the hold before a forced attempt.
