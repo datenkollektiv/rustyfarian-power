@@ -120,7 +120,8 @@ With the hold enabled, sleep entry isolates every unheld digital pad, the flash 
 IDF: `esp_deep_sleep_try_to_start` never returns, garbage `0xFF` bytes reach the console, and the interrupt watchdog resets the chip (`rst:0x8 TG1WDT_SYS_RST`); the pre-change adapter `8669290` hangs the same way.
 esp-hal: the chip stalls silently inside `sleep_deep_with_rejection` with the USB port still enumerated (no watchdog).
 `gpio_deep_sleep_hold_en()` sets the bit; it lives in RTC_CNTL, survives flashing and USB resets (`reset=Other`), and esp-hal never clears it, so an esp-hal firmware flashed after an IDF one inherits it (`autohold_en=1` read at boot).
-Fix: clear it before any attempt that may be rejected (IDF `gpio_deep_sleep_hold_dis()`, esp-hal a write to `RTC_CNTL_DIG_ISO_REG` bit 11) and re-enable it only for a sleep that will not be rejected; per-pin holds (`gpio_hold_en`, `set_pad_hold`) are not the trigger.
+Fix (library, 2026-11-04): while the hold is effective, `try_sleep` on both tiers (ESP32 and S3 on IDF, S3 on esp-hal) reads the wake pins right before sleep entry and returns `Rejected` from software, matching the hardware's ANY/ALL condition (`stoker::digital_hold_effective`, `wake_pins_asserted`, `wake_pins_all_low`); bench R3-S3 kept the hold on and saw no hang on either tier.
+Residual: a pin that crosses its wake level after the read, or a non-pin hardware reject, still hangs with the hold on; firmware that does not need the global hold should not enable it (per-pin holds on RTC pads, `gpio_hold_en` / `set_pad_hold`, are not the trigger).
 The mechanism (flash pads isolated) is read from the source and fits the `0xFF` output; the trigger and the fix are bench-confirmed (bench R2-S3, CrowPanel 1.28", 2026-11-03).
 Downstream: any firmware that enables `gpio_deep_sleep_hold_en` and retries rejected sleeps (rustyfarian-knob's IDF sleep path) resets instead of retrying when the wake pin is asserted at entry.
 

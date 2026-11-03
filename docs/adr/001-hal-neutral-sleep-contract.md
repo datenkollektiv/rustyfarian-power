@@ -51,6 +51,7 @@ pub trait SleepManager {
   On device it returns only with a configuration error.
 - `try_sleep` maps to `esp_deep_sleep_try_to_start()` and esp-hal `sleep_deep_with_rejection`.
   On device `Ok(())` is unreachable; the method returns `Err` whose `kind()` is `Rejected` when a wake source was already asserted.
+  `Rejected` may come from a software pre-read instead of the hardware: on C2/C3 always (IDF tier), and on ESP32/S3 while the global digital-pad hold is effective, because a hardware rejection then hangs (ADR-003 point 1).
 - `WakeSource` stays HAL-neutral and `Copy`: `Timer { duration_ms }` and `GpioLevel { pin_mask, level }`, one level per source as today.
   The IDF tier passes `pin_mask` to `esp_deep_sleep_enable_gpio_wakeup` (C3/C6) or EXT1 (ESP32/S3/C6).
   The hal tier matches every set bit against the pins the firmware bound for the attempt (decision 2) via `peripheral_input().gpio_number()`, arms exactly those pins with `listen` and `apply_wakeup_config`, and reports a bit without a bound pin as `SleepError::PinNotBound { pin }`.

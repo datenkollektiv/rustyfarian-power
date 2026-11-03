@@ -132,6 +132,10 @@ use esp_idf_hal::sys;
     not(esp_idf_soc_pm_support_ext1_wakeup)
 )))]
 use stoker::sleep::validate_gpio_level_source;
+#[cfg(esp32)]
+use stoker::sleep::wake_pins_all_low;
+#[cfg(any(esp32, esp32s3))]
+use stoker::sleep::{digital_hold_effective, wake_pins_asserted};
 #[cfg(all(
     esp_idf_soc_gpio_support_deepsleep_wakeup,
     not(esp_idf_soc_pm_support_ext1_wakeup)
@@ -558,6 +562,85 @@ fn gpio_wake_pins_asserted(sources: &[WakeSource]) -> bool {
     false
 }
 
+/// Returns `true` when the global digital-pad hold is effective and a `GpioLevel` wake pin
+/// is already at its wake level (ESP32 and ESP32-S3).
+///
+/// With the hold effective (`RTC_CNTL_DIG_ISO_REG` bit 11 set, bit 14 clear), sleep entry
+/// isolates every unheld digital pad and `esp_deep_sleep_try_to_start()` never returns
+/// when the hardware rejects the sleep (interrupt watchdog reset, bench R2-S3).
+/// Reading the pins first turns that hang into a software `Rejected`.
+/// Only pins with the pad input enable set are read, because `gpio_get_level` returns 0 for
+/// a pad without it; a pin without input enable is skipped with a warning.
+/// `AnyLow` on the original ESP32 is EXT1 `ALL_LOW`, so the guard asserts only when every
+/// masked pin is low and readable; elsewhere a skipped pin is just excluded.
+/// The read happens before the prepare hooks RTC-route the pins, so it sees the digital level.
+/// For the same reason the internal pull that sleep entry applies is not active yet: a wake
+/// pin needs an external bias (or a pull set on its digital driver) against its wake level,
+/// or a floating pin can read as asserted and every retry is rejected while the hardware
+/// would have slept.
+/// On the ESP32 with `AnyLow`, one skipped pin disables the guard for that request, so the
+/// hang protection is void until the pin has input enable.
+#[cfg(any(esp32, esp32s3))]
+fn held_wake_pins_asserted(sources: &[WakeSource]) -> bool {
+    // SAFETY: RTC_CNTL_DIG_ISO_REG is an always-mapped RTC_CNTL register on both chips
+    // (ESP32: base + 0x88, ESP32-S3: base + 0x94); a volatile 32-bit read has no side effects.
+    let dig_iso = unsafe { core::ptr::read_volatile(sys::RTC_CNTL_DIG_ISO_REG as *const u32) };
+    if !digital_hold_effective(dig_iso) {
+        return false;
+    }
+    // validate_wake_sources allows at most one GpioLevel source.
+    let Some((pin_mask, level)) = sources.iter().find_map(|source| match source {
+        WakeSource::GpioLevel { pin_mask, level } => Some((*pin_mask, *level)),
+        WakeSource::Timer { .. } => None,
+    }) else {
+        return false;
+    };
+    let mut levels = 0u64;
+    let mut checked = 0u64;
+    for pin in 0..64u32 {
+        if pin_mask & (1u64 << pin) == 0 {
+            continue;
+        }
+        // SAFETY: the mask was validated against the chip's RTC wake pins, all below
+        // SOC_GPIO_PIN_COUNT, so the index is in range of the register table.
+        let mux_reg = unsafe { sys::GPIO_PIN_MUX_REG[pin as usize] };
+        // SAFETY: each IO_MUX register in the table is always mapped; a volatile 32-bit read
+        // has no side effects. FUN_IE_S is the bit gpio_ll_input_enable sets.
+        let mux = unsafe { core::ptr::read_volatile(mux_reg as *const u32) };
+        if mux & (1 << sys::FUN_IE_S) == 0 {
+            log::warn!(
+                "Sleep: GPIO{} has no input enable; its level is not checked before sleep",
+                pin
+            );
+            continue;
+        }
+        checked |= 1u64 << pin;
+        // SAFETY: gpio_get_level only reads the GPIO input register; pin is a valid GPIO.
+        if unsafe { sys::gpio_get_level(pin as sys::gpio_num_t) } != 0 {
+            levels |= 1u64 << pin;
+        }
+    }
+    // The guard must match the hardware reject condition exactly, never be stricter, or a
+    // caller's retry loop would livelock. ESP32-S3 EXT1 is ANY_HIGH / ANY_LOW: a pin that
+    // could not be read is simply excluded. The original ESP32 uses ALL_LOW for `AnyLow`:
+    // a pin that could not be read has an unknown level, so all-low cannot be proven and
+    // the guard does not assert.
+    #[cfg(esp32)]
+    let asserted = match level {
+        GpioWakeLevel::AnyLow => checked == pin_mask && wake_pins_all_low(levels, pin_mask),
+        GpioWakeLevel::AnyHigh => wake_pins_asserted(levels, checked, level),
+    };
+    #[cfg(not(esp32))]
+    let asserted = wake_pins_asserted(levels, checked, level);
+    if asserted {
+        log::warn!(
+            "Sleep: wake pin already at its wake level with the global digital-pad hold \
+             effective; rejecting in software (a hardware reject would hang)"
+        );
+    }
+    asserted
+}
+
 impl SleepManager for EspSleepManager {
     type Error = EspSleepError;
 
@@ -623,6 +706,16 @@ impl SleepManager for EspSleepManager {
     ///   Only pins configured as inputs are read, and a pin needs an external bias
     ///   against the wake level, because the internal pull is applied after the read.
     ///   A pin that reaches its wake level after the read still wakes the chip at once.
+    ///   On ESP32 and ESP32-S3 the hardware never returns from a rejected sleep while the
+    ///   global digital-pad hold is effective (`RTC_CNTL_DIG_ISO_REG` bit 11 set, bit 14
+    ///   clear, for example after `gpio_deep_sleep_hold_en()`): sleep entry isolates every
+    ///   unheld digital pad and the interrupt watchdog resets the chip. With the hold
+    ///   effective, the manager therefore reads the `GpioLevel` pins right before sleep
+    ///   entry and returns this error itself (same `code`), logging a warning; a pin without
+    ///   input enable is skipped with a warning. The global hold costs the isolation of every
+    ///   unheld digital pad; per-pin holds on RTC pads do not need it. A pin that reaches its
+    ///   wake level after the read, and non-pin hardware rejections, can still hang while the
+    ///   hold is effective.
     fn try_sleep(&mut self, sources: &[WakeSource]) -> Result<(), EspSleepError> {
         self.configure(sources)?;
 
@@ -635,6 +728,17 @@ impl SleepManager for EspSleepManager {
         if gpio_wake_pins_asserted(sources) {
             // Same shape as the hardware reject below: ESP_ERR_SLEEP_REJECT is
             // ESP_ERR_INVALID_STATE in IDF v5.3.3, and bindgen exposes only the latter.
+            return Err(EspSleepError::Idf {
+                code: sys::ESP_ERR_INVALID_STATE,
+                kind: SleepErrorKind::Rejected,
+            });
+        }
+
+        // On ESP32 and ESP32-S3 a hardware reject never returns while the global
+        // digital-pad hold is effective; reject in software when a wake pin is asserted.
+        #[cfg(any(esp32, esp32s3))]
+        if held_wake_pins_asserted(sources) {
+            // Same shape as the hardware reject below (see the C2/C3 pre-read above).
             return Err(EspSleepError::Idf {
                 code: sys::ESP_ERR_INVALID_STATE,
                 kind: SleepErrorKind::Rejected,

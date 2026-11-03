@@ -27,11 +27,14 @@
 //! `S3_SLEEP_TIMER_MS=<ms>` sets the wake timer (default 60000; the bench uses 5000).
 //! `S3_REJECT_HOLD_MS=<ms>` sets the pin-read window after the forced rejection (default 8000).
 //! With `S3_R2=1` it must be at least `S3_SLEEP_TIMER_MS` + 2000, or the build fails.
+//! `S3_KEEP_AUTOHOLD=1` is only meaningful with `S3_R2=1`.
+//! With it, forced cycles keep the global digital-pad hold effective instead of clearing it, so the library guard in `try_sleep` is what prevents the hang.
+//! The `FORCED` line then reports `autohold=1`.
 //!
 //! A retained record in RTC memory (`.rtc_fast.persistent`) holds a magic word, the cycle counter, and the RTC time of the last sleep entry.
 //! Odd cycles and every `Ext1` wake boot are forced cycles; the others are plain timer cycles.
 //! A forced cycle cuts `LCD_3V3` (GPIO1) and holds the touch reset (GPIO13) LOW so INT stays LOW and the S3 hardware rejects the sleep.
-//! It clears the global digital-pad hold first, which an earlier ESP-IDF firmware can leave set: with it enabled, a rejected deep sleep hangs the S3 (`docs/project-lore.md`).
+//! It clears the global digital-pad hold first, which an earlier ESP-IDF firmware can leave set, unless `S3_KEEP_AUTOHOLD=1`: with it enabled and no library guard, a rejected deep sleep hangs the S3 (`docs/project-lore.md`).
 //! It then reads INT through the existing driver and re-reads the wake cause.
 //! Two seconds into the window it restores the rail, pulses the touch reset and re-arms the pad holds, which gives an `L->H` edge on INT.
 //! The window then runs to its end and the normal retry loop resumes.
@@ -40,7 +43,7 @@
 //!
 //! - `S3BENCH tier=hal cycle=<n> reset=<r> cause=<c> mask=0x<m>` once per boot; the boot lines repeat after the 3 s awake time, because the host reopens the port too late for the first copy.
 //! - `DIGISO tier=hal autohold_en=<0|1> force_unhold=<0|1>`: the global digital-pad hold state at boot.
-//! - `FORCED tier=hal int_before=<H|L>`: INT right before the forced attempt.
+//! - `FORCED tier=hal int_before=<H|L> autohold=<0|1>`: INT right before the forced attempt, and whether the global digital-pad hold is effective.
 //! - `SLEPT tier=hal ms=<n> forced=<0|1>` on a `Timer` wake: RTC-clock ms from the last sleep entry to this boot, and whether the cycle that slept was forced.
 //! - `ATTEMPT tier=hal n=<k> t_ms=<n>` right before every `try_sleep`; the last one before a sleep is the origin of the recount.
 //! - `PINREAD start|edge|end tier=hal pin=5 ...` as in the C3 R2 bench: `level=<H|L>`, `<H->L|L->H>`, and `edges=<n> high=<0|1> low=<0|1>`.
@@ -87,6 +90,12 @@ const AWAKE_MS: u32 = 3_000;
 
 /// Bench case R2 (`S3_R2=1` at build time).
 const R2: bool = match option_env!("S3_R2") {
+    Some(s) => s.len() == 1 && s.as_bytes()[0] == b'1',
+    None => false,
+};
+
+/// Bench case R3 (`S3_KEEP_AUTOHOLD=1` at build time, only meaningful with `S3_R2=1`).
+const KEEP_AUTOHOLD: bool = match option_env!("S3_KEEP_AUTOHOLD") {
     Some(s) => s.len() == 1 && s.as_bytes()[0] == b'1',
     None => false,
 };
@@ -426,21 +435,25 @@ fn main() -> ! {
         // entry isolates every unheld digital pad, the flash pads included, and the rejection
         // does not restore them. An earlier ESP-IDF firmware can leave the bit set, and esp-hal
         // never clears it (docs/project-lore.md).
-        // SAFETY: read-modify-write of the always-mapped RTC_CNTL_DIG_ISO_REG, clearing only
-        // the global digital-pad hold enable, as ESP-IDF's gpio_deep_sleep_hold_dis does.
-        unsafe {
-            core::ptr::write_volatile(
-                RTC_CNTL_DIG_ISO_REG as *mut u32,
-                dig_iso() & !DG_PAD_AUTOHOLD_EN,
-            )
+        // S3_KEEP_AUTOHOLD=1 instead makes the hold effective (bit 11 set, bit 14 clear) so the
+        // library guard has to prevent the hang.
+        // SAFETY: read-modify-write of the always-mapped RTC_CNTL_DIG_ISO_REG, touching only
+        // the global digital-pad hold enable and force-unhold bits; clearing the enable is what
+        // ESP-IDF's gpio_deep_sleep_hold_dis does.
+        let dig_iso_value = if KEEP_AUTOHOLD {
+            (dig_iso() | DG_PAD_AUTOHOLD_EN) & !DG_PAD_FORCE_UNHOLD
+        } else {
+            dig_iso() & !DG_PAD_AUTOHOLD_EN
         };
+        unsafe { core::ptr::write_volatile(RTC_CNTL_DIG_ISO_REG as *mut u32, dig_iso_value) };
         // Reset LOW too, so the unpowered controller is not back-fed through its reset pin.
         touch_rst.set_low();
         lcd_rail.set_low();
         delay.delay_millis(100);
         println!(
-            "FORCED tier=hal int_before={}",
-            level_char(touch_int.level())
+            "FORCED tier=hal int_before={} autohold={}",
+            level_char(touch_int.level()),
+            u8::from(KEEP_AUTOHOLD)
         );
     }
     let mut window_pending = R2 && forced;

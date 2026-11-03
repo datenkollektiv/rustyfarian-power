@@ -137,3 +137,21 @@ Method:
 Finding: a rejected deep sleep hangs the S3 while the global digital-pad hold (`DG_PAD_AUTOHOLD_EN`) is enabled, on both tiers; see `docs/project-lore.md` → ESP-IDF tier — ESP32-S3 deep sleep.
 The first IDF runs reset by interrupt watchdog on every forced cycle (`LASTSTAGE stage=3`, inside `try_sleep`), and the pre-change adapter `8669290` did the same; the first esp-hal runs stalled silently with `autohold_en=1` inherited from the IDF firmware.
 Both examples now clear the hold before a forced attempt.
+
+## R3-S3: `try_sleep` hold guard with the global pad hold kept on (2026-11-04)
+
+Checks the library guard against the R2-S3 hang: with the hold effective, `try_sleep` must return `Rejected` from a pre-entry read instead of hanging.
+Firmware: both S3 examples with `S3_R2=1 S3_SLEEP_TIMER_MS=5000 S3_KEEP_AUTOHOLD=1`, so forced cycles keep the hold on (`FORCED ... autohold=1`); working tree on top of `8199212`.
+Logs: `tmp/bench/2026-11-03/s3-negctl.log`, `s3-guard-idf.log`, `s3-guard-hal.log`.
+
+| Run                                 | Forced cycles | Result                                                                                                     |
+|:------------------------------------|--------------:|:-----------------------------------------------------------------------------------------------------------|
+| Negative control, IDF without guard |             2 | `rst:0x8 TG1WDT_SYS_RST` at `LASTSTAGE stage=3` on both: the bench detects the hang                        |
+| IDF with guard                      |             6 | 6 `Rejected`, no IDF reject line (the guard answered), GPIO5 `L` then `L->H`, `MASKRETRY` 6 `err:Rejected` |
+| esp-hal with guard                  |             5 | 5 `Rejected` (`autohold_en=1` at boot), GPIO5 `L` then `L->H`, cycles 1-9 continuous                       |
+
+- Recount after a guarded rejection, IDF: `SLEPT` 5401-5402 ms after forced cycles against 5401-5402 ms after plain ones (RTC clock, 1 ms resolution).
+- Recount after a guarded rejection, esp-hal: unobserved; the boots after forced cycles printed nothing the capture received, although the cycle counter shows they ran.
+  The esp-hal recount after a hardware rejection is covered by R2-S3.
+- No watchdog reset, panic or stall in the guarded runs.
+- Not tested: the race (a pin crossing its wake level after the read) and non-pin rejects with the hold on; the ESP32 guard is compile-only.

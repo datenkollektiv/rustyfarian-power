@@ -27,6 +27,7 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 - `stoker` drops `anyhow` for `critical-section`, the IDF tier ships an ISR-safe `critical-section` provider behind the opt-in `critical-section-impl` feature, and the hal tier gates `sleep`/`reset`/`retain` on `unstable` outside `default-members`.
 
 ### Fixed
+- `try_sleep` no longer hangs on the ESP32/ESP32-S3 when the global digital-pad hold (`gpio_deep_sleep_hold_en`) is effective and a wake pin is already asserted: both tiers return `Rejected` from a pre-entry read instead (`stoker::digital_hold_effective`, `wake_pins_asserted`, `wake_pins_all_low`).
 - `GpioWakeMask::contains_pin` returns `false` for `pin >= 64` instead of overflowing, and `EspSleepManager` validates every mask before the first ESP-IDF call.
 
 ## [0.2.0] - 2026-09-26

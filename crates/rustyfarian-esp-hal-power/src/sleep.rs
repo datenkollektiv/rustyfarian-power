@@ -468,6 +468,34 @@ impl BoundSleep<'_, '_, '_, '_> {
         let _ = pin.apply_wakeup_config(&WakeupConfig::default());
     }
 
+    /// Returns `true` when the global digital-pad hold is effective and a masked wake pin is
+    /// already at its wake level. Call with interrupts masked, right before sleep entry.
+    ///
+    /// With the hold effective, sleep entry isolates every unheld digital pad and a hardware
+    /// rejection never returns (bench R2-S3). Reading the pins here turns that hang into
+    /// `Rejected`. Pins are read through the bound `Input`s, which carry the input enable.
+    #[cfg(feature = "esp32s3")]
+    fn hold_guard_trips(&self, plan: Plan) -> bool {
+        let dig_iso = LPWR::regs().dig_iso().read().bits();
+        if !digital_hold_effective(dig_iso) {
+            return false;
+        }
+        let levels = self
+            .pins
+            .iter()
+            .filter_map(|pin| {
+                let n = pin.peripheral_input().gpio_number()?;
+                pin.is_high().then_some(1u64 << n)
+            })
+            .fold(0u64, |mask, bit| mask | bit);
+        let level = match plan.event {
+            Event::LowLevel => GpioWakeLevel::AnyLow,
+            _ => GpioWakeLevel::AnyHigh,
+        };
+        // `plan.pin_mask` was checked against the bound pins, so every masked pin is read above.
+        wake_pins_asserted(levels, plan.pin_mask, level)
+    }
+
     /// Releases every bound pin and clears the standing deadline. Used after a rejection and
     /// after any arming failure, so the firmware's retry loop starts from a clean state.
     fn disarm(&mut self) {
@@ -498,6 +526,15 @@ impl SleepManager for BoundSleep<'_, '_, '_, '_> {
     /// Deep sleep that returns only when the hardware rejects it (a wake pin already at its
     /// wake level). Mirrors `esp_deep_sleep_try_to_start` on the IDF tier.
     ///
+    /// On the ESP32-S3 the hardware never returns from a rejected sleep while the global
+    /// digital-pad hold is effective (`RTC_CNTL_DIG_ISO_REG` bit 11 set, bit 14 clear): sleep
+    /// entry isolates every unheld digital pad and the chip stalls silently. When the hold is
+    /// effective, this method therefore reads the bound wake pins right before sleep entry and
+    /// returns `Rejected` itself for a pin already at its wake level. The global hold costs
+    /// the isolation of every unheld digital pad; per-pin holds on RTC pads do not need it.
+    /// A pin that reaches its wake level after the read, and non-pin hardware rejections,
+    /// can still stall while the hold is effective.
+    ///
     /// Validation runs first and touches nothing. Arming, the sleep call and the cleanup after
     /// a rejection then run in one critical section, so no GPIO handler can observe the armed,
     /// already-asserted pin: a custom handler that calls `unlisten()` would otherwise drop the
@@ -508,6 +545,13 @@ impl SleepManager for BoundSleep<'_, '_, '_, '_> {
             #[cfg(feature = "bench")]
             bench::begin_attempt();
             self.arm(plan)?;
+            // The ESP32-S3 hardware never returns from a rejected sleep while the global
+            // digital-pad hold is effective, so reject in software before isolation can run.
+            #[cfg(feature = "esp32s3")]
+            if self.hold_guard_trips(plan) {
+                self.disarm();
+                return Err(SleepError::Rejected);
+            }
             #[cfg(feature = "bench")]
             let armed_at = {
                 bench::marker_high();

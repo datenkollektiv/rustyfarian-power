@@ -57,8 +57,10 @@ pub use gate::{
 pub use reset::{NoopResetReasonSource, ResetReason, ResetReasonSource};
 pub use retain::{Invalid, Retainable, Retained, RetainedCell, StoreError};
 pub use sleep::{
-    Error, GpioWakeLevel, GpioWakeMask, NoopSleepManager, SleepError, SleepErrorKind, SleepManager,
-    WakeCause, WakeCauseSource, WakeSource, MAX_TIMER_MS,
+    digital_hold_effective, wake_pins_all_low, wake_pins_asserted, Error, GpioWakeLevel,
+    GpioWakeMask, NoopSleepManager, SleepError, SleepErrorKind, SleepManager, WakeCause,
+    WakeCauseSource, WakeSource, DIG_ISO_DG_PAD_AUTOHOLD_EN, DIG_ISO_DG_PAD_FORCE_UNHOLD,
+    MAX_TIMER_MS,
 };
 
 /// Trait for reading battery status from hardware.

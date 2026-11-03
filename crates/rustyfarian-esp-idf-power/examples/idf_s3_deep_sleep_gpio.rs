@@ -26,11 +26,14 @@
 //! `S3_SLEEP_TIMER_MS=<ms>` sets the wake timer (default 60000; the bench uses 5000).
 //! `S3_REJECT_HOLD_MS=<ms>` sets the pin-read window after the forced rejection (default 8000).
 //! With `S3_R2=1` it must be at least `S3_SLEEP_TIMER_MS` + 2000, or the build fails.
+//! `S3_KEEP_AUTOHOLD=1` is only meaningful with `S3_R2=1`.
+//! With it, forced cycles keep the global digital-pad hold effective instead of clearing it, so the library guard in `try_sleep` is what prevents the hang.
+//! The `FORCED` line then reports `autohold=1`.
 //!
 //! A retained record in RTC memory (`.rtc_noinit`) holds a magic word, the cycle counter, and the RTC time of the last sleep entry.
 //! Odd cycles and every `Ext1` wake boot are forced cycles; the others are plain timer cycles.
 //! A forced cycle cuts `LCD_3V3` (GPIO1) and holds the touch reset (GPIO13) LOW so INT stays LOW and the S3 hardware rejects the sleep.
-//! It disables the global digital-pad hold first: with it enabled, a rejected deep sleep hangs the S3 (`docs/project-lore.md`).
+//! It disables the global digital-pad hold first, unless `S3_KEEP_AUTOHOLD=1`: with it enabled and no library guard, a rejected deep sleep hangs the S3 (`docs/project-lore.md`).
 //! It then reads INT through the existing driver, re-reads the wake cause, and retries with a changed mask (GPIO0 + GPIO5).
 //! Two seconds into the window it restores the rail, pulses the touch reset and re-arms the pad holds, which gives an `L->H` edge on INT.
 //! The window then runs to its end and the normal retry loop resumes.
@@ -39,7 +42,7 @@
 //!
 //! - `S3BENCH tier=idf cycle=<n> reset=<r> cause=<c> mask=0x<m>` once per boot; the boot lines repeat after the 3 s awake time, because the host reopens the port too late for the first copy.
 //! - `LASTSTAGE tier=idf stage=<n>`: the last forced-cycle stage the previous boot reached (0 = none), kept in RTC memory so a hang leaves a trace.
-//! - `FORCED tier=idf int_before=<H|L>`: INT right before the forced attempt.
+//! - `FORCED tier=idf int_before=<H|L> autohold=<0|1>`: INT right before the forced attempt, and whether the global digital-pad hold is effective.
 //! - `SLEPT tier=idf ms=<n> forced=<0|1>` on a `Timer` wake: RTC-clock ms from the last sleep entry to this boot, and whether the cycle that slept was forced.
 //! - `ATTEMPT tier=idf n=<k> t_ms=<n>` right before every `try_sleep`; the last one before a sleep is the origin of the recount.
 //! - `PINREAD start|edge|end tier=idf pin=5 ...` as in the C3 R2 bench: `level=<H|L>`, `<H->L|L->H>`, and `edges=<n> high=<0|1> low=<0|1>`.
@@ -90,6 +93,12 @@ const MASKRETRY_PIN: u8 = 0;
 
 /// Bench case R2 (`S3_R2=1` at build time).
 const R2: bool = match option_env!("S3_R2") {
+    Some(s) => s.len() == 1 && s.as_bytes()[0] == b'1',
+    None => false,
+};
+
+/// Bench case R3 (`S3_KEEP_AUTOHOLD=1` at build time, only meaningful with `S3_R2=1`).
+const KEEP_AUTOHOLD: bool = match option_env!("S3_KEEP_AUTOHOLD") {
     Some(s) => s.len() == 1 && s.as_bytes()[0] == b'1',
     None => false,
 };
@@ -436,7 +445,12 @@ fn main() -> anyhow::Result<()> {
             // A rejected deep sleep hangs the S3 while the global digital-pad hold is enabled:
             // sleep entry isolates every unheld digital pad, the flash pads included, and the
             // rejection does not restore them (docs/project-lore.md). Re-enabled on restore.
-            sys::gpio_deep_sleep_hold_dis();
+            // S3_KEEP_AUTOHOLD=1 keeps it enabled so the library guard has to prevent the hang.
+            if KEEP_AUTOHOLD {
+                sys::gpio_deep_sleep_hold_en();
+            } else {
+                sys::gpio_deep_sleep_hold_dis();
+            }
         }
         // Reset LOW too, so the unpowered controller is not back-fed through its reset pin.
         touch_rst.set_low()?;
@@ -444,8 +458,9 @@ fn main() -> anyhow::Result<()> {
         FreeRtos::delay_ms(100);
         stage(2);
         say(&format!(
-            "FORCED tier=idf int_before={}",
-            level_char(touch_int.get_level())
+            "FORCED tier=idf int_before={} autohold={}",
+            level_char(touch_int.get_level()),
+            u8::from(KEEP_AUTOHOLD)
         ));
     }
     let mut window_pending = R2 && forced;

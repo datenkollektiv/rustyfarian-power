@@ -546,6 +546,55 @@ pub fn validate_wake_sources(sources: &[WakeSource]) -> Result<(), SleepError> {
     Ok(())
 }
 
+/// `DG_PAD_AUTOHOLD_EN` (bit 11) of `RTC_CNTL_DIG_ISO_REG`: the global digital-pad hold.
+///
+/// Same bit position on ESP32, ESP32-S3, ESP32-C2 and ESP32-C3 (ESP-IDF v5.3.3
+/// `rtc_cntl_reg.h` / `gpio_ll`).
+pub const DIG_ISO_DG_PAD_AUTOHOLD_EN: u32 = 1 << 11;
+
+/// `DG_PAD_FORCE_UNHOLD` (bit 14) of `RTC_CNTL_DIG_ISO_REG`: forces every digital pad unheld.
+///
+/// Same bit position as [`DIG_ISO_DG_PAD_AUTOHOLD_EN`] on the same chips.
+pub const DIG_ISO_DG_PAD_FORCE_UNHOLD: u32 = 1 << 14;
+
+/// Returns `true` when the global digital-pad hold is effective.
+///
+/// Pure function over the raw `RTC_CNTL_DIG_ISO_REG` value.
+/// The hold is effective when `DG_PAD_AUTOHOLD_EN` is set and `DG_PAD_FORCE_UNHOLD`
+/// is clear.
+/// While it is effective on ESP32 and ESP32-S3, sleep entry isolates every unheld
+/// digital pad and a hardware-rejected deep sleep never returns.
+/// All other bits of the register are ignored.
+#[must_use]
+pub fn digital_hold_effective(dig_iso_reg: u32) -> bool {
+    dig_iso_reg & DIG_ISO_DG_PAD_AUTOHOLD_EN != 0 && dig_iso_reg & DIG_ISO_DG_PAD_FORCE_UNHOLD == 0
+}
+
+/// Returns `true` when any pin of `pin_mask` is already at its wake level.
+///
+/// Pure function: `levels` has bit N set when GPIO N reads high.
+/// [`GpioWakeLevel::AnyHigh`] asserts when any masked pin is high,
+/// [`GpioWakeLevel::AnyLow`] when any masked pin is low.
+/// Pins outside `pin_mask` are ignored and an empty mask never asserts.
+#[must_use]
+pub fn wake_pins_asserted(levels: u64, pin_mask: u64, level: GpioWakeLevel) -> bool {
+    match level {
+        GpioWakeLevel::AnyHigh => levels & pin_mask != 0,
+        GpioWakeLevel::AnyLow => !levels & pin_mask != 0,
+    }
+}
+
+/// Returns `true` when every pin of a non-empty `pin_mask` is low.
+///
+/// Pure function: `levels` has bit N set when GPIO N reads high.
+/// This is the original ESP32's EXT1 `ALL_LOW` reject condition, the one place where
+/// [`GpioWakeLevel::AnyLow`] means "all pins low" (see that variant).
+/// Pins outside `pin_mask` are ignored and an empty mask never asserts.
+#[must_use]
+pub fn wake_pins_all_low(levels: u64, pin_mask: u64) -> bool {
+    pin_mask != 0 && levels & pin_mask == 0
+}
+
 /// Controls entry into a low-power sleep mode.
 ///
 /// # Does not return on real hardware
@@ -617,6 +666,23 @@ pub trait SleepManager {
     /// (on the esp-hal tier, once the `BoundSleep` borrow ends).
     /// Whether wake sources stay armed between rejection and retry is
     /// adapter-internal and not part of this contract.
+    ///
+    /// # Rejection from a software pre-read
+    ///
+    /// [`SleepErrorKind::Rejected`] does not always come from the hardware.
+    /// On ESP32 and ESP32-S3 a hardware-rejected deep sleep never returns while
+    /// the global digital-pad hold is effective (see [`digital_hold_effective`]),
+    /// so the adapters read the `GpioLevel` wake pins right before sleep entry
+    /// when the hold is effective and return `Rejected` themselves for a pin
+    /// already at its wake level (see [`wake_pins_asserted`]).
+    /// The global hold is therefore an input to `try_sleep`.
+    /// It costs the isolation of every unheld digital pad during sleep; per-pin holds
+    /// on RTC pads do not need it.
+    /// A pin that reaches its wake level after the read, and non-pin hardware
+    /// rejections, can still hang while the hold is effective.
+    /// The read happens before sleep entry applies any internal pull, so a wake pin
+    /// needs a bias against its wake level when awake, or a floating pin can read as
+    /// asserted and keep the retry loop rejecting.
     #[must_use = "a rejected sleep must be handled — ignoring it leaves the device awake on battery"]
     fn try_sleep(&mut self, sources: &[WakeSource]) -> Result<(), Self::Error>;
 }
@@ -1278,5 +1344,77 @@ mod tests {
             kind_of_try_sleep(&mut NoopSleepManager::rejecting()),
             Some(SleepErrorKind::Rejected)
         );
+    }
+
+    #[test]
+    fn digital_hold_truth_table() {
+        let en = DIG_ISO_DG_PAD_AUTOHOLD_EN;
+        let un = DIG_ISO_DG_PAD_FORCE_UNHOLD;
+        assert!(!digital_hold_effective(0));
+        assert!(digital_hold_effective(en));
+        assert!(!digital_hold_effective(un));
+        assert!(!digital_hold_effective(en | un));
+    }
+
+    #[test]
+    fn digital_hold_ignores_unrelated_bits() {
+        let others = !(DIG_ISO_DG_PAD_AUTOHOLD_EN | DIG_ISO_DG_PAD_FORCE_UNHOLD);
+        assert!(!digital_hold_effective(others));
+        assert!(digital_hold_effective(others | DIG_ISO_DG_PAD_AUTOHOLD_EN));
+        assert!(!digital_hold_effective(!DIG_ISO_DG_PAD_AUTOHOLD_EN));
+    }
+
+    #[test]
+    fn digital_hold_bit_positions() {
+        assert_eq!(DIG_ISO_DG_PAD_AUTOHOLD_EN, 0x0000_0800);
+        assert_eq!(DIG_ISO_DG_PAD_FORCE_UNHOLD, 0x0000_4000);
+    }
+
+    #[test]
+    fn wake_pins_any_high() {
+        let mask = 1 << 5;
+        assert!(wake_pins_asserted(1 << 5, mask, GpioWakeLevel::AnyHigh));
+        assert!(!wake_pins_asserted(0, mask, GpioWakeLevel::AnyHigh));
+        assert!(wake_pins_asserted(
+            0b11,
+            0b11 | 1 << 7,
+            GpioWakeLevel::AnyHigh
+        ));
+    }
+
+    #[test]
+    fn wake_pins_any_low() {
+        let mask = 1 << 5;
+        assert!(wake_pins_asserted(0, mask, GpioWakeLevel::AnyLow));
+        assert!(!wake_pins_asserted(1 << 5, mask, GpioWakeLevel::AnyLow));
+        let two = (1 << 5) | (1 << 6);
+        assert!(wake_pins_asserted(1 << 5, two, GpioWakeLevel::AnyLow));
+        assert!(!wake_pins_asserted(two, two, GpioWakeLevel::AnyLow));
+    }
+
+    #[test]
+    fn wake_pins_outside_mask_ignored() {
+        let mask = 1 << 5;
+        assert!(!wake_pins_asserted(!mask, mask, GpioWakeLevel::AnyHigh));
+        assert!(!wake_pins_asserted(mask, mask, GpioWakeLevel::AnyLow));
+    }
+
+    #[test]
+    fn wake_pins_empty_mask_never_asserts() {
+        for levels in [0, u64::MAX] {
+            assert!(!wake_pins_asserted(levels, 0, GpioWakeLevel::AnyHigh));
+            assert!(!wake_pins_asserted(levels, 0, GpioWakeLevel::AnyLow));
+        }
+    }
+
+    #[test]
+    fn wake_pins_all_low_cases() {
+        let mask = (1 << 5) | (1 << 6);
+        assert!(wake_pins_all_low(0, mask));
+        assert!(wake_pins_all_low(1 << 7, mask));
+        assert!(!wake_pins_all_low(1 << 5, mask));
+        assert!(!wake_pins_all_low(mask, mask));
+        assert!(!wake_pins_all_low(0, 0));
+        assert!(!wake_pins_all_low(u64::MAX, 0));
     }
 }
