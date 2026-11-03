@@ -564,6 +564,8 @@ pub fn validate_wake_sources(sources: &[WakeSource]) -> Result<(), SleepError> {
 /// [`Error::kind`] is [`SleepErrorKind::Rejected`] when a wake source was
 /// already asserted, so the caller can handle the event instead of sleeping
 /// through it.
+/// See [`try_sleep`](Self::try_sleep) for the post-rejection retry guarantee
+/// (ADR-003 point 1).
 ///
 /// Use [`WakeCauseSource`] at the start of `main()` to determine why the
 /// device woke.
@@ -602,6 +604,19 @@ pub trait SleepManager {
     /// [`SleepError::NoWakeSource`] for an empty `sources` slice.
     /// Returns an error with [`Error::kind`] equal to [`SleepErrorKind::Rejected`]
     /// when a wake source was already asserted and the device did not sleep.
+    ///
+    /// # Post-rejection retry guarantee (ADR-003 point 1)
+    ///
+    /// After any error whose [`Error::kind`] is [`SleepErrorKind::Rejected`],
+    /// the caller may retry immediately through the same object — no recovery,
+    /// re-construction, or pin re-binding step. The retry is a fresh attempt:
+    /// the same validation outcomes and error kinds apply, and a
+    /// [`WakeSource::Timer`] duration counts from the retry, not from the
+    /// rejected attempt. Once the call has returned, every wake pin named in
+    /// the rejected request's `pin_mask` is usable as a plain digital input
+    /// (on the esp-hal tier, once the `BoundSleep` borrow ends).
+    /// Whether wake sources stay armed between rejection and retry is
+    /// adapter-internal and not part of this contract.
     #[must_use = "a rejected sleep must be handled — ignoring it leaves the device awake on battery"]
     fn try_sleep(&mut self, sources: &[WakeSource]) -> Result<(), Self::Error>;
 }
@@ -1204,6 +1219,49 @@ mod tests {
                 duration_ms: u64::MAX,
                 max_ms: MAX_TIMER_MS
             })
+        );
+    }
+
+    // Post-rejection retry guarantee (ADR-003 point 1): an immediate bare retry
+    // on the same manager — no recovery step in between — rejects again.
+    #[test]
+    fn noop_rejecting_try_sleep_retry_returns_rejected_again() {
+        let mut mgr = NoopSleepManager::rejecting();
+        let sources = [WakeSource::Timer { duration_ms: 1000 }];
+        assert_eq!(mgr.try_sleep(&sources), Err(SleepError::Rejected));
+        assert_eq!(mgr.try_sleep(&sources), Err(SleepError::Rejected));
+        let err = mgr.try_sleep(&sources).unwrap_err();
+        assert_eq!(err.kind(), SleepErrorKind::Rejected);
+    }
+
+    // A rejection latches no state: validation outcomes and precedence on the
+    // retry after a `Rejected` attempt are identical to a first attempt.
+    #[test]
+    fn noop_rejecting_retry_then_invalid_still_validation_error() {
+        let mut mgr = NoopSleepManager::rejecting();
+        let sources = [WakeSource::Timer { duration_ms: 1000 }];
+        assert_eq!(mgr.try_sleep(&sources), Err(SleepError::Rejected));
+        assert_eq!(mgr.try_sleep(&[]), Err(SleepError::NoWakeSource));
+        assert_eq!(mgr.try_sleep(&sources), Err(SleepError::Rejected));
+    }
+
+    // The retry goes through the trait generically — the shape the ADR-003
+    // point-4 conformance modules exercise with the real adapters.
+    fn kind_of_second_try_sleep<S: SleepManager>(s: &mut S) -> Option<SleepErrorKind> {
+        let sources = [WakeSource::Timer { duration_ms: 10 }];
+        let _ = s.try_sleep(&sources);
+        s.try_sleep(&sources).err().map(|e| e.kind())
+    }
+
+    #[test]
+    fn generic_consumer_retries_after_rejection() {
+        assert_eq!(
+            kind_of_second_try_sleep(&mut NoopSleepManager::default()),
+            None
+        );
+        assert_eq!(
+            kind_of_second_try_sleep(&mut NoopSleepManager::rejecting()),
+            Some(SleepErrorKind::Rejected)
         );
     }
 

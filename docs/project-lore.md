@@ -103,16 +103,17 @@ Fix: drive GPIO1 and GPIO13 HIGH (knob sequence: rail on, 20 ms, RST low 10 ms, 
 GPIO5 reads HIGH at each sleep entry, the S3 sleeps, and the next pulse wakes it within 0.3-0.6 s, on both tiers (bench H1, 2026-10-14).
 Firmware that must not loop while touched should wait for the touch to release before sleeping, or change the CST816S IRQ mode (register not verified).
 
-**A rejected `esp_deep_sleep_try_to_start` leaves the wake pins RTC-held on EXT1 chips (ESP32/S3/C6) too — held pins are not a C2/C3-only residue.**
-`ext1_wakeup_prepare` runs before the reject decision inside `esp_sleep_start` (IDF v5.3.3, `sleep_modes.c:840`), and the deep-sleep reject tail restores only CPU frequency and UARTs, so the RTC pad holds applied during prepare survive the rejection.
-Only the SDK-private boot-time `esp_deep_sleep_wakeup_io_reset()` releases them; a tier adapter that wants clean post-rejection pins must release them itself on the reject return (tier-parity-v1 follow-up).
-Source-read finding of the 2026-11-03 tier-parity audit; bench confirmation rides with that adapter change.
+**A rejected `esp_deep_sleep_try_to_start` leaves the wake pins RTC-held AND RTC-routed on EXT1 chips (ESP32/S3/C6) — the routing, not the hold, is what breaks digital reads.**
+`ext1_wakeup_prepare` runs before the reject decision inside `esp_sleep_start` (IDF v5.3.3, `sleep_modes.c:840`; `rtcio_hal_function_select` at 1890 sets MUX_SEL), and the deep-sleep reject tail restores only CPU frequency and UARTs, so both survive the rejection — with no reset to undo them, and esp-idf-hal's `PinDriver::input` does not call `rtc_gpio_deinit` either.
+The boot-time SDK-private `esp_deep_sleep_wakeup_io_reset()` clears only holds and wake pins, not the routing.
+Fix (implemented 2026-11-03, tier-parity chunk 2 + review fix): on the reject return, `EspSleepManager::try_sleep` calls `rtc_gpio_hold_dis` then `rtc_gpio_deinit` per masked pin (best-effort, the reject path keeps `kind: Rejected`).
+Source-read finding of the 2026-11-03 tier-parity audit; bench confirmation rides with the chunk-3 benches.
 
 **`esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL)` does not clear `s_config.ext1_rtc_gpio_mask`, so a retry with a changed EXT1 pin/level combination can fail with `ESP_ERR_NOT_ALLOWED` even though the new request alone is valid.**
 The ALL branch skips the per-source clear and the enable call OR-merges the mask (`sleep_modes.c:1544-1559`, `1791-1810`), so stale EXT1 bits survive into the next `configure()` within one boot.
 Same-mask retries (all benched retry loops) are unaffected, which is why it never surfaced.
-Fix (planned with the tier-parity-v1 adapter change): `esp_sleep_disable_ext1_wakeup_io(0)` after the disable-all.
-Source-read finding; not yet observed failing on the bench.
+Fix (implemented 2026-11-03, tier-parity chunk 2): `configure()` calls `esp_sleep_disable_ext1_wakeup_io(0)` after the disable-all.
+Source-read finding; not observed failing on the bench.
 
 **The bench CrowPanel's USB-C reaches the S3's native USB-Serial-JTAG (`/dev/cu.usbmodem*`), not a CH340 as the knob docs say.**
 `esp-println` built with `uart` prints nowhere visible; use `auto` (or `jtag-serial`).
