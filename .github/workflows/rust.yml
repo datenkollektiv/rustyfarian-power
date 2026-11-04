@@ -35,6 +35,8 @@ jobs:
         run: just check
       - name: Test (platform-independent)
         run: just test
+      - name: Test the shared bench grammar (stoker feature `bench-conformance`)
+        run: just test-bench
   # Needs the esp toolchain, not stable: `.cargo/config.toml` sets build-std for
   # the *-espidf targets, which stable cannot do. The job-level RUSTUP_TOOLCHAIN
   # overrides the workflow-level `stable`. The example build links, which `check`
@@ -62,15 +64,11 @@ jobs:
         run: cp .cargo/config.toml.dist .cargo/config.toml
       - name: Setup just
         uses: extractions/setup-just@v4
-      - name: Check ESP32-C3 (ESP-IDF tier)
-        run: just check-c3
-      - name: Build and link the C3 example
-        run: just build-example idf_c3_deep_sleep_gpio
-      - name: Build and link the C3 retention example
-        run: just build-example idf_c3_rtc_retention
+      - name: Check and link the C3 examples (ESP-IDF tier)
+        run: just ci-c3
   # Same toolchain as check-c3; a separate job so the S3 ESP-IDF build runs in
-  # parallel. Only the retention example exists for the S3, and it links against
-  # a different RTC memory layout than the C3 twin.
+  # parallel. Links all three S3 examples (retention, deep-sleep GPIO, power rail gate);
+  # the S3 has no separate `check` step because the links compile the same code.
   check-s3:
     # Pinned to 24.04: `ubuntu-latest` moved to 26.04 (libxml2 2.14, soname libxml2.so.16),
     # where ESP-IDF v5.3.3's prebuilt esp-clang 16 fails to load libxml2.so.2 during
@@ -94,5 +92,31 @@ jobs:
         run: cp .cargo/config.toml.dist .cargo/config.toml
       - name: Setup just
         uses: extractions/setup-just@v4
-      - name: Build and link the S3 retention example
-        run: just build-example idf_s3_rtc_retention
+      - name: Link the S3 examples (ESP-IDF tier)
+        run: just ci-s3
+  # ESP32: compile-only (no link build, hardware deferred). The original ESP32
+  # link builds are skipped for now; this keeps the ESP-IDF tier's `cargo check` for it.
+  # Its own job: the xtensa-esp32-espidf ESP-IDF build is separate from the S3 one.
+  check-esp32:
+    # Pinned to 24.04: see check-c3 (esp-clang libxml2 soname on ubuntu-latest).
+    runs-on: ubuntu-24.04
+    env:
+      RUSTUP_TOOLCHAIN: esp
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Setup ESP-RS toolchain
+        uses: esp-rs/xtensa-toolchain@v1.7.0
+        with:
+          default: true
+          ldproxy: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+      - name: Setup cargo config
+        run: cp .cargo/config.toml.dist .cargo/config.toml
+      - name: Setup just
+        uses: extractions/setup-just@v4
+      - name: ESP32 (ESP-IDF tier) - compile-only (no link build, hardware deferred)
+        run: just ci-esp32

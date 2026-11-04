@@ -9,6 +9,29 @@ New `rustyfarian-esp-hal-power` crate gives the bare-metal tier battery monitori
 Deep sleep and wake cause are out of scope here; their `stoker` trait redesign is [ADR-001](../adr/001-hal-neutral-sleep-contract.md) and they live in `esp-hal-sleep-tier-v1.md`, which now lands first in the hal crate.
 Capability findings: `docs/key-insights.md` § esp-hal tier.
 
+## Capability table (ADR-003 point 2)
+
+One row per shared capability, per tier and chip, as of 2026-11-04.
+Status: **bench** = hardware-validated, **build** = compiled and linked, **compile** = compile-only, **—** = not built.
+Class (ADR-003 point 2): **HW** hardware limitation, **UD** unimplemented driver, **BD** behavioural difference; blank = same observables on every built cell.
+The esp-hal tier targets C3, S3, ESP32 and C6; the ESP-IDF tier targets C3, S3 and ESP32 (no C6 recipe).
+
+| Capability (`stoker` trait or type)                | IDF C3         | IDF S3         | IDF ESP32                              | hal C3     | hal S3        | hal ESP32 | hal C6  | Class and note                                                                                                                                        |
+|:---------------------------------------------------|:---------------|:---------------|:---------------------------------------|:-----------|:--------------|:----------|:--------|:------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `SleepManager::sleep` / `try_sleep`, GPIO + timer  | bench (R2)     | bench (R2-R4)  | timer bench (Feather V2), GPIO compile | bench (R2) | bench (R2-R4) | —         | —       | UD on hal ESP32/C6 (no sleep module). BD on IDF ESP32: the hardware never rejects on EXT1, so a held pin sleeps and wakes; deferred (ADR-003 point 1) |
+| `try_sleep` post-rejection postcondition           | bench          | bench          | compile                                | bench      | bench         | —         | —       | Non-wake pads and holds benched on S3 only (R4-S3); esp-hal S3 leaves `WIFI_FORCE_ISO` cleared (excluded power-domain bit)                            |
+| Pad-autohold hang guard in `try_sleep`             | n/a (pre-read) | bench (R3)     | compile                                | n/a        | bench (R3)    | —         | —       | HW: a rejection after digital-pad isolation hangs; C2/C3 non-pin rejects with the hold on stay unguarded                                              |
+| `WakeCauseSource`                                  | bench          | bench          | bench (Feather V2, timer)              | bench      | bench         | —         | —       | A rejection clears the EXT1 pin mask on S3, both tiers: capture before the first `try_sleep`                                                          |
+| `ResetReasonSource`                                | bench          | bench          | compile                                | bench      | build         | —         | —       | UD on hal ESP32/C6                                                                                                                                    |
+| `PowerRailGate` (`GpioRailGate`)                   | compile        | build          | compile                                | compile    | build         | compile   | compile |                                                                                                                                                       |
+| `BatteryMonitor` (`EspAdcBatteryMonitor`)          | compile        | bench (Heltec) | bench (Feather V2)                     | —          | —             | —         | —       | UD on the whole hal tier (this feature doc)                                                                                                           |
+| `ChargingMonitor` (`EspChargingMonitor`)           | compile        | compile        | compile                                | —          | —             | —         | —       | UD on hal. HW on Feather V2 (no STAT/VBUS GPIO) and Heltec V3 (TP4054 status LED-only); no battery-present signal on either board                     |
+| RTC retention (`RetainedCell` / `RtcRetainedCell`) | bench (R1)     | build          | compile                                | bench (R1) | bench (knob)  | compile   | compile | IDF needs the opt-in `critical-section-impl` provider (ADR-003 point 5)                                                                               |
+| RTC clock (`EspRtcClock` / `EspHalRtcClock`)       | build          | bench (R2-S3)  | compile                                | build      | bench (R2-S3) | —         | —       | UD on hal ESP32/C6                                                                                                                                    |
+
+Deferred by decision (2026-11-04): all ESP32 hardware work (the EXT1 pre-read, the guard bench), `async` on both tiers, and a `WIFI_FORCE_ISO` restore on esp-hal.
+The conformance modules (`src/conformance.rs`, ADR-003 point 4) keep the built cells' signatures in sync; the behaviour columns are bench results, not compile results.
+
 ## Decisions
 |                                      Decision | Reason                                                               | Rejected Alternative                 |
 |----------------------------------------------:|:---------------------------------------------------------------------|:-------------------------------------|

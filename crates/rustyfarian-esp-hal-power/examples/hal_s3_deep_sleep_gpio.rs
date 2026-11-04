@@ -210,6 +210,10 @@ static R2_RECORD: R2Record = R2Record {
 
 /// `RTC_CNTL_DIG_ISO_REG` on the ESP32-S3 (`soc/esp32s3/include/soc/rtc_cntl_reg.h`).
 const RTC_CNTL_DIG_ISO_REG: usize = 0x6000_8094;
+/// `RTC_CNTL_WIFI_FORCE_ISO` (bit 28 of `RTC_CNTL_DIG_ISO_REG`): a WiFi/BLE power-domain bit, not
+/// pad state; esp-hal sleep entry clears it and a rejection does not restore it, so the R4 comparison
+/// masks it out, as ADR-003 point 1 excludes power-domain configuration.
+const DIG_ISO_WIFI_FORCE_ISO: u32 = 1 << 28;
 /// `RTC_CNTL_DG_PAD_AUTOHOLD_EN`: the global digital-pad hold that ESP-IDF's `gpio_deep_sleep_hold_en` sets.
 const DG_PAD_AUTOHOLD_EN: u32 = 1 << 11;
 /// `RTC_CNTL_DG_PAD_FORCE_UNHOLD`.
@@ -461,11 +465,8 @@ impl Snap {
         if self.pad_hold != other.pad_hold {
             push(format_args!("padhold"));
         }
-        if self.dig_iso != other.dig_iso {
-            push(format_args!(
-                "iso:{:08x}>{:08x}",
-                self.dig_iso, other.dig_iso
-            ));
+        if (self.dig_iso ^ other.dig_iso) & !DIG_ISO_WIFI_FORCE_ISO != 0 {
+            push(format_args!("iso"));
         }
         !out.as_str().is_empty()
     }

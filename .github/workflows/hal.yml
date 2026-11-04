@@ -1,0 +1,50 @@
+name: esp-hal tier
+# Gates the bare-metal esp-hal tier: `cargo check` for all four chips, then a release
+# link of the C3 and S3 examples (ADR-003 point 5: provider failures are link-time
+# facts). Green means "compiles and links under the current esp toolchain", not
+# "hardware-validated". The original ESP32 stays compile-only (its line inside
+# `just check-hal`); there is no ESP32 link build and hardware is deferred.
+# A separate workflow keeps rust.yml readable; the ESP-IDF tier lives there.
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: hal-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  CARGO_TERM_COLOR: always
+  RUSTUP_TOOLCHAIN: esp
+jobs:
+  hal:
+    # Pinned to 24.04 like the ESP-IDF jobs in rust.yml, so every job that installs the
+    # Xtensa toolchain runs on one image; this job has no ESP-IDF install of its own.
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      # The esp channel carries rust-src, which `-Zbuild-std=core,alloc` needs for the
+      # riscv32imc and xtensa *-none-elf targets (no `rustup target add`). The action also
+      # puts xtensa-esp-elf-gcc on PATH, which the Xtensa link needs. ldproxy is for the
+      # *-espidf targets only, so it is off here.
+      - name: Setup ESP-RS toolchain
+        uses: esp-rs/xtensa-toolchain@v1.7.0
+        with:
+          default: true
+          ldproxy: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target/hal"
+      - name: Setup cargo config
+        run: cp .cargo/config.toml.dist .cargo/config.toml
+      - name: Setup just
+        uses: extractions/setup-just@v4
+      - name: Check all chips, link C3 and S3 examples
+        run: just ci-hal

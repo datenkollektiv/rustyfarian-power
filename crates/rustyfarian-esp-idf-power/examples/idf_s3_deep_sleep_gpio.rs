@@ -312,6 +312,10 @@ const IO_MUX_FUN_IE: u32 = 1 << 9;
 const RTC_CNTL_BASE: usize = 0x6000_8000;
 /// `RTC_CNTL_DIG_ISO_REG`, `RTC_CNTL_PAD_HOLD_REG` and `RTC_CNTL_DIG_PAD_HOLD_REG` (`rtc_cntl_reg.h`).
 const RTC_CNTL_DIG_ISO_REG: usize = RTC_CNTL_BASE + 0x94;
+/// `RTC_CNTL_WIFI_FORCE_ISO` (bit 28 of `RTC_CNTL_DIG_ISO_REG`): a WiFi/BLE power-domain bit, not
+/// pad state; esp-hal sleep entry clears it and a rejection does not restore it, so the R4 comparison
+/// masks it out, as ADR-003 point 1 excludes power-domain configuration.
+const DIG_ISO_WIFI_FORCE_ISO: u32 = 1 << 28;
 const RTC_CNTL_PAD_HOLD_REG: usize = RTC_CNTL_BASE + 0xD8;
 const RTC_CNTL_DIG_PAD_HOLD_REG: usize = RTC_CNTL_BASE + 0xDC;
 /// The digital-pad hold register starts at GPIO21 (`gpio_ll_is_digital_io_hold`: `BIT(gpio - 21)`).
@@ -435,7 +439,7 @@ impl Snap {
         if self.pad_hold != other.pad_hold {
             push(format_args!("padhold"));
         }
-        if self.dig_iso != other.dig_iso {
+        if (self.dig_iso ^ other.dig_iso) & !DIG_ISO_WIFI_FORCE_ISO != 0 {
             push(format_args!("iso"));
         }
         !out.as_str().is_empty()

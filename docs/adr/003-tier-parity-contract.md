@@ -2,6 +2,7 @@
 
 ## Status
 Accepted (2026-11-02).
+Implemented (2026-11-04): follow-ups closed or deferred by decision; see `docs/features/archive/tier-parity-v1.md` and the capability table in `docs/features/esp-hal-parity-v1.md`.
 
 Aligned with `rustyfarian-network` ADR-022 (tier parity, one async API surface) and ADR-021 (binary-owned providers), and `rustyfarian-ws2812` ADR-010 (interchangeable driver semantics), both accepted 2026-11-01.
 Platform pins follow ADR-001: ESP-IDF v5.3.3 and esp-hal `=1.2.2` in lockstep with the sibling repos.
@@ -20,7 +21,7 @@ The provider-selection link failure of 2026-10-29 (duplicate `_critical_section_
 The decision below adopts the siblings' contract and establishes the requirements for making the tiers' shared, implemented capabilities interchangeable; today it records requirements and deviations, not achieved interchangeability.
 Implementation gaps (the missing esp-hal ADC and charging monitors) are tracked separately, not folded into the promise.
 It is a documentation decision: no code changes in this wave.
-Enforcement is a committed follow-up (see `docs/features/tier-parity-v1.md`), because an accepted contract without completion conditions is unenforceable.
+Enforcement is a committed follow-up (see `docs/features/archive/tier-parity-v1.md`), because an accepted contract without completion conditions is unenforceable.
 
 ## Decision
 
@@ -32,14 +33,14 @@ Validation parity is scoped: portable validation — the shared `validate_wake_s
 Parity is judged for requests within the shared supported operating range, and by portable error kinds (`stoker`'s kind enums), not by identical concrete error values.
 Known divergence: after a `Rejected` attempt the tiers currently differ.
 ESP-IDF keeps the wake sources and the GPIO isolation config applied, and a hardware rejection leaves the wake pins held (RTC pad holds on the EXT1 chips, `gpio_hold_en` with the internal pull on C2/C3 — both are applied before the hardware's reject decision, so the rejection does not undo them); the C2/C3 software pre-read path in contrast holds no pins; the esp-hal adapter disarms before returning (`sleep.rs` `try_sleep`).
-The sleep audit (2026-11-03, `docs/features/tier-parity-v1.md`) fixed the minimum portable postcondition: after any `Rejected` attempt the caller may retry immediately through the same trait object, with no recovery, re-construction, or pin re-binding step, and the retry is observably a fresh attempt — the same validation outcomes and error kinds apply, and a `Timer` duration counts from the retry; every wake pin named in the rejected request's `pin_mask` is usable as a plain digital input once the call has returned (on the esp-hal tier, once the `BoundSleep` borrow ends, which is that tier's release step).
+The sleep audit (2026-11-03, `docs/features/archive/tier-parity-v1.md`) fixed the minimum portable postcondition: after any `Rejected` attempt the caller may retry immediately through the same trait object, with no recovery, re-construction, or pin re-binding step, and the retry is observably a fresh attempt — the same validation outcomes and error kinds apply, and a `Timer` duration counts from the retry; every wake pin named in the rejected request's `pin_mask` is usable as a plain digital input once the call has returned (on the esp-hal tier, once the `BoundSleep` borrow ends, which is that tier's release step).
 Whether wake sources stay armed between a rejection and its retry is adapter-internal, not an observable: the IDF tier leaves them applied and re-runs configuration on retry; the esp-hal tier disarms on rejection and re-arms on retry.
 After `Rejected`, every pad outside the request's `pin_mask` and every pad hold the caller set, RTC or digital, is as the caller left it: sleep entry changes none of them before the hardware reject decision (source-read of IDF v5.3.3 `esp_sleep_start` and esp-hal 1.2.2 sleep entry, 2026-11-04; bench R4-S3 checks it on the S3).
 The exception is the global digital-pad hold: while it is effective on the ESP32, ESP32-S3, ESP32-C2 and ESP32-C3, entry isolates every unheld digital-only pad (S3: GPIO26-48) and nothing restores it.
 The postcondition also excludes the console (UART or USB-Serial-JTAG output may be interrupted), the CPU and APB clock during the attempt, power-domain configuration and deep-sleep hooks of WiFi/BT (esp-hal clears `WIFI_FORCE_ISO` in `RTC_CNTL_DIG_ISO_REG` at sleep entry and a rejection does not restore it, bench R4-S3), the persistent sleep-mode pad configuration that `isolate_gpio` writes (inert while awake), timer-deadline persistence, and the C2/C3 within-boot GPIO-wake residue (the SDK mask has no public clear in IDF v5.3.3).
 On the ESP32 and ESP32-S3, while the global digital-pad hold is effective (`RTC_CNTL_DIG_ISO_REG` `DG_PAD_AUTOHOLD_EN` set, `DG_PAD_FORCE_UNHOLD` clear), a hardware rejection never returns (bench R2-S3, 2026-11-03); both tiers therefore read the wake pins right before sleep entry in that case and return `Rejected` from software, with the same postcondition (bench R3-S3, 2026-11-04).
 A wake pin that reaches its wake level after that read, and a non-pin hardware rejection, can still hang while the hold is effective; on the C2/C3 no guard exists for non-pin rejections; both are outside the shared supported operating range and documented on `try_sleep`.
-Known divergence (2026-11-04, source-read): the original ESP32 hardware never rejects on EXT1 (`RTC_SLEEP_REJECT_MASK` is GPIO and SDIO only), so with the hold off an asserted wake pin sleeps and wakes at once instead of returning `Rejected`, like the C3 before its software pre-read; tracked in `docs/features/tier-parity-v1.md`.
+Known divergence (2026-11-04, source-read): the original ESP32 hardware never rejects on EXT1 (`RTC_SLEEP_REJECT_MASK` is GPIO and SDIO only), so with the hold off an asserted wake pin sleeps and wakes at once instead of returning `Rejected`, like the C3 before its software pre-read; tracked in `docs/features/archive/tier-parity-v1.md`.
 The audit confirmed that every IDF rejection path can meet the postcondition in software; the closing adapter change and its host and bench tests are specified in the feature doc.
 Closing the gap is the condition for calling the tiers behaviourally interchangeable on `try_sleep`; renaming the method is not an acceptable closing move, because it would weaken the shared `SleepManager` abstraction.
 Where a HAL behaviour cannot be mapped into the shared observables at all, the method gets a different name.
@@ -65,7 +66,7 @@ Each target build therefore instantiates the call with its concrete types, inclu
 Coverage is per capability: a tier is checked for the capabilities it implements, not for every `stoker` trait.
 Compilation verifies trait bounds and callable methods; it cannot verify rejection handling, wake-pin cleanup, timer accuracy, or wake-cause preservation.
 Behavioural parity is therefore tested in `stoker`'s host tests where portable, and on the hardware benches required by ADR-001, which remain the arbiter for sleep behaviour.
-The conformance modules are a committed follow-up with acceptance criteria in `docs/features/tier-parity-v1.md`; they start as small modules compiled per supported tier and chip, and a shared conformance crate is unnecessary initially.
+The conformance modules are in place (2026-11-04): `src/conformance.rs` in each tier crate, compiled per supported tier and chip by the chip recipes; a shared conformance crate stays unnecessary.
 Until they exist, trait-shape changes across the tiers must be audited by hand in review, guided by the trait list in `stoker`.
 
 ### 5. Providers are owned by the binary, and verified at link time

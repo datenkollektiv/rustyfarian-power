@@ -176,5 +176,6 @@ Method:
 
 - The esp-hal hardware-path difference is one global bit: `diff=iso:10000080>00000080` (rerun with the values printed, 3 of 3), `RTC_CNTL_WIFI_FORCE_ISO` cleared by esp-hal's sleep entry and not restored; every pad word and hold matched.
   This is power-domain configuration, excluded from the pad postcondition in ADR-003; see `docs/project-lore.md`.
+  After review the comparator masks that bit on both tiers and prints the token `iso` on both; not re-benched (board unplugged), but the logged values show it as the only differing bit, so the esp-hal hardware path now reads `same=1` by inference, not by measurement.
 - The GPIO1 hold check is weak on its own (a pad without input enable also reads LOW); GPIO38 reading HIGH after a LOW write proves the input path.
 - `hold38=1` on every boot confirms the user hold on the digital-only pad took effect on both tiers.

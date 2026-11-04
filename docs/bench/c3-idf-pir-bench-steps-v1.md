@@ -156,7 +156,7 @@ Open: the plan's 1000 rejections need the pot at maximum and continuous waving.
 
 ## R2: post-rejection pin readability and timer recount (both tiers)
 
-Checks the portable `try_sleep` postcondition of ADR-003 point 1 on the C3, as required by the adapter-change row of `docs/features/tier-parity-v1.md`.
+Checks the portable `try_sleep` postcondition of ADR-003 point 1 on the C3, as required by the adapter-change row of `docs/features/archive/tier-parity-v1.md`.
 After a `Rejected` attempt the wake pin must read correctly through its existing digital input driver, and the retry must be a fresh attempt whose `Timer` counts from the retry.
 Runs on both tiers with the twin examples; the esp-hal twin is `hal_c3_deep_sleep_gpio`.
 

@@ -27,6 +27,7 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 - Compile-time conformance modules in both tier crates instantiate every `stoker` trait with the concrete adapters (ADR-003 point 4).
 
 ### Changed
+- CI links the C3 and S3 examples on both tiers (`just ci-c3`, `ci-s3`, new `hal.yml` with `ci-hal`) and compiles the ESP-IDF ESP32 tier (`just ci-esp32`, compile-only); `just verify` and `just ci` also lint and test `stoker`'s `bench-conformance` feature.
 - `stoker` drops `anyhow` for `critical-section`, the IDF tier ships an ISR-safe `critical-section` provider behind the opt-in `critical-section-impl` feature, and the hal tier gates `sleep`/`reset`/`retain` on `unstable` outside `default-members`.
 
 ### Fixed

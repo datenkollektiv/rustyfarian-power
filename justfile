@@ -254,6 +254,26 @@ clean:
     cargo clean --target-dir {{ idf_dir }}
     cargo clean --target-dir {{ hal_dir }}
 
+# --- CI chip jobs ---------------------------------------------------------
+#
+# One aggregate recipe per CI job (.github/workflows/rust.yml, hal.yml), so CI and a
+# local run execute the same steps. Provider failures are link-time facts (ADR-003
+# point 5), so these link the representative firmware per tier and chip, which
+# `cargo check` cannot do. The original ESP32 is compile-only: no link builds.
+
+# CI: ESP-IDF tier on the C3: check, then link both C3 examples (requires espup)
+ci-c3: check-c3 (build-example "idf_c3_deep_sleep_gpio") (build-example "idf_c3_rtc_retention")
+
+# CI: ESP-IDF tier on the S3: link all three S3 examples (requires espup)
+ci-s3: (build-example "idf_s3_rtc_retention") (build-example "idf_s3_deep_sleep_gpio") (build-example "idf_s3_power_rail_gate")
+
+# CI: ESP-IDF tier on the original ESP32, compile-only (no link build, hardware deferred; requires espup)
+ci-esp32: check-esp32
+
+# CI: esp-hal tier: check all four chips, then link the C3 and S3 examples plus one bench case (esp toolchain, no espup)
+ci-hal: check-hal (build-example-hal-c3 "hal_c3_deep_sleep_gpio") (build-example-hal-c3 "hal_c3_rtc_retention") (build-example-hal-s3 "hal_s3_deep_sleep_gpio") (build-example-hal-s3 "hal_s3_power_rail_gate")
+    BENCH_CASE=H1 just build-example-hal-c3 hal_c3_sleep_bench esp32c3,unstable,examples,bench
+
 # --- Composite ------------------------------------------------------------
 
 # full pre-commit verification: format, check, lint, test (modifies files — local use only)
@@ -265,10 +285,12 @@ verify:
     cargo deny check
     cargo check {{ host_flags }}
     cargo clippy {{ host_flags }} -- -D warnings
+    cargo clippy {{ host_flags }} --features bench-conformance -- -D warnings
     cargo test {{ host_flags }}
+    cargo test {{ host_flags }} --features bench-conformance
 
 # CI-equivalent verification (non-modifying): format check, deny, check, lint, test
-ci: fmt-check deny check clippy test
+ci: fmt-check deny check clippy test test-bench
 
 # --- Release --------------------------------------------------------------
 #
