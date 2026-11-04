@@ -41,6 +41,8 @@
 #[macro_use]
 extern crate std;
 
+#[cfg(any(test, feature = "bench-conformance"))]
+pub mod bench;
 pub mod charging;
 pub mod config;
 pub mod gate;

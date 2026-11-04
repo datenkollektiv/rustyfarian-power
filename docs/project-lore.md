@@ -125,6 +125,11 @@ Residual: a pin that crosses its wake level after the read, or a non-pin hardwar
 The mechanism (flash pads isolated) is read from the source and fits the `0xFF` output; the trigger and the fix are bench-confirmed (bench R2-S3, CrowPanel 1.28", 2026-11-03).
 Downstream: any firmware that enables `gpio_deep_sleep_hold_en` and retries rejected sleeps (rustyfarian-knob's IDF sleep path) resets instead of retrying when the wake pin is asserted at entry.
 
+**A rejected esp-hal deep sleep on the ESP32-S3 leaves `RTC_CNTL_WIFI_FORCE_ISO` (bit 28 of `RTC_CNTL_DIG_ISO_REG`) cleared; pads and holds are untouched.**
+esp-hal 1.2.2 `base_settings` sets the bit to keep the WiFi/BLE power domain isolated, `RtcSleepConfig::apply()` clears it at sleep entry (`modem_pd_en`), and nothing sets it again on the reject return (bench R4-S3, `iso:10000080>00000080` on 7 of 7 hardware-path cycles; the ESP-IDF hardware path and the esp-hal guard path left the register unchanged).
+It is power-domain configuration, not pad state, so the ADR-003 pad postcondition holds; the awake effect is unmeasured (possibly a small current increase until WiFi is brought up).
+No fix in the adapter; a restore of that bit after the rejection would be the change if it ever matters.
+
 **The bench CrowPanel's USB-C reaches the S3's native USB-Serial-JTAG (`/dev/cu.usbmodem*`), not a CH340 as the knob docs say.**
 `esp-println` built with `uart` prints nowhere visible; use `auto` (or `jtag-serial`).
 Once the app spins in a tight `try_sleep` rejection loop, `espflash flash` cannot connect through the USB-JTAG reset; enter download mode by hand (hold BOOT, tap RST).

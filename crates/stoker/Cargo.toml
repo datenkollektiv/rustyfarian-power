@@ -14,6 +14,11 @@ readme = "README.md"
 [package.metadata.docs.rs]
 all-features = true
 
+[features]
+# Off by default: the shared bench line grammar and pin-window bookkeeping (`stoker::bench`)
+# used by the tier bench examples. Host tests always compile the module.
+bench-conformance = []
+
 [dependencies]
 # The only dependency: `RetainedCell` serialises its volatile copies inside
 # `critical_section::with`, so the safe `&self` API is sound on every tier. The

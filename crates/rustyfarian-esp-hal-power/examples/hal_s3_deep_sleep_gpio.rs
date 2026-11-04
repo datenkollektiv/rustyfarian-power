@@ -49,6 +49,34 @@
 //! - `PINREAD start|edge|end tier=hal pin=5 ...` as in the C3 R2 bench: `level=<H|L>`, `<H->L|L->H>`, and `edges=<n> high=<0|1> low=<0|1>`.
 //! - `WAKECAUSE tier=hal boot=<cause> after_reject=<cause>` re-read after the rejection (`wake-cause-survives-rejection`).
 //!
+//! ## Bench case R4 (non-wake pad postcondition)
+//!
+//! `S3_R4=1` adds the R4 checks on top of R2; it is only meaningful with `S3_R2=1` and is ignored without it.
+//! Unset, the example behaves exactly as without R4.
+//! It checks that a rejected `try_sleep` leaves every non-wake pad and every user pad hold as the caller left it.
+//! Three probe pads are configured once per boot, before the forced attempt.
+//! They are ESP32-S3 digital-only pads (GPIO26-48), believed unwired on the CrowPanel 1.28"; the schematic is not verified, so abort the bench if anything on the board reacts.
+//!
+//! - GPIO38: output HIGH, input enabled, user hold (`Output::set_pad_hold`, which sets bit `38 - 21` of `RTC_CNTL_DIG_PAD_HOLD_REG` for a digital-only pad).
+//! - GPIO39: output HIGH, input enabled, unheld.
+//! - GPIO47: input with pull-up, unheld.
+//!
+//! GPIO38 keeps its hold across the real sleep that follows, because a user hold on a digital pad does not change the sleep decision.
+//! The next boot releases and re-arms it.
+//! In R4 forced cycles the GPIO1 and GPIO13 RTC holds stay enabled through the attempt: each pin goes `set_pad_hold(false)`, LOW, `set_pad_hold(true)`.
+//! INT still sits LOW, so the hardware (or the library guard with `S3_KEEP_AUTOHOLD=1`) rejects the sleep while the holds stay on.
+//! The restore at 2 s is unchanged.
+//!
+//! Snapshot S0 is taken right before the first forced `try_sleep`, snapshot S1 right after it returns `Rejected`.
+//! S1 follows the `PINREAD start` level sample, which stays the first read after the return; both are read-only.
+//! Each snapshot holds, per pad (38, 39, 47, 1, 13), the IO_MUX word, the `FUNCn_OUT_SEL_CFG` word, the `GPIO_ENABLE` bit and the `GPIO_IN` bit.
+//! It also holds `RTC_CNTL_DIG_PAD_HOLD_REG`, `RTC_CNTL_PAD_HOLD_REG` and `RTC_CNTL_DIG_ISO_REG`.
+//! After S1 a hold test writes GPIO38 LOW while held (its `GPIO_IN` bit must stay HIGH) and GPIO1 HIGH while held (must stay LOW), then restores the commanded levels.
+//! GPIO1 is an output without input enable, so the test sets `FUN_IE` in its IO_MUX word for the read and restores the word afterwards.
+//!
+//! - `NONWAKE tier=hal path=<hw|guard> same=<0|1> holdok=<0|1> diff=<pin:field,...|->` once per forced cycle: `path=guard` with `S3_KEEP_AUTOHOLD=1`, else `hw`; `same=1` when S0 equals S1; `diff` names the differing pads and fields (`mux`, `osel`, `en`, `in`) or registers (`dighold`, `padhold`, `iso`).
+//! - `NONWAKE selftest tier=hal detect=<0|1> hold38=<0|1>` once per boot: the comparator must report a difference after GPIO39 `FUN_IE` is cleared; `hold38` is the GPIO38 hold bit after setup.
+//!
 //! ## Run
 //!
 //! ```shell
@@ -67,6 +95,7 @@
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
+use core::fmt::Write as _;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use esp_hal::{
@@ -77,13 +106,26 @@ use esp_hal::{
     time::Instant,
 };
 use esp_println::println;
+use rustyfarian_esp_hal_power::bench::{
+    write_attempt, write_nonwake, write_pinread_edge, write_pinread_end, write_pinread_start,
+    LineBuf, NonWakePath, PinWindow,
+};
 use rustyfarian_esp_hal_power::{
     EspHalRtcClock, EspHalSleepManager, EspHalWakeCauseSource, GpioWakeLevel, SleepError,
     SleepManager, WakeCause, WakeCauseSource, WakeSource, MAX_TIMER_MS,
 };
 
+/// Tier tag in the shared `ATTEMPT` and `PINREAD` bench lines.
+const TIER: &str = "hal";
+
 /// CST816S touch INT pin; bit position in the wake mask.
 const TOUCH_INT_PIN: u8 = 5;
+
+/// `LCD_3V3` rail enable; the CST816S is powered from it.
+const LCD_RAIL_PIN: u8 = 1;
+
+/// CST816S reset, active low.
+const TOUCH_RST_PIN: u8 = 13;
 
 /// Time awake after each boot; the USB-Serial-JTAG port needs ~0.5-2 s to re-enumerate.
 const AWAKE_MS: u32 = 3_000;
@@ -99,6 +141,13 @@ const KEEP_AUTOHOLD: bool = match option_env!("S3_KEEP_AUTOHOLD") {
     Some(s) => s.len() == 1 && s.as_bytes()[0] == b'1',
     None => false,
 };
+
+/// Bench case R4 (`S3_R4=1` at build time); only active together with R2.
+const R4: bool = R2
+    && match option_env!("S3_R4") {
+        Some(s) => s.len() == 1 && s.as_bytes()[0] == b'1',
+        None => false,
+    };
 
 /// Wake timer in ms: `S3_SLEEP_TIMER_MS` at build time, else 60 s.
 const TIMER_MS: u64 = match option_env!("S3_SLEEP_TIMER_MS") {
@@ -241,12 +290,258 @@ fn cause_name(cause: WakeCause) -> (&'static str, u64) {
 
 /// Prints `ATTEMPT` and stores the sleep-entry time; call right before every bench `try_sleep`.
 fn mark_attempt(attempt: u32, forced: bool) {
-    println!("ATTEMPT tier=hal n={} t_ms={}", attempt, now_ms());
+    let mut line = LineBuf::<64>::new();
+    let _ = write_attempt(&mut line, TIER, attempt, now_ms());
+    println!("{}", line.as_str());
     R2_RECORD
         .entry_forced
         .store(forced as u32, Ordering::Relaxed);
     R2_RECORD.entry_ms.store(rtc_ms(), Ordering::Relaxed);
     R2_RECORD.entry_valid.store(1, Ordering::Relaxed);
+}
+
+/// Probe pad: digital-only, output HIGH, input enabled, user hold.
+const PROBE_HELD_PIN: u8 = 38;
+
+/// Probe pad: digital-only, output HIGH, input enabled, unheld.
+const PROBE_OUT_PIN: u8 = 39;
+
+/// Probe pad: digital-only, input with pull-up, unheld.
+const PROBE_IN_PIN: u8 = 47;
+
+/// Pads in a snapshot: the three probes, then the two RTC-held touch pins.
+const SNAP_PINS: [u8; 5] = [
+    PROBE_HELD_PIN,
+    PROBE_OUT_PIN,
+    PROBE_IN_PIN,
+    LCD_RAIL_PIN,
+    TOUCH_RST_PIN,
+];
+
+/// Settle time between a write and the `GPIO_IN` read-back of the hold test.
+const HOLD_TEST_SETTLE_MS: u32 = 1;
+
+/// `DR_REG_GPIO_BASE` on the ESP32-S3 (`soc/esp32s3/include/soc/reg_base.h`).
+const GPIO_BASE: usize = 0x6000_4000;
+/// `GPIO_ENABLE_REG` (pads 0-31) and `GPIO_ENABLE1_REG` (pads 32-48), `gpio_reg.h`.
+const GPIO_ENABLE_REG: usize = GPIO_BASE + 0x20;
+const GPIO_ENABLE1_REG: usize = GPIO_BASE + 0x2C;
+/// `GPIO_IN_REG` (pads 0-31) and `GPIO_IN1_REG` (pads 32-48), `gpio_reg.h`.
+const GPIO_IN_REG: usize = GPIO_BASE + 0x3C;
+const GPIO_IN1_REG: usize = GPIO_BASE + 0x40;
+/// `GPIO_FUNC0_OUT_SEL_CFG_REG`; `GPIO_FUNCn_OUT_SEL_CFG_REG` is this plus 4 * n, `gpio_reg.h`.
+const GPIO_FUNC0_OUT_SEL_CFG_REG: usize = GPIO_BASE + 0x554;
+/// `DR_REG_IO_MUX_BASE`; the word of GPIOn sits at this plus 4 * (n + 1), `io_mux_reg.h`.
+const IO_MUX_BASE: usize = 0x6000_9000;
+/// `FUN_IE`: input enable in an IO_MUX word (`io_mux_reg.h`).
+const IO_MUX_FUN_IE: u32 = 1 << 9;
+/// `DR_REG_RTCCNTL_BASE` (`reg_base.h`).
+const RTC_CNTL_BASE: usize = 0x6000_8000;
+/// `RTC_CNTL_PAD_HOLD_REG` and `RTC_CNTL_DIG_PAD_HOLD_REG` (`rtc_cntl_reg.h`); `RTC_CNTL_DIG_ISO_REG` is defined above.
+const RTC_CNTL_PAD_HOLD_REG: usize = RTC_CNTL_BASE + 0xD8;
+const RTC_CNTL_DIG_PAD_HOLD_REG: usize = RTC_CNTL_BASE + 0xDC;
+/// The digital-pad hold register starts at GPIO21 (`gpio_ll_is_digital_io_hold`: `BIT(gpio - 21)`).
+const DIG_PAD_HOLD_FIRST_GPIO: u8 = 21;
+
+/// Reads a memory-mapped register.
+fn reg_read(addr: usize) -> u32 {
+    // SAFETY: only called with the always-mapped GPIO, IO_MUX and RTC_CNTL register addresses above; a volatile 32-bit read has no side effects.
+    unsafe { core::ptr::read_volatile(addr as *const u32) }
+}
+
+/// Writes a memory-mapped register.
+fn reg_write(addr: usize, value: u32) {
+    // SAFETY: only called with IO_MUX words of the pads this bench owns; a volatile 32-bit write of a word read just before.
+    unsafe { core::ptr::write_volatile(addr as *mut u32, value) };
+}
+
+/// IO_MUX word address of a pad.
+const fn io_mux_reg(pin: u8) -> usize {
+    IO_MUX_BASE + 4 * (pin as usize + 1)
+}
+
+/// `GPIO_FUNCn_OUT_SEL_CFG_REG` address of a pad.
+const fn out_sel_reg(pin: u8) -> usize {
+    GPIO_FUNC0_OUT_SEL_CFG_REG + 4 * pin as usize
+}
+
+/// Bit of a pad in a bank register, and the bank register to use (pads 0-31 / 32-48).
+fn bank(pin: u8, low: usize, high: usize) -> (usize, u32) {
+    if pin < 32 {
+        (low, 1 << pin)
+    } else {
+        (high, 1 << (pin - 32))
+    }
+}
+
+/// `GPIO_IN` level of a pad (reads LOW while the pad's input is not enabled).
+fn gpio_in(pin: u8) -> bool {
+    let (reg, bit) = bank(pin, GPIO_IN_REG, GPIO_IN1_REG);
+    reg_read(reg) & bit != 0
+}
+
+/// `GPIO_ENABLE` (output enable) of a pad.
+fn gpio_enabled(pin: u8) -> bool {
+    let (reg, bit) = bank(pin, GPIO_ENABLE_REG, GPIO_ENABLE1_REG);
+    reg_read(reg) & bit != 0
+}
+
+/// Sets or clears `FUN_IE` in the IO_MUX word of a pad and returns the previous word.
+fn set_input_enable(pin: u8, on: bool) -> u32 {
+    let word = reg_read(io_mux_reg(pin));
+    let new = if on {
+        word | IO_MUX_FUN_IE
+    } else {
+        word & !IO_MUX_FUN_IE
+    };
+    reg_write(io_mux_reg(pin), new);
+    word
+}
+
+/// Register state of one snapshotted pad.
+#[derive(Clone, Copy)]
+struct PinSnap {
+    iomux: u32,
+    out_sel: u32,
+    enabled: bool,
+    level: bool,
+}
+
+/// Register state of the probe and touch pads plus the global hold and isolation registers.
+#[derive(Clone, Copy)]
+struct Snap {
+    pins: [PinSnap; SNAP_PINS.len()],
+    dig_pad_hold: u32,
+    pad_hold: u32,
+    dig_iso: u32,
+}
+
+impl Snap {
+    /// Reads every snapshot register; read-only.
+    fn take() -> Self {
+        Snap {
+            pins: SNAP_PINS.map(|pin| PinSnap {
+                iomux: reg_read(io_mux_reg(pin)),
+                out_sel: reg_read(out_sel_reg(pin)),
+                enabled: gpio_enabled(pin),
+                level: gpio_in(pin),
+            }),
+            dig_pad_hold: reg_read(RTC_CNTL_DIG_PAD_HOLD_REG),
+            pad_hold: reg_read(RTC_CNTL_PAD_HOLD_REG),
+            dig_iso: reg_read(RTC_CNTL_DIG_ISO_REG),
+        }
+    }
+
+    /// Writes the differing fields to `out` as `pin:field,...`; returns whether anything differs.
+    fn diff(&self, other: &Snap, out: &mut LineBuf<96>) -> bool {
+        let mut push = |name: core::fmt::Arguments<'_>| {
+            if !out.as_str().is_empty() {
+                let _ = out.write_str(",");
+            }
+            let _ = out.write_fmt(name);
+        };
+        for (i, pin) in SNAP_PINS.iter().enumerate() {
+            let (a, b) = (&self.pins[i], &other.pins[i]);
+            if a.iomux != b.iomux {
+                push(format_args!("{pin}:mux"));
+            }
+            if a.out_sel != b.out_sel {
+                push(format_args!("{pin}:osel"));
+            }
+            if a.enabled != b.enabled {
+                push(format_args!("{pin}:en"));
+            }
+            if a.level != b.level {
+                push(format_args!("{pin}:in"));
+            }
+        }
+        if self.dig_pad_hold != other.dig_pad_hold {
+            push(format_args!("dighold"));
+        }
+        if self.pad_hold != other.pad_hold {
+            push(format_args!("padhold"));
+        }
+        if self.dig_iso != other.dig_iso {
+            push(format_args!(
+                "iso:{:08x}>{:08x}",
+                self.dig_iso, other.dig_iso
+            ));
+        }
+        !out.as_str().is_empty()
+    }
+}
+
+/// The three R4 probe drivers; they live until the next sleep, which keeps the pads configured.
+struct R4Probes<'d> {
+    held: Output<'d>,
+    _out: Output<'d>,
+    _input: Input<'d>,
+}
+
+/// Configures the probe pads once per boot and runs the comparator self-test.
+///
+/// esp-hal's `set_pad_hold` also covers digital-only pads: it sets bit `gpio - 21` of `RTC_CNTL_DIG_PAD_HOLD_REG` for pads without a low-power number.
+fn r4_setup<'d>(
+    held: Output<'d>,
+    out: Output<'d>,
+    input: Input<'d>,
+    delay: &Delay,
+) -> R4Probes<'d> {
+    let mut probes = R4Probes {
+        held,
+        _out: out,
+        _input: input,
+    };
+    probes.held.set_pad_hold(false);
+    probes.held.set_high();
+    probes._out.set_high();
+    set_input_enable(PROBE_HELD_PIN, true);
+    set_input_enable(PROBE_OUT_PIN, true);
+    probes.held.set_pad_hold(true);
+    delay.delay_millis(HOLD_TEST_SETTLE_MS);
+
+    let before = Snap::take();
+    let original = set_input_enable(PROBE_OUT_PIN, false);
+    let after = Snap::take();
+    reg_write(io_mux_reg(PROBE_OUT_PIN), original);
+    let mut diff = LineBuf::<96>::new();
+    let detect = before.diff(&after, &mut diff);
+    let hold_bit = 1u32 << (PROBE_HELD_PIN - DIG_PAD_HOLD_FIRST_GPIO);
+    let mut line = LineBuf::<96>::new();
+    let _ = write!(
+        line,
+        "NONWAKE selftest tier={TIER} detect={} hold38={}",
+        u8::from(detect),
+        u8::from(before.dig_pad_hold & hold_bit != 0)
+    );
+    println!("{}", line.as_str());
+    probes
+}
+
+/// Hold test: a write to a held pad must not reach it; restores the commanded levels afterwards.
+///
+/// GPIO38 is written LOW and must keep reading HIGH; GPIO1 is written HIGH and must keep reading LOW.
+/// GPIO38 has input enabled; GPIO1 does not, so its `FUN_IE` is set for the read and restored.
+fn hold_test(probes: &mut R4Probes<'_>, lcd_rail: &mut Output<'_>, delay: &Delay) -> bool {
+    probes.held.set_low();
+    delay.delay_millis(HOLD_TEST_SETTLE_MS);
+    let held_kept = gpio_in(PROBE_HELD_PIN);
+    probes.held.set_high();
+
+    let original = set_input_enable(LCD_RAIL_PIN, true);
+    lcd_rail.set_high();
+    delay.delay_millis(HOLD_TEST_SETTLE_MS);
+    let rail_kept = !gpio_in(LCD_RAIL_PIN);
+    lcd_rail.set_low();
+    reg_write(io_mux_reg(LCD_RAIL_PIN), original);
+    held_kept && rail_kept
+}
+
+/// Re-latches a held pin LOW without ever leaving it unheld: hold off, LOW, hold on.
+fn relatch_low(pin: &mut Output<'_>) {
+    pin.set_pad_hold(false);
+    pin.set_low();
+    pin.set_pad_hold(true);
 }
 
 /// Restores the touch power: rail high, reset pulse, pad holds re-armed (the cold-boot sequence).
@@ -272,15 +567,43 @@ fn rejection_window(
     touch_rst: &mut Output<'_>,
     delay: &Delay,
     boot_cause: WakeCause,
+    r4: Option<(&mut R4Probes<'_>, &Snap)>,
 ) {
     let start_level = touch_int.level();
     let start_ms = now_ms();
-    println!(
-        "PINREAD start tier=hal pin={} level={} t_ms={}",
+    let mut line = LineBuf::<192>::new();
+    let mut window = PinWindow::start(start_level == Level::High, start_ms);
+    let _ = write_pinread_start(
+        &mut line,
+        TIER,
         TOUCH_INT_PIN,
-        level_char(start_level),
-        start_ms
+        start_level == Level::High,
+        start_ms,
     );
+    println!("{}", line.as_str());
+
+    // R4: S1 is a read-only snapshot taken after the PINREAD start sample, so that sample stays the first read after the return.
+    if let Some((probes, s0)) = r4 {
+        let s1 = Snap::take();
+        let holdok = hold_test(probes, lcd_rail, delay);
+        let mut diff = LineBuf::<96>::new();
+        let differs = s0.diff(&s1, &mut diff);
+        let path = if KEEP_AUTOHOLD {
+            NonWakePath::Guard
+        } else {
+            NonWakePath::Hw
+        };
+        line.clear();
+        let _ = write_nonwake(
+            &mut line,
+            TIER,
+            path,
+            !differs,
+            holdok,
+            if differs { diff.as_str() } else { "-" },
+        );
+        println!("{}", line.as_str());
+    }
 
     let after_reject = EspHalWakeCauseSource::capture(&[touch_int]).last_wake_cause();
     println!(
@@ -288,10 +611,6 @@ fn rejection_window(
         boot_cause, after_reject
     );
 
-    let mut last = start_level;
-    let mut edges: u32 = 0;
-    let mut high = start_level == Level::High;
-    let mut low = start_level == Level::Low;
     let mut restored = false;
     while now_ms() - start_ms < REJECT_HOLD_MS {
         delay.delay_millis(PINREAD_PERIOD_MS);
@@ -299,35 +618,32 @@ fn rejection_window(
             restore_touch_power(lcd_rail, touch_rst, delay);
             restored = true;
         }
-        let level = touch_int.level();
-        high |= level == Level::High;
-        low |= level == Level::Low;
-        if level != last {
-            edges += 1;
-            println!(
-                "PINREAD edge tier=hal pin={} {}->{} t_ms={}",
-                TOUCH_INT_PIN,
-                level_char(last),
-                level_char(level),
-                now_ms()
-            );
-            last = level;
+        let level = touch_int.level() == Level::High;
+        if let Some(edge) = window.sample(level, now_ms()) {
+            line.clear();
+            let _ = write_pinread_edge(&mut line, TIER, TOUCH_INT_PIN, &edge);
+            println!("{}", line.as_str());
         }
     }
-    println!(
-        "PINREAD end tier=hal pin={} edges={} high={} low={} t_ms={}",
-        TOUCH_INT_PIN,
-        edges,
-        high as u8,
-        low as u8,
-        now_ms()
-    );
+    line.clear();
+    let _ = write_pinread_end(&mut line, TIER, TOUCH_INT_PIN, &window.finish(), now_ms());
+    println!("{}", line.as_str());
 }
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     println!("PANIC: {}", info);
     loop {}
+}
+
+/// The R2 boot lines, kept to print them again after the awake delay.
+struct BootLine {
+    cycle: u32,
+    reset_str: &'static str,
+    cause_str: &'static str,
+    mask: u64,
+    /// RTC-clock ms slept and whether the cycle that slept was forced.
+    slept: Option<(u32, u32)>,
 }
 
 #[esp_hal::main]
@@ -365,9 +681,16 @@ fn main() -> ! {
     let mut forced = false;
     // Boot lines, printed again after the awake delay: the host reopens the
     // re-enumerated USB-Serial-JTAG port too late to see the first copy.
-    let mut boot_line: Option<(u32, &str, &str, u64, Option<(u32, u32)>)> = None;
-    let print_boot = |line: &Option<(u32, &str, &str, u64, Option<(u32, u32)>)>| {
-        if let Some((cycle, reset_str, cause_str, mask, slept)) = line {
+    let mut boot_line: Option<BootLine> = None;
+    let print_boot = |line: &Option<BootLine>| {
+        if let Some(BootLine {
+            cycle,
+            reset_str,
+            cause_str,
+            mask,
+            slept,
+        }) = line
+        {
             println!(
                 "S3BENCH tier=hal cycle={} reset={} cause={} mask=0x{:x}",
                 cycle, reset_str, cause_str, mask
@@ -396,7 +719,13 @@ fn main() -> ! {
                     record.entry_forced.load(Ordering::Relaxed),
                 )
             });
-        boot_line = Some((cycle, reset_str, cause_str, mask, slept));
+        boot_line = Some(BootLine {
+            cycle,
+            reset_str,
+            cause_str,
+            mask,
+            slept,
+        });
         print_boot(&boot_line);
         record.entry_valid.store(0, Ordering::Relaxed);
         forced = cycle % 2 == 1 || cause_str == "Ext1";
@@ -416,6 +745,21 @@ fn main() -> ! {
     print_boot(&boot_line);
     print_iso();
 
+    // R4: configure the probe pads once per boot, before the forced attempt.
+    let mut probes = if R4 {
+        Some(r4_setup(
+            Output::new(peripherals.GPIO38, Level::High, OutputConfig::default()),
+            Output::new(peripherals.GPIO39, Level::High, OutputConfig::default()),
+            Input::new(
+                peripherals.GPIO47,
+                InputConfig::default().with_pull(Pull::Up),
+            ),
+            &delay,
+        ))
+    } else {
+        None
+    };
+
     let mut manager = EspHalSleepManager::new(peripherals.LPWR);
     let sources = [
         WakeSource::GpioLevel {
@@ -429,8 +773,11 @@ fn main() -> ! {
 
     // Forced cycle: cut the touch rail so INT stays LOW and the hardware rejects the sleep.
     if R2 && forced {
-        lcd_rail.set_pad_hold(false);
-        touch_rst.set_pad_hold(false);
+        // R4 keeps the RTC holds on through the attempt and re-latches the pins LOW instead.
+        if !R4 {
+            lcd_rail.set_pad_hold(false);
+            touch_rst.set_pad_hold(false);
+        }
         // A rejected deep sleep hangs the S3 while the global digital-pad hold is enabled: sleep
         // entry isolates every unheld digital pad, the flash pads included, and the rejection
         // does not restore them. An earlier ESP-IDF firmware can leave the bit set, and esp-hal
@@ -447,8 +794,13 @@ fn main() -> ! {
         };
         unsafe { core::ptr::write_volatile(RTC_CNTL_DIG_ISO_REG as *mut u32, dig_iso_value) };
         // Reset LOW too, so the unpowered controller is not back-fed through its reset pin.
-        touch_rst.set_low();
-        lcd_rail.set_low();
+        if R4 {
+            relatch_low(&mut touch_rst);
+            relatch_low(&mut lcd_rail);
+        } else {
+            touch_rst.set_low();
+            lcd_rail.set_low();
+        }
         delay.delay_millis(100);
         println!(
             "FORCED tier=hal int_before={} autohold={}",
@@ -463,6 +815,8 @@ fn main() -> ! {
         if R2 {
             mark_attempt(attempt, forced);
         }
+        // R4: S0 immediately before the first forced attempt.
+        let s0 = (R4 && window_pending).then(Snap::take);
         // On success the chip is asleep and this call does not return.
         // The BoundSleep borrow ends with this statement, so the pin is readable again below.
         let res = manager
@@ -479,6 +833,7 @@ fn main() -> ! {
                         &mut touch_rst,
                         &delay,
                         wake_cause,
+                        probes.as_mut().zip(s0.as_ref()),
                     );
                 }
                 delay.delay_millis(RETRY_DELAY_MS)

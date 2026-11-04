@@ -51,7 +51,8 @@ rt = ["esp-hal/rt"]
 # Pulls in the example-only dependencies: the IDF-bootloader app descriptor and serial output.
 # `esp-println/auto` prints on USB-Serial-JTAG when a host is attached, else on UART0, so the
 # example works whether the board's USB-C reaches the S3's native USB or a USB-UART bridge.
-examples = ["rt", "dep:esp-bootloader-esp-idf", "dep:esp-println"]
+# `stoker/bench-conformance` brings the shared bench line grammar (`stoker::bench`) the R2 examples print with.
+examples = ["rt", "dep:esp-bootloader-esp-idf", "dep:esp-println", "stoker/bench-conformance"]
 
 # Internal, unstable: GPIO marker edges and timing capture around the sleep call for the C3 bench (ESP32-C3 only).
 bench = []

@@ -185,6 +185,10 @@ clippy-hal:
 test:
     cargo test {{ host_flags }}
 
+# run host-side tests with the off-by-default `bench-conformance` feature (shared bench grammar doctest)
+test-bench:
+    cargo test {{ host_flags }} --features bench-conformance
+
 # run host-side tests with stdout/stderr visible
 test-verbose:
     cargo test {{ host_flags }} -- --nocapture

@@ -81,6 +81,9 @@
 
 #![no_std]
 #![no_main]
+// `REJECT_HOLD_MS` is a build-time constant that is 0 unless `C3_REJECT_HOLD_MS` is set, so its
+// comparisons are constant in a default build; they are meant for the R2 bench build.
+#![allow(clippy::absurd_extreme_comparisons)]
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -92,10 +95,16 @@ use esp_hal::{
     time::Instant,
 };
 use esp_println::println;
+use rustyfarian_esp_hal_power::bench::{
+    write_attempt, write_pinread_edge, write_pinread_end, write_pinread_start, LineBuf, PinWindow,
+};
 use rustyfarian_esp_hal_power::{
     Error, EspHalSleepManager, EspHalWakeCauseSource, GpioWakeLevel, SleepErrorKind, SleepManager,
     WakeCause, WakeCauseSource, WakeSource, MAX_TIMER_MS,
 };
+
+/// Tier tag in the shared `ATTEMPT` and `PINREAD` bench lines.
+const TIER: &str = "hal";
 
 /// PIR output pin; bit position in the wake mask.
 const PIR_PIN: u8 = 4;
@@ -163,52 +172,32 @@ fn now_ms() -> u64 {
     Instant::now().duration_since_epoch().as_millis()
 }
 
-fn level_char(level: Level) -> char {
-    match level {
-        Level::High => 'H',
-        Level::Low => 'L',
-    }
-}
-
 /// Polls the wake pin for `REJECT_HOLD_MS` from `start_ms`, printing `PINREAD` lines (bench case R2).
 ///
 /// `start_level` and `start_ms` were sampled right after `try_sleep` returned.
 fn pin_read_window(pir: &Input<'_>, delay: &Delay, start_level: Level, start_ms: u64) {
-    println!(
-        "PINREAD start tier=hal pin={} level={} t_ms={}",
+    let mut line = LineBuf::<128>::new();
+    let mut window = PinWindow::start(start_level == Level::High, start_ms);
+    let _ = write_pinread_start(
+        &mut line,
+        TIER,
         PIR_PIN,
-        level_char(start_level),
-        start_ms
+        start_level == Level::High,
+        start_ms,
     );
-    let mut last = start_level;
-    let mut edges: u32 = 0;
-    let mut high = start_level == Level::High;
-    let mut low = start_level == Level::Low;
+    println!("{}", line.as_str());
     while now_ms() - start_ms < REJECT_HOLD_MS {
         delay.delay_millis(PINREAD_PERIOD_MS);
-        let level = pir.level();
-        high |= level == Level::High;
-        low |= level == Level::Low;
-        if level != last {
-            edges += 1;
-            println!(
-                "PINREAD edge tier=hal pin={} {}->{} t_ms={}",
-                PIR_PIN,
-                level_char(last),
-                level_char(level),
-                now_ms()
-            );
-            last = level;
+        let level = pir.level() == Level::High;
+        if let Some(edge) = window.sample(level, now_ms()) {
+            line.clear();
+            let _ = write_pinread_edge(&mut line, TIER, PIR_PIN, &edge);
+            println!("{}", line.as_str());
         }
     }
-    println!(
-        "PINREAD end tier=hal pin={} edges={} high={} low={} t_ms={}",
-        PIR_PIN,
-        edges,
-        high as u8,
-        low as u8,
-        now_ms()
-    );
+    line.clear();
+    let _ = write_pinread_end(&mut line, TIER, PIR_PIN, &window.finish(), now_ms());
+    println!("{}", line.as_str());
 }
 
 /// Short name of the reset reason for the BENCH line.
@@ -303,7 +292,9 @@ fn main() -> ! {
     let mut rejected: u32 = 0;
     loop {
         if BENCH_LOG && rejected >= 1 {
-            println!("ATTEMPT tier=hal n={} t_ms={}", rejected + 1, now_ms());
+            let mut line = LineBuf::<64>::new();
+            let _ = write_attempt(&mut line, TIER, rejected + 1, now_ms());
+            println!("{}", line.as_str());
         }
         let mut pins = [&mut pir];
         // On success the chip is asleep and this call does not return.

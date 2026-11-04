@@ -85,6 +85,7 @@ pub use stoker::{
     GateError, GateErrorKind, GatedSleep, GatedSleepError, NoopPowerRailGate, PowerRailGate,
 };
 
+mod conformance;
 mod esp_adc;
 mod esp_charging;
 #[cfg(feature = "critical-section-impl")]

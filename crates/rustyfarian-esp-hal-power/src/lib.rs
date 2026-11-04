@@ -93,6 +93,9 @@ pub mod sleep;
 pub use sleep::{BoundSleep, EspHalSleepManager, EspHalWakeCauseSource};
 
 #[cfg(all(target_os = "none", feature = "unstable"))]
+mod conformance;
+
+#[cfg(all(target_os = "none", feature = "unstable"))]
 pub mod gate;
 #[cfg(all(target_os = "none", feature = "unstable"))]
 pub use gate::{GpioRailGate, GpioRailGateError, Polarity, HELTEC_V3_VEXT_GPIO};

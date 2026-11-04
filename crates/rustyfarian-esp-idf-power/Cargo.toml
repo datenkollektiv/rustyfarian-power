@@ -42,6 +42,10 @@ embedded-hal.workspace = true
 esp-idf-hal.workspace = true
 critical-section = { workspace = true, features = ["restore-state-none"], optional = true }
 
+# The bench examples print with the shared line grammar behind `stoker`'s off-by-default feature.
+[dev-dependencies]
+stoker = { workspace = true, features = ["bench-conformance"] }
+
 [build-dependencies]
 embuild.workspace = true
 

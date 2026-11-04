@@ -105,6 +105,12 @@ use rustyfarian_esp_idf_power::{
     ResetReasonSource, SleepErrorKind, SleepManager, WakeCause, WakeCauseSource, WakeSource,
     MAX_TIMER_MS,
 };
+use stoker::bench::{
+    write_attempt, write_pinread_edge, write_pinread_end, write_pinread_start, LineBuf, PinWindow,
+};
+
+/// Tier tag in the shared `ATTEMPT` and `PINREAD` bench lines.
+const TIER: &str = "idf";
 
 /// PIR output pin; bit position in the wake mask: `C3_PIR_PIN` at build time (0-5), else GPIO4.
 const PIR_PIN: u8 = match option_env!("C3_PIR_PIN") {
@@ -229,41 +235,28 @@ fn now_ms() -> u64 {
 ///
 /// `start_level` and `start_ms` were sampled right after `try_sleep` returned.
 fn pin_read_window(pir: &PinDriver<'static, Input>, start_level: Level, start_ms: u64) {
-    println!(
-        "PINREAD start tier=idf pin={} level={} t_ms={}",
+    let mut line = LineBuf::<128>::new();
+    let mut window = PinWindow::start(start_level == Level::High, start_ms);
+    let _ = write_pinread_start(
+        &mut line,
+        TIER,
         PIR_PIN,
-        level_char(start_level),
-        start_ms
+        start_level == Level::High,
+        start_ms,
     );
-    let mut last = start_level;
-    let mut edges: u32 = 0;
-    let mut high = start_level == Level::High;
-    let mut low = start_level == Level::Low;
+    println!("{}", line.as_str());
     while now_ms() - start_ms < REJECT_HOLD_MS {
         FreeRtos::delay_ms(PINREAD_PERIOD_MS);
-        let level = pir.get_level();
-        high |= level == Level::High;
-        low |= level == Level::Low;
-        if level != last {
-            edges += 1;
-            println!(
-                "PINREAD edge tier=idf pin={} {}->{} t_ms={}",
-                PIR_PIN,
-                level_char(last),
-                level_char(level),
-                now_ms()
-            );
-            last = level;
+        let level = pir.get_level() == Level::High;
+        if let Some(edge) = window.sample(level, now_ms()) {
+            line.clear();
+            let _ = write_pinread_edge(&mut line, TIER, PIR_PIN, &edge);
+            println!("{}", line.as_str());
         }
     }
-    println!(
-        "PINREAD end tier=idf pin={} edges={} high={} low={} t_ms={}",
-        PIR_PIN,
-        edges,
-        high as u8,
-        low as u8,
-        now_ms()
-    );
+    line.clear();
+    let _ = write_pinread_end(&mut line, TIER, PIR_PIN, &window.finish(), now_ms());
+    println!("{}", line.as_str());
 }
 
 fn levels_line(levels: &[Level]) -> String {
@@ -393,7 +386,9 @@ fn main() -> anyhow::Result<()> {
     let mut rejected: u32 = 0;
     loop {
         if BENCH_LOG && rejected >= 1 {
-            println!("ATTEMPT tier=idf n={} t_ms={}", rejected + 1, now_ms());
+            let mut line = LineBuf::<64>::new();
+            let _ = write_attempt(&mut line, TIER, rejected + 1, now_ms());
+            println!("{}", line.as_str());
         }
         // On success the chip is asleep and this call does not return.
         match manager.try_sleep(&sources) {

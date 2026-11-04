@@ -155,3 +155,26 @@ Logs: `tmp/bench/2026-11-03/s3-negctl.log`, `s3-guard-idf.log`, `s3-guard-hal.lo
   The esp-hal recount after a hardware rejection is covered by R2-S3.
 - No watchdog reset, panic or stall in the guarded runs.
 - Not tested: the race (a pin crossing its wake level after the read) and non-pin rejects with the hold on; the ESP32 guard is compile-only.
+
+## R4-S3: non-wake pads and user holds after a rejection (2026-11-04)
+
+Checks the ADR-003 point 1 promise that a rejection leaves every non-wake pad and every user pad hold as the caller left it, on both tiers and both rejection paths.
+Firmware: both S3 examples with `S3_R2=1 S3_SLEEP_TIMER_MS=5000 S3_R4=1`, plus `S3_KEEP_AUTOHOLD=1` for the guard path.
+Logs: `tmp/bench/2026-11-03/r4-idf-hw-smoke.log`, `r4-idf-hw.log`, `r4-idf-guard.log`, `r4-hal-hw.log`, `r4-hal-guard.log`, `r4-hal-hw-iso.log`.
+
+Method:
+- Probe pads (digital-only, assumed unwired on the CrowPanel 1.28"): GPIO38 output HIGH with input enable and a user hold, GPIO39 output HIGH unheld, GPIO47 input with pull-up; GPIO1 and GPIO13 keep their RTC holds through the attempt (re-latched LOW so INT stays LOW).
+- The firmware snapshots, right before the forced `try_sleep` and right after its `Rejected`, each probe's IO_MUX word, out-sel word, output-enable bit and input bit, and the global `DIG_PAD_HOLD`, `PAD_HOLD` and `DIG_ISO` registers, then checks that writes to held GPIO38 and GPIO1 do not move their levels.
+- It prints `NONWAKE tier=.. path=hw|guard same=<0|1> holdok=<0|1> diff=<..>`; a per-boot self-test clears GPIO39's input enable and must report a difference (`detect=1`).
+
+| Tier    | Path  | Forced cycles | `same` | `holdok` | Self-test `detect=1` |
+|:--------|:------|--------------:|:-------|:---------|:---------------------|
+| ESP-IDF | hw    |             7 | 7 of 7 | 7 of 7   | 13 of 13             |
+| ESP-IDF | guard |             7 | 7 of 7 | 7 of 7   | 13 of 13             |
+| esp-hal | hw    |             7 | 0 of 7 | 7 of 7   | 8 of 8               |
+| esp-hal | guard |             7 | 7 of 7 | 7 of 7   | 7 of 7               |
+
+- The esp-hal hardware-path difference is one global bit: `diff=iso:10000080>00000080` (rerun with the values printed, 3 of 3), `RTC_CNTL_WIFI_FORCE_ISO` cleared by esp-hal's sleep entry and not restored; every pad word and hold matched.
+  This is power-domain configuration, excluded from the pad postcondition in ADR-003; see `docs/project-lore.md`.
+- The GPIO1 hold check is weak on its own (a pad without input enable also reads LOW); GPIO38 reading HIGH after a LOW write proves the input path.
+- `hold38=1` on every boot confirms the user hold on the digital-only pad took effect on both tiers.

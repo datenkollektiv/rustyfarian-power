@@ -683,6 +683,17 @@ pub trait SleepManager {
     /// The read happens before sleep entry applies any internal pull, so a wake pin
     /// needs a bias against its wake level when awake, or a floating pin can read as
     /// asserted and keep the retry loop rejecting.
+    ///
+    /// # What a rejection leaves behind
+    ///
+    /// After `Rejected`, every pad outside the request's `pin_mask` and every pad
+    /// hold you set, RTC or digital, is as you left it; the pads in `pin_mask` are
+    /// plain digital inputs again.
+    /// The exception is the global digital-pad hold (`gpio_deep_sleep_hold_en`): on
+    /// the ESP32-C2/C3 a non-pin rejection with that hold effective may have
+    /// isolated the unheld digital-only pads, so reconfigure them.
+    /// Console output may be interrupted, and the CPU clock is switched during the
+    /// attempt, so keep SPI, I2C and DMA transfers idle across the call.
     #[must_use = "a rejected sleep must be handled — ignoring it leaves the device awake on battery"]
     fn try_sleep(&mut self, sources: &[WakeSource]) -> Result<(), Self::Error>;
 }

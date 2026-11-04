@@ -25,6 +25,9 @@ Remove or update entries that are superseded.
   The sibling repos (rustyfarian-ws2812, etc.) gate only host-testable code in CI.
   This repo follows the same pattern: host-only check + test under `--no-default-features`.
   Cross-compilation for `xtensa-esp32s3-espidf` must be done locally with `just check-all` / `just build-example <name>`.
+- **The tier conformance modules (`src/conformance.rs` in both tier crates, ADR-003 point 4) are compiled only by the chip recipes `just check-all`, `check-esp32`, `check-c3` and `check-hal`, not by `just verify`.**
+  They instantiate every `stoker` trait with the concrete adapters, so a trait change breaks the tier build there (negative test 2026-11-04: renaming `last_reset_reason` failed all four recipes).
+  `check-hal` compiles the sleep, wake-cause and reset checks only for C3 and S3, the chips with an esp-hal sleep module.
 - **`just audit` generates a `Cargo.lock` if absent** (the lockfile is gitignored for this library) before running `cargo audit`; `just deny` needs no explicit lockfile step because `cargo deny` resolves the graph via `cargo metadata`.
 - **MSRV is set for family consistency, not a hard requirement: `stoker` 1.88 (workspace floor), `rustyfarian-esp-idf-power` 1.95.**
   No code uses 1.88-specific features (the host logic needs ~1.82 for `Option::is_none_or`), and the ESP-IDF stack (`esp-idf-hal 0.47`) needs only 1.82.

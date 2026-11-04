@@ -23,6 +23,9 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 - Power rail gate: `stoker::gate` (`PowerRailGate`, `GatedSleep`, `NoopPowerRailGate`) and `GpioRailGate` with a Heltec V3 Vext preset on both tiers (ADR-002).
 - Examples and bench tooling: C3/S3 deep-sleep, retention and rail-gate examples on both tiers, `just serial-capture`, `just console`, `just bench-c3`, and records in `docs/bench/`.
 
+- `stoker::bench` (feature `bench-conformance`, off by default): `PinWindow`, the bench line formatters and `LineBuf`, shared by the C3 and S3 deep-sleep bench examples on both tiers.
+- Compile-time conformance modules in both tier crates instantiate every `stoker` trait with the concrete adapters (ADR-003 point 4).
+
 ### Changed
 - `stoker` drops `anyhow` for `critical-section`, the IDF tier ships an ISR-safe `critical-section` provider behind the opt-in `critical-section-impl` feature, and the hal tier gates `sleep`/`reset`/`retain` on `unstable` outside `default-members`.
 
