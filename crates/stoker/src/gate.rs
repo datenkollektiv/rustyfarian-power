@@ -12,8 +12,9 @@
 //! the consumer calls [`PowerRailGate::power_on`] at boot.
 //! The coordinator restores the rail only when the sleep call returns an error.
 //!
-//! The GPIO-backed gates (`GpioRailGate`) live in the tier crates, generic over
-//! `embedded_hal::digital::OutputPin`, so `stoker` keeps `critical-section` as its only dependency.
+//! [`GpioRailGate`] is the GPIO-backed gate, generic over `embedded_hal::digital::OutputPin`
+//! (ADR-004 rung 1), so both tiers share one type.
+//! Each tier adds only its chip constructor (`heltec_v3_vext`).
 //!
 //! ```
 //! use stoker::{
@@ -44,6 +45,10 @@
 //! [`PowerRailGate::Error`] is bounded by the [`Error`] trait, which exposes a HAL-neutral
 //! [`GateErrorKind`] through [`Error::kind`], mirroring [`crate::sleep::Error`].
 //! [`GatedSleepError`] tells whether the gate or the sleep manager failed.
+
+use core::fmt;
+
+use embedded_hal::digital::OutputPin;
 
 use crate::sleep::{Error as SleepErrorTrait, SleepErrorKind, SleepManager, WakeSource};
 
@@ -343,6 +348,97 @@ impl<G: PowerRailGate, S: SleepManager> SleepManager for GatedSleep<G, S> {
     }
 }
 
+/// Pin level that switches the rail on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Polarity {
+    /// The rail is on while the pin is HIGH.
+    ActiveHigh,
+    /// The rail is on while the pin is LOW.
+    ActiveLow,
+}
+
+/// Error from a [`GpioRailGate`]: the underlying pin write failed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GpioRailGateError<E> {
+    /// The pin driver reported an error.
+    Pin(E),
+}
+
+impl<E: fmt::Debug> fmt::Display for GpioRailGateError<E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Pin(e) => write!(f, "rail gate pin error: {e:?}"),
+        }
+    }
+}
+
+impl<E: fmt::Debug> core::error::Error for GpioRailGateError<E> {}
+
+impl<E: fmt::Debug> Error for GpioRailGateError<E> {
+    fn kind(&self) -> GateErrorKind {
+        GateErrorKind::Platform
+    }
+}
+
+/// A power rail switched by one GPIO output.
+///
+/// `powered` caches the state of the last successful pin write; the pin is never read back.
+/// A failed write leaves it unchanged.
+/// Both transitions are idempotent and drive the pin again.
+/// Settle time is not modelled; the caller waits as long as its load needs.
+#[derive(Debug)]
+pub struct GpioRailGate<P: OutputPin> {
+    pin: P,
+    polarity: Polarity,
+    powered: bool,
+}
+
+impl<P: OutputPin> GpioRailGate<P> {
+    /// Takes the pin and drives the rail OFF immediately, so [`PowerRailGate::is_powered`]
+    /// starts `false` and matches the pin.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GpioRailGateError::Pin`] if the initial write fails.
+    pub fn new(pin: P, polarity: Polarity) -> Result<Self, GpioRailGateError<P::Error>> {
+        let mut gate = Self {
+            pin,
+            polarity,
+            powered: false,
+        };
+        gate.drive(false)?;
+        Ok(gate)
+    }
+
+    fn drive(&mut self, on: bool) -> Result<(), GpioRailGateError<P::Error>> {
+        let high = on == (self.polarity == Polarity::ActiveHigh);
+        let result = if high {
+            self.pin.set_high()
+        } else {
+            self.pin.set_low()
+        };
+        result.map_err(GpioRailGateError::Pin)?;
+        self.powered = on;
+        Ok(())
+    }
+}
+
+impl<P: OutputPin> PowerRailGate for GpioRailGate<P> {
+    type Error = GpioRailGateError<P::Error>;
+
+    fn power_on(&mut self) -> Result<(), Self::Error> {
+        self.drive(true)
+    }
+
+    fn power_off(&mut self) -> Result<(), Self::Error> {
+        self.drive(false)
+    }
+
+    fn is_powered(&self) -> bool {
+        self.powered
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -502,5 +598,126 @@ mod tests {
         assert!(c.sleep_mut().try_sleep(&TIMER).is_err());
         let (gate, _sleep) = c.into_parts();
         assert!(gate.is_powered());
+    }
+
+    #[derive(Debug, Default)]
+    struct RecordingPin {
+        levels: std::vec::Vec<bool>,
+    }
+
+    impl embedded_hal::digital::ErrorType for RecordingPin {
+        type Error = core::convert::Infallible;
+    }
+
+    impl OutputPin for RecordingPin {
+        fn set_low(&mut self) -> Result<(), Self::Error> {
+            self.levels.push(false);
+            Ok(())
+        }
+        fn set_high(&mut self) -> Result<(), Self::Error> {
+            self.levels.push(true);
+            Ok(())
+        }
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    struct PinFault;
+
+    impl embedded_hal::digital::Error for PinFault {
+        fn kind(&self) -> embedded_hal::digital::ErrorKind {
+            embedded_hal::digital::ErrorKind::Other
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct FailingPin {
+        fail: bool,
+    }
+
+    impl embedded_hal::digital::ErrorType for FailingPin {
+        type Error = PinFault;
+    }
+
+    impl OutputPin for FailingPin {
+        fn set_low(&mut self) -> Result<(), PinFault> {
+            if self.fail {
+                Err(PinFault)
+            } else {
+                Ok(())
+            }
+        }
+        fn set_high(&mut self) -> Result<(), PinFault> {
+            self.set_low()
+        }
+    }
+
+    #[test]
+    fn gpio_gate_starts_off_and_drives_the_off_level() {
+        let gate = GpioRailGate::new(RecordingPin::default(), Polarity::ActiveLow).unwrap();
+        assert!(!gate.is_powered());
+        assert_eq!(gate.pin.levels, [true]);
+
+        let gate = GpioRailGate::new(RecordingPin::default(), Polarity::ActiveHigh).unwrap();
+        assert!(!gate.is_powered());
+        assert_eq!(gate.pin.levels, [false]);
+    }
+
+    #[test]
+    fn gpio_gate_levels_follow_polarity() {
+        let mut gate = GpioRailGate::new(RecordingPin::default(), Polarity::ActiveLow).unwrap();
+        gate.power_on().unwrap();
+        gate.power_off().unwrap();
+        assert_eq!(gate.pin.levels, [true, false, true]);
+
+        let mut gate = GpioRailGate::new(RecordingPin::default(), Polarity::ActiveHigh).unwrap();
+        gate.power_on().unwrap();
+        gate.power_off().unwrap();
+        assert_eq!(gate.pin.levels, [false, true, false]);
+    }
+
+    #[test]
+    fn gpio_gate_is_idempotent_and_redrives() {
+        let mut gate = GpioRailGate::new(RecordingPin::default(), Polarity::ActiveHigh).unwrap();
+        gate.power_on().unwrap();
+        gate.power_on().unwrap();
+        assert!(gate.is_powered());
+        assert_eq!(gate.pin.levels, [false, true, true]);
+        gate.power_off().unwrap();
+        gate.power_off().unwrap();
+        assert!(!gate.is_powered());
+    }
+
+    #[test]
+    fn gpio_gate_failed_write_leaves_cache_unchanged() {
+        let mut gate = GpioRailGate::new(FailingPin::default(), Polarity::ActiveHigh).unwrap();
+        gate.pin.fail = true;
+        assert_eq!(gate.power_on(), Err(GpioRailGateError::Pin(PinFault)));
+        assert!(!gate.is_powered());
+
+        gate.pin.fail = false;
+        gate.power_on().unwrap();
+        gate.pin.fail = true;
+        let err = gate.power_off().unwrap_err();
+        assert!(gate.is_powered());
+        assert_eq!(err.kind(), GateErrorKind::Platform);
+        assert!(err.to_string().contains("PinFault"));
+    }
+
+    #[test]
+    fn gpio_gate_new_reports_initial_write_failure() {
+        let pin = FailingPin { fail: true };
+        assert!(matches!(
+            GpioRailGate::new(pin, Polarity::ActiveLow),
+            Err(GpioRailGateError::Pin(PinFault))
+        ));
+    }
+
+    #[test]
+    fn gpio_gate_works_under_gated_sleep() {
+        let gate = GpioRailGate::new(RecordingPin::default(), Polarity::ActiveLow).unwrap();
+        let mut c = GatedSleep::new(gate, NoopSleepManager::default());
+        c.gate_mut().power_on().unwrap();
+        c.sleep(&TIMER).unwrap();
+        assert!(!c.gate_mut().is_powered());
     }
 }

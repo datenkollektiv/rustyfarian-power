@@ -9,7 +9,7 @@ edition.workspace = true
 rust-version = "1.95"
 license.workspace = true
 repository.workspace = true
-description = "ESP-IDF (std) battery monitoring, charging detection, and deep-sleep drivers for ESP32 and ESP32-S3"
+description = "ESP-IDF (std) battery monitoring, charging detection, and deep-sleep drivers for ESP32, ESP32-C3, ESP32-C6 and ESP32-S3"
 keywords = ["esp32", "esp-idf", "battery", "power", "embedded"]
 categories = ["embedded", "hardware-support"]
 readme = "README.md"
@@ -28,6 +28,10 @@ critical-section-impl = ["dep:critical-section"]
 
 [[example]]
 name = "idf_c3_rtc_retention"
+required-features = ["critical-section-impl"]
+
+[[example]]
+name = "idf_c6_rtc_retention"
 required-features = ["critical-section-impl"]
 
 [[example]]

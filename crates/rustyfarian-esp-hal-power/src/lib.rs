@@ -11,13 +11,15 @@
 //!
 //! # Status
 //!
-//! The `sleep` module (deep sleep with GPIO and timer wake) exists for the ESP32-C3 and
-//! ESP32-S3 (`docs/features/esp-hal-sleep-tier-v1.md`). The `reset` and `retain` modules
-//! (`EspHalResetReasonSource`, `RtcRetainedCell`) place a `stoker` retention record in RTC fast
+//! The `sleep` module (deep sleep with GPIO and timer wake) exists for the ESP32-C3,
+//! ESP32-C6, ESP32-S3 and ESP32 (`docs/features/esp-hal-sleep-tier-v1.md`). The `reset`, `wake` and `retain` modules
+//! (`EspHalResetReasonSource`, `EspHalWakeCauseSource`, `RtcRetainedCell`) place a `stoker` retention record in RTC fast
 //! memory (`docs/features/rtc-retention-v1.md`). The `clock` module (`EspHalRtcClock`) is a
 //! drift-free microsecond clock across resets and deep sleep
-//! (`docs/features/esp-hal-rtc-clock-v1.md`). The ADC battery monitor and charging
-//! monitor are still pending (`docs/features/esp-hal-parity-v1.md`).
+//! (`docs/features/esp-hal-rtc-clock-v1.md`). The charging monitor (`EspHalChargingMonitor`, the shared
+//! `GpioChargingMonitor` over two `Input` pins) and the ADC battery monitor
+//! (`EspHalAdcBatteryMonitor`, calibrated ADC1 reads averaged by `stoker`) exist for every chip
+//! (`docs/features/esp-hal-parity-v1.md`).
 //!
 //! # Chip features
 //!
@@ -61,18 +63,15 @@ pub use stoker::*;
 // The drivers need esp-hal's unstable `rtc_cntl` module, sleep API and `Persistable` trait, so
 // they are gated on `unstable` as well; without it the crate is only the `stoker` re-export
 // (`just check-hal` builds that surface once).
-#[cfg(all(
-    target_os = "none",
-    feature = "unstable",
-    any(feature = "esp32c3", feature = "esp32s3")
-))]
+#[cfg(all(target_os = "none", feature = "unstable"))]
 pub mod reset;
-#[cfg(all(
-    target_os = "none",
-    feature = "unstable",
-    any(feature = "esp32c3", feature = "esp32s3")
-))]
+#[cfg(all(target_os = "none", feature = "unstable"))]
 pub use reset::EspHalResetReasonSource;
+
+#[cfg(all(target_os = "none", feature = "unstable"))]
+pub mod wake;
+#[cfg(all(target_os = "none", feature = "unstable"))]
+pub use wake::EspHalWakeCauseSource;
 
 #[cfg(all(target_os = "none", feature = "unstable"))]
 pub mod retain;
@@ -82,33 +81,63 @@ pub use retain::RtcRetainedCell;
 #[cfg(all(
     target_os = "none",
     feature = "unstable",
-    any(feature = "esp32c3", feature = "esp32s3")
+    any(
+        feature = "esp32c3",
+        feature = "esp32c6",
+        feature = "esp32s3",
+        feature = "esp32"
+    )
 ))]
 pub mod sleep;
 #[cfg(all(
     target_os = "none",
     feature = "unstable",
-    any(feature = "esp32c3", feature = "esp32s3")
+    any(
+        feature = "esp32c3",
+        feature = "esp32c6",
+        feature = "esp32s3",
+        feature = "esp32"
+    )
 ))]
-pub use sleep::{BoundSleep, EspHalSleepManager, EspHalWakeCauseSource};
+pub use sleep::{BoundSleep, EspHalSleepManager};
 
 #[cfg(all(target_os = "none", feature = "unstable"))]
 mod conformance;
 
 #[cfg(all(target_os = "none", feature = "unstable"))]
+pub mod adc;
+#[cfg(all(target_os = "none", feature = "unstable"))]
+pub use adc::EspHalAdcBatteryMonitor;
+
+#[cfg(all(target_os = "none", feature = "unstable"))]
+pub mod charging;
+#[cfg(all(target_os = "none", feature = "unstable"))]
+pub use charging::EspHalChargingMonitor;
+
+#[cfg(all(target_os = "none", feature = "unstable"))]
 pub mod gate;
 #[cfg(all(target_os = "none", feature = "unstable"))]
-pub use gate::{GpioRailGate, GpioRailGateError, Polarity, HELTEC_V3_VEXT_GPIO};
+pub use gate::{GpioRailGate, GpioRailGateError, HeltecV3Vext, Polarity, HELTEC_V3_VEXT_GPIO};
 
 #[cfg(all(
     target_os = "none",
     feature = "unstable",
-    any(feature = "esp32c3", feature = "esp32s3")
+    any(
+        feature = "esp32c3",
+        feature = "esp32c6",
+        feature = "esp32s3",
+        feature = "esp32"
+    )
 ))]
 pub mod clock;
 #[cfg(all(
     target_os = "none",
     feature = "unstable",
-    any(feature = "esp32c3", feature = "esp32s3")
+    any(
+        feature = "esp32c3",
+        feature = "esp32c6",
+        feature = "esp32s3",
+        feature = "esp32"
+    )
 ))]
 pub use clock::EspHalRtcClock;

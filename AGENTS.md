@@ -12,25 +12,32 @@ It is built for low-power firmware loops: read battery state, decide whether to 
 
 Three-crate Cargo workspace (`members = ["crates/*"]`, `default-members` excludes the esp-hal tier), split by **crate boundaries** — not feature flags. The pure/hardware separation is what lets the core build and test on the host with no ESP toolchain.
 
-**`crates/stoker`** — platform-agnostic core, host-buildable, `#![no_std]` with no dependencies:
-- `lib.rs` — `BatteryMonitor` trait, `PowerSource`, `BatteryStatus`, `NoopBatteryMonitor`
+**`crates/stoker`** — platform-agnostic core, host-buildable, `#![no_std]` and allocation-free; depends on `critical-section` (the firmware must link exactly one provider, ADR-003 point 5) and `embedded-hal` 1.0:
+- `lib.rs` — `BatteryMonitor` trait, `PowerSource`, `BatteryStatus`, `NoopBatteryMonitor`, `average_mv()`
 - `config.rs` — `BatteryConfig` with board presets (`heltec_v3()`, `adafruit_feather_v2()`) and `evaluate_reading()` — all voltage/percentage logic
-- `sleep.rs` — `SleepManager` (associated `type Error`) + `WakeCauseSource` traits, `WakeCause`/`WakeSource` enums, `SleepError`, `validate_wake_sources()` / `validate_gpio_level_source()`, `NoopSleepManager`
-- `charging.rs` — `ChargingMonitor` trait, `ChargingState`, `ChargingSource`, `NoopChargingMonitor`
+- `sleep.rs` — `SleepManager` (associated `type Error`) + `WakeCauseSource` traits, `WakeCause`/`WakeSource` enums, `SleepError`, `validate_*` fns, `NoopSleepManager`
+- `sleep/attempt.rs` — `SleepAttemptMachine` (rung-3 sans-IO machine, ADR-004), `ChipPolicy` guard table, `drive()` over the hidden `SleepAttemptPort`
+- `sleep/arm.rs` — `arm_transactionally()` over the hidden `WakeArmOps`: ordered wake arming with best-effort rollback
+- `charging.rs` — `ChargingMonitor` trait, `ChargingState`, `classify_charging()`, generic `GpioChargingMonitor` (rung 1), `NoopChargingMonitor`
+- `gate.rs` — `PowerRailGate`, `GatedSleep`, generic `GpioRailGate` (rung 1)
 - `retain.rs` — validity-checked RTC retention envelope (`Retained<N>`, `RetainedCell`)
 - `reset.rs` — `ResetReason`, `ResetReasonSource`, `NoopResetReasonSource`
+- `rtc_clock.rs` — RTC tick arithmetic shared by both clock adapters
+- `bench.rs` — bench line grammar (`bench-conformance` feature)
 
-**`crates/rustyfarian-esp-idf-power`** — ESP-IDF (std) hardware tier; cannot compile on the host (needs the Xtensa/ESP-IDF toolchain):
-- `esp_adc.rs` — `EspAdcBatteryMonitor` (ADC1 averaging + divider compensation)
-- `esp_sleep.rs` — `EspSleepManager`, `EspWakeCauseSource` (deep sleep, wake-cause read)
-- `esp_charging.rs` — `EspChargingMonitor` (MCP73831 STAT + USB VBUS pins)
+**`crates/rustyfarian-esp-idf-power`** — ESP-IDF (std) hardware tier for ESP32, C3, C6 and S3; cannot compile on the host (needs the ESP-IDF toolchain):
+- `esp_sleep.rs` — `EspSleepManager`, `EspWakeCauseSource` (a private `SleepAttemptPort` and `WakeArmOps` over the SDK)
+- `esp_adc.rs` — `EspAdcBatteryMonitor`; `esp_charging.rs` — `EspChargingMonitor` (wraps `GpioChargingMonitor`)
+- `esp_gate.rs` — `HeltecV3Vext`; `esp_reset.rs`, `esp_rtc.rs` — reset reason and RTC clock; `esp_critical_section.rs` — opt-in `critical-section-impl` provider
 - `lib.rs` re-exports all of `stoker`, so device firmware imports from this one crate.
 
 **`crates/rustyfarian-esp-hal-power`** — bare-metal esp-hal tier (`no_std`, `*-none-elf` only, esp-hal `=1.2.2`, chip features C3/C6/ESP32/S3):
-- `sleep.rs` — `EspHalSleepManager` (wake pins borrowed per attempt via `bind_wake_pins`), `EspHalWakeCauseSource`
+- `sleep.rs` — `EspHalSleepManager` (wake pins borrowed per attempt via `bind_wake_pins`, a private `SleepAttemptPort`); `wake.rs` — `EspHalWakeCauseSource`
+- `adc.rs` — `EspHalAdcBatteryMonitor` (ADC1 pins only, sealed `Adc1Pin`); `charging.rs` — `EspHalChargingMonitor`
+- `gate.rs`, `reset.rs`, `retain.rs`, `clock.rs` — `HeltecV3Vext`, reset reason, RTC retention cell, RTC clock
 - Contract decisions for both sleep tiers live in `docs/adr/001-hal-neutral-sleep-contract.md`.
 
-Every hardware concern is behind a trait, and every trait ships a `Noop*` mock for host tests. Business logic lives in `stoker` (`evaluate_reading()`, the `validate_*` fns) — hardware-independent and fully unit-tested.
+Every hardware concern is behind a trait, and every trait ships a `Noop*` mock for host tests. Business logic lives in `stoker` at the lowest fitting rung of the ADR-004 ladder (pure fns, generic `embedded-hal` drivers, sans-IO machines) — hardware-independent and unit-tested.
 
 ## Development Workflow
 

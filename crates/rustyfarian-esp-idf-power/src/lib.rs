@@ -1,5 +1,5 @@
 //! ESP-IDF (std) battery monitoring, charging detection, and deep-sleep drivers
-//! for ESP32 and ESP32-S3.
+//! for ESP32, ESP32-C3, ESP32-C6 and ESP32-S3.
 //!
 //! This crate is the hardware tier of the rustyfarian power stack. It provides
 //! the ESP-IDF implementations of the traits defined in the platform-agnostic
@@ -97,7 +97,7 @@ mod esp_sleep;
 
 pub use esp_adc::EspAdcBatteryMonitor;
 pub use esp_charging::EspChargingMonitor;
-pub use esp_gate::{GpioRailGate, GpioRailGateError, Polarity, HELTEC_V3_VEXT_GPIO};
+pub use esp_gate::{GpioRailGate, GpioRailGateError, HeltecV3Vext, Polarity, HELTEC_V3_VEXT_GPIO};
 pub use esp_reset::EspResetReasonSource;
 pub use esp_rtc::EspRtcClock;
 pub use esp_sleep::{EspSleepError, EspSleepManager, EspWakeCauseSource};

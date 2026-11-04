@@ -17,10 +17,11 @@
 //! # Mapping
 //!
 //! `None` (the ROM code could not be decoded) and `ChipPowerOn` map to [`ResetReason::PowerOn`], like `ESP_RST_UNKNOWN` on ESP-IDF, so `load` distrusts RTC memory.
-//! `SysBrownOut` and `CorePwrGlitch` map to [`ResetReason::Brownout`]; `CoreDeepSleep` to [`ResetReason::DeepSleep`].
-//! `CoreSw` and the CPU-local software reset (`Cpu0Sw` on the C3, `CpuSw` on the S3) map to [`ResetReason::Software`].
-//! Every watchdog variant (`Core*`, `Sys*`, and the chip's `Cpu0*` or `Cpu*` watchdogs) maps to [`ResetReason::Watchdog`].
-//! Everything else (clock glitch, eFuse CRC, USB, JTAG) maps to [`ResetReason::Other`], which trusts the record's checksum.
+//! `SysBrownOut` (and `CorePwrGlitch`, which only the C3 and S3 have) maps to [`ResetReason::Brownout`]; `CoreDeepSleep` to [`ResetReason::DeepSleep`].
+//! `CoreSw` and the CPU-local software reset (`Cpu0Sw` on the C3, C6 and ESP32, `CpuSw` on the S3) map to [`ResetReason::Software`].
+//! Every watchdog variant (`Core*`, `Sys*`, and the chip's CPU-local watchdogs) maps to [`ResetReason::Watchdog`].
+//! The ESP32 has no `SysSuperWdt`; its CPU-local watchdogs are `CpuMwdt0` and `Cpu0RtcWdt`.
+//! Everything else (clock glitch, eFuse CRC, SDIO, USB, JTAG, the ESP32 `Cpu1Cpu0`) maps to [`ResetReason::Other`], which trusts the record's checksum.
 
 pub use stoker::reset::*;
 
@@ -29,7 +30,7 @@ use esp_hal::system::Cpu;
 
 /// Reads the reset reason from the ROM reset cause (`rtc_cntl::reset_reason`).
 ///
-/// The CPU-local variants differ per chip: the C3 names them `Cpu0*`, the S3 `Cpu*`.
+/// The CPU-local variants differ per chip: the C3 and C6 name them `Cpu0*`, the S3 `Cpu*`, the ESP32 a mix of both.
 /// The mapping covers the chip selected by the crate features.
 ///
 /// # Examples
@@ -52,20 +53,26 @@ fn map(reason: Option<SocResetReason>) -> ResetReason {
     use SocResetReason as Soc;
     match reason {
         None | Some(Soc::ChipPowerOn) => ResetReason::PowerOn,
-        Some(Soc::SysBrownOut | Soc::CorePwrGlitch) => ResetReason::Brownout,
+        Some(Soc::SysBrownOut) => ResetReason::Brownout,
+        #[cfg(any(feature = "esp32c3", feature = "esp32s3"))]
+        Some(Soc::CorePwrGlitch) => ResetReason::Brownout,
         Some(Soc::CoreDeepSleep) => ResetReason::DeepSleep,
         Some(Soc::CoreSw) => ResetReason::Software,
         #[cfg(not(feature = "esp32s3"))]
         Some(Soc::Cpu0Sw) => ResetReason::Software,
         #[cfg(feature = "esp32s3")]
         Some(Soc::CpuSw) => ResetReason::Software,
-        Some(
-            Soc::CoreMwdt0 | Soc::CoreMwdt1 | Soc::CoreRtcWdt | Soc::SysRtcWdt | Soc::SysSuperWdt,
-        ) => ResetReason::Watchdog,
-        #[cfg(not(feature = "esp32s3"))]
+        Some(Soc::CoreMwdt0 | Soc::CoreMwdt1 | Soc::CoreRtcWdt | Soc::SysRtcWdt) => {
+            ResetReason::Watchdog
+        }
+        #[cfg(not(feature = "esp32"))]
+        Some(Soc::SysSuperWdt) => ResetReason::Watchdog,
+        #[cfg(any(feature = "esp32c3", feature = "esp32c6"))]
         Some(Soc::Cpu0Mwdt0 | Soc::Cpu0Mwdt1 | Soc::Cpu0RtcWdt) => ResetReason::Watchdog,
         #[cfg(feature = "esp32s3")]
         Some(Soc::CpuMwdt0 | Soc::CpuMwdt1 | Soc::CpuRtcWdt) => ResetReason::Watchdog,
+        #[cfg(feature = "esp32")]
+        Some(Soc::CpuMwdt0 | Soc::Cpu0RtcWdt) => ResetReason::Watchdog,
         Some(_) => ResetReason::Other,
     }
 }

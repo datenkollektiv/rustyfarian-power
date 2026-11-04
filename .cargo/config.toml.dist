@@ -17,6 +17,11 @@ rustflags = ["--cfg", "espidf_time64"]
 linker = "ldproxy"
 rustflags = ["--cfg", "espidf_time64"]
 
+# ESP32-C6 target (ESP32-C6-DevKitC-1; riscv32imac, atomics present)
+[target.riscv32imac-esp-espidf]
+linker = "ldproxy"
+rustflags = ["--cfg", "espidf_time64"]
+
 # ESP32-S3 bare-metal target (esp-hal tier examples; linkall.x comes from esp-hal)
 [target.xtensa-esp32s3-none-elf]
 runner = "espflash flash --monitor --chip esp32s3"
@@ -25,6 +30,11 @@ rustflags = ["-C", "link-arg=-Tlinkall.x"]
 # ESP32-C3 bare-metal target (esp-hal tier examples; linkall.x is required per ADR-001)
 [target.riscv32imc-unknown-none-elf]
 runner = "espflash flash --monitor --chip esp32c3"
+rustflags = ["-C", "link-arg=-Tlinkall.x"]
+
+# ESP32-C6 bare-metal target (esp-hal tier examples; linkall.x comes from esp-hal)
+[target.riscv32imac-unknown-none-elf]
+runner = "espflash flash --monitor --chip esp32c6"
 rustflags = ["-C", "link-arg=-Tlinkall.x"]
 
 # ESP32 bare-metal target (esp-hal tier examples; linkall.x comes from esp-hal)

@@ -51,19 +51,48 @@ pub mod retain;
 pub mod rtc_clock;
 pub mod sleep;
 
-pub use charging::{ChargingMonitor, ChargingSource, ChargingState, NoopChargingMonitor};
+pub use charging::{
+    classify_charging, ChargingMonitor, ChargingSource, ChargingState, GpioChargingMonitor,
+    NoopChargingMonitor,
+};
 pub use config::BatteryConfig;
 pub use gate::{
-    GateError, GateErrorKind, GatedSleep, GatedSleepError, NoopPowerRailGate, PowerRailGate,
+    GateError, GateErrorKind, GatedSleep, GatedSleepError, GpioRailGate, GpioRailGateError,
+    NoopPowerRailGate, Polarity, PowerRailGate,
 };
 pub use reset::{NoopResetReasonSource, ResetReason, ResetReasonSource};
 pub use retain::{Invalid, Retainable, Retained, RetainedCell, StoreError};
+pub use sleep::arm::{arm_transactionally, WakeArmOps};
+pub use sleep::attempt::{
+    drive, ChipPolicy, DriveError, Entered, PreReadGuard, SleepAttemptAction, SleepAttemptInput,
+    SleepAttemptMachine, SleepAttemptPort, SleepPlan,
+};
 pub use sleep::{
     digital_hold_effective, wake_pins_all_low, wake_pins_asserted, Error, GpioWakeLevel,
     GpioWakeMask, NoopSleepManager, SleepError, SleepErrorKind, SleepManager, WakeCause,
     WakeCauseSource, WakeSource, DIG_ISO_DG_PAD_AUTOHOLD_EN, DIG_ISO_DG_PAD_FORCE_UNHOLD,
     MAX_TIMER_MS,
 };
+
+/// Averages ADC samples in millivolts, skipping failed reads.
+///
+/// `None` is a failed read.
+/// Takes any iterator, so a caller can feed ADC reads lazily without a sample buffer.
+/// Returns the sum of the valid samples divided by their count (integer division),
+/// or 0 when no sample is valid.
+#[must_use]
+pub fn average_mv<I: IntoIterator<Item = Option<u16>>>(samples: I) -> u16 {
+    let mut sum: u64 = 0;
+    let mut valid_count: u64 = 0;
+    for value in samples.into_iter().flatten() {
+        sum += u64::from(value);
+        valid_count += 1;
+    }
+    if valid_count == 0 {
+        return 0;
+    }
+    (sum / valid_count) as u16
+}
 
 /// Trait for reading battery status from hardware.
 ///
@@ -206,6 +235,27 @@ impl core::fmt::Display for BatteryStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn average_mv_skips_failed_reads() {
+        assert_eq!(average_mv([Some(3000), None, Some(3100)]), 3050);
+    }
+
+    #[test]
+    fn average_mv_truncates() {
+        assert_eq!(average_mv([Some(1), Some(2)]), 1);
+    }
+
+    #[test]
+    fn average_mv_is_zero_without_valid_samples() {
+        assert_eq!(average_mv([]), 0);
+        assert_eq!(average_mv([None, None]), 0);
+    }
+
+    #[test]
+    fn average_mv_does_not_overflow() {
+        assert_eq!(average_mv([Some(u16::MAX); 64]), u16::MAX);
+    }
 
     #[test]
     fn voltage_to_percent_empty() {

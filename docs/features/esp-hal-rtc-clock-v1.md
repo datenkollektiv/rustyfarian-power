@@ -1,6 +1,5 @@
 ---
-gate: hardware
-gate-note: Ten 60 s timer sleeps after one hour of uptime on the hal C3 retention rig, every slept time within ±1 %
+gate: none
 desk-work: available
 ---
 
@@ -49,10 +48,14 @@ ESP-IDF avoids this by keeping accumulated microseconds and the last tick count 
 - [x] Spike: register read, calibration read and retained accumulator compile for C3 and S3
 - [x] Core implementation: `EspHalRtcClock` module, re-export, module docs
 - [x] Example prints `rtc_us` at each boot (extend `hal_c3_rtc_retention` or a twin)
-- [ ] Bench on the hal C3 retention rig per Acceptance, results in `docs/bench/`
+- [x] ESP32 path (2026-11-04): 20 `time_update` pulses, wait for `time_valid`, read `time1.time_hi` and `time0.time_lo`; `STORE1` on `LPWR`; arithmetic stays in `stoker::rtc_clock`
+- [x] C6 path (2026-11-04): latch via `update.main_timer_update`, ticks from `main_buf0_high/low`, calibration from `LP_AON` `store1`; no delay needed on C6
+- Hardware checks for the final pass: ESP32 clock monotonic across deep sleep and within drift of `EspRtcClock`; C6 no backwards steps and elapsed time matches sleep time
+- Hardware validation: a single final pass follows the tier-parity changes, before the release; it is not a gate for this feature (Acceptance bench on the hal C3 retention rig)
 - [x] ADR-001 slept-time paragraph amended; CHANGELOG `[Unreleased]` Added entry
 - [x] Tests passing (`just verify`, `just check-hal`, `just build-example-hal-c3` for the example)
 
 ## Session Log
 - 2026-10-24 — Feature doc created via /feature dialog from the upstream request; approach fixed to IDF-style accumulation, storage and release questions left open
 - 2026-10-28 — Spike compiled for C3 and S3 against esp-hal 1.2.2; `stoker::rtc_clock` core and host tests landed; Open Questions resolved per the approved plan; bench and verification pending
+- 2026-11-04 — Hardware gate removed; benches move to the final pre-release hardware pass

@@ -1,7 +1,7 @@
 # ADR-002: Power rail gate contract for the ESP-IDF and esp-hal tiers
 
 ## Status
-Accepted (2026-10-24).
+Accepted (2026-10-24); the `stoker` dependency and per-tier gate decisions are superseded by ADR-004 (2026-11-04).
 
 Pinned to ESP-IDF v5.3.3 and esp-hal `=1.2.2`, as in ADR-001.
 The Heltec V3 pin facts were verified against the Zephyr board devicetree `heltec_wifi_lora32_v3_procpu.dts` on 2026-10-24.
@@ -91,6 +91,7 @@ It implements `SleepManager` with `type Error = GatedSleepError<G::Error, S::Err
 - `HELTEC_V3_VEXT_GPIO: u8 = 36` is exported next to the preset.
 - Each tier depends on `embedded-hal = "1"`, declared in `[workspace.dependencies]` and referenced with `workspace = true`.
 - `stoker` gets no `embedded-hal` dependency.
+  Superseded (2026-11-04, ADR-004 rung 1): `stoker` depends on `embedded-hal` 1.0 and owns the one generic `GpioRailGate`; each tier keeps only its `HeltecV3Vext` constructor.
   An optional feature was rejected because it would pull a HAL trait into a crate that only needs `critical-section`.
 - `PinDriver<_, Output>` on ESP-IDF and `gpio::Output` on esp-hal both implement `OutputPin`.
 

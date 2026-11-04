@@ -26,6 +26,11 @@ Repos whose CI builds only esp-hal/AVR targets are unaffected (rustyfarian-ws281
 These recipes run with `--no-default-features`, which drops the default `esp-idf` feature, so `esp_adc.rs`, `esp_charging.rs`, and `esp_sleep.rs` are excluded from the build — a green host run says nothing about whether the hardware drivers still compile.
 Fix: validate any change to a feature-gated `esp_*.rs` module with `just check-all` (ESP32-S3) and `just check-esp32` (original ESP32); the host gates only cover the platform-independent modules.
 
+**`cfg!(esp32c6)` fails the IDF tier with "unexpected `cfg` condition name" although `esp-idf-sys` emits that cfg.**
+`esp-idf-sys` 0.38.1 emits a bare cfg named after the target MCU, and `embuild::espidf::sysenv::output()` relays it, but check-cfg only knows the names our `build.rs` registers, and clippy runs with `-D warnings`.
+The C6 triple `riscv32imac-esp-espidf` is shared with the H2, so parsing `TARGET` cannot identify the chip either.
+Fix: add `println!("cargo:rustc-check-cfg=cfg(esp32c6)")` to the tier's `build.rs` and rely on the relayed cfg (2026-11-04).
+
 ---
 
 ## Hardware — Heltec V3 & LiPo batteries
@@ -181,6 +186,15 @@ Fix: cap requests in software (`MAX_TIMER_MS`); see ADR-001 § 4a.
 `init_gpio` disables the output driver and calls `set_pad_hold(false)` first, then `set_level` runs (`gpio/mod.rs:658-668`, `1728-1736`).
 On a wake boot the pad is therefore briefly undriven, and the rail is not glitch-free as a "drive, then release" reading suggests.
 Fix: call `Output::set_pad_hold(true)` again after re-creating the drivers (`gpio/mod.rs:857-866`, unstable), and expect the brief undriven window; the earlier raw-register version passed the bench 3/3, the `set_pad_hold` version is not yet re-benched.
+
+**An ADC2 pad passed to an esp-hal 1.2.2 `AdcConfig<ADC1>` compiles and silently reads the ADC1 channel with the same number.**
+`AdcChannel` is implemented for every analog pad and carries only the channel index (`analog/adc/mod.rs:285`), so ESP32 GPIO4 (ADC2_CH0) reads GPIO36, and S3 GPIO11 reads GPIO1.
+The result is a plausible but wrong battery voltage, not an error.
+Fix: `EspHalAdcBatteryMonitor` bounds `PIN` on the sealed `Adc1Pin` trait; re-check its hand-written pad lists on every esp-hal bump.
+
+**A UART TX drain that waits for FSM state 0 never finishes on the ESP32-C6.**
+UART v2 (`uart/low_level/v2.rs`) rests at TX FSM state `0x0F` (TX_WAIT_SEND) as well as `0x00`, so a C3/S3-style drain times out and every `sleep`/`try_sleep` returns `UartBusy`.
+Fix: treat `0x00` and `0x0F` as idle on the C6 (`sleep.rs` drain, 2026-11-04); the bench in the final hardware pass confirms it.
 
 ---
 

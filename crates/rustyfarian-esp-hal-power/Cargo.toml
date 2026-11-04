@@ -67,6 +67,7 @@ embedded-hal = { workspace = true }
 [target.'cfg(target_os = "none")'.dependencies]
 esp-hal = { workspace = true }
 critical-section = { workspace = true }
+nb = { workspace = true }
 esp-bootloader-esp-idf = { workspace = true, optional = true }
 esp-println = { workspace = true, optional = true, features = ["auto"] }
 
@@ -77,6 +78,22 @@ required-features = ["esp32s3", "unstable", "examples"]
 [[example]]
 name = "hal_s3_power_rail_gate"
 required-features = ["esp32s3", "unstable", "examples"]
+
+[[example]]
+name = "hal_s3_battery"
+required-features = ["esp32s3", "unstable", "examples"]
+
+[[example]]
+name = "hal_esp32_deep_sleep_gpio"
+required-features = ["esp32", "unstable", "examples"]
+
+[[example]]
+name = "hal_esp32_battery"
+required-features = ["esp32", "unstable", "examples"]
+
+[[example]]
+name = "hal_c6_deep_sleep_gpio"
+required-features = ["esp32c6", "unstable", "examples"]
 
 [[example]]
 name = "hal_c3_deep_sleep_gpio"

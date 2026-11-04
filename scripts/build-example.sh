@@ -2,7 +2,7 @@
 set -euo pipefail
 # build-example.sh — build an idf_{chip}_{name} example without flashing
 # Usage: scripts/build-example.sh <example> [idf_dir]
-#   example: idf_{chip}_{name}  e.g. idf_esp32_battery, idf_esp32s3_battery, idf_c3_deep_sleep_gpio, idf_s3_deep_sleep_gpio
+#   example: idf_{chip}_{name}  e.g. idf_esp32_battery, idf_esp32s3_battery, idf_c3_deep_sleep_gpio, idf_c6_deep_sleep_gpio, idf_s3_deep_sleep_gpio
 #   idf_dir: target directory for ESP-IDF builds (default: target/idf)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,11 +27,12 @@ case "$chip" in
     esp32s3) target="xtensa-esp32s3-espidf" ; mcu="esp32s3" ;;
     s3)      target="xtensa-esp32s3-espidf" ; mcu="esp32s3" ;;
     c3)      target="riscv32imc-esp-espidf" ; mcu="esp32c3" ;;
-    *) printf 'Unknown chip "%s" in example "%s". Supported: esp32, esp32s3, s3, c3\n' "$chip" "$example" >&2; exit 1 ;;
+    c6)      target="riscv32imac-esp-espidf" ; mcu="esp32c6" ;;
+    *) printf 'Unknown chip "%s" in example "%s". Supported: esp32, esp32s3, s3, c3, c6\n' "$chip" "$example" >&2; exit 1 ;;
 esac
 
 # Set up the Xtensa GCC toolchain if not already in PATH (RISC-V chips do not need it).
-if [ "$chip" != "c3" ]; then
+if [ "$chip" != "c3" ] && [ "$chip" != "c6" ]; then
     # shellcheck source=./xtensa-toolchain.sh
     . "$SCRIPT_DIR/xtensa-toolchain.sh"
     setup_xtensa_toolchain

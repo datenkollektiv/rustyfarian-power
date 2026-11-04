@@ -8,7 +8,7 @@
 //!
 //! | Chip | Mechanism | Valid wake pins |
 //! |---|---|---|
-//! | ESP32, ESP32-S3, ESP32-C6 | EXT1 (`esp_sleep_enable_ext1_wakeup_io`, RTC IO) | chip specific, see `validate_gpio_level_source` |
+//! | ESP32, ESP32-S3, ESP32-C6 | EXT1 (`esp_sleep_enable_ext1_wakeup_io`, RTC IO) | chip specific, see `ChipPolicy::wake_pin_mask` |
 //! | ESP32-C2, ESP32-C3 | deep-sleep GPIO wakeup (`esp_deep_sleep_enable_gpio_wakeup`) | GPIO0-5 (`ESP32C3_WAKE_PIN_MASK`) |
 //!
 //! The pin mask is validated before any ESP-IDF call.
@@ -37,8 +37,11 @@
 //! The ESP32-C2/C3 hardware does not reject a held GPIO wake pin; it sleeps and wakes
 //! again at once. There `try_sleep` reads the wake pins right before sleep entry and
 //! returns the same `Rejected` error itself; the pins must be configured as inputs for
-//! the read. EXT1 chips rely on the hardware reject (confirmed on the ESP32-S3,
+//! the read. The original ESP32 reads the wake pins on every attempt too, and the ESP32-S3
+//! when the global digital-pad hold is effective (see [`try_sleep`][SleepManager::try_sleep]).
+//! Other EXT1 chips rely on the hardware reject (confirmed on the ESP32-S3,
 //! CrowPanel bench 2026-10-14).
+//! The sequence is the shared `stoker::SleepAttemptMachine`; this tier only does the IO.
 //! [`SleepManager::sleep`] keeps `esp_deep_sleep_start()`, which sleeps and wakes again
 //! at once in that case.
 //!
@@ -127,23 +130,15 @@
 
 use esp_idf_hal::sys;
 
-#[cfg(not(all(
-    esp_idf_soc_gpio_support_deepsleep_wakeup,
-    not(esp_idf_soc_pm_support_ext1_wakeup)
-)))]
-use stoker::sleep::validate_gpio_level_source;
-#[cfg(esp32)]
-use stoker::sleep::wake_pins_all_low;
 #[cfg(any(esp32, esp32s3))]
-use stoker::sleep::{digital_hold_effective, wake_pins_asserted};
-#[cfg(all(
-    esp_idf_soc_gpio_support_deepsleep_wakeup,
-    not(esp_idf_soc_pm_support_ext1_wakeup)
-))]
-use stoker::sleep::{validate_gpio_level_source_against, ESP32C3_WAKE_PIN_MASK};
+use stoker::sleep::digital_hold_effective;
 use stoker::sleep::{
-    validate_wake_sources, Error, GpioWakeLevel, GpioWakeMask, SleepError, SleepErrorKind,
-    SleepManager, WakeCause, WakeCauseSource, WakeSource, MAX_TIMER_MS,
+    Error, GpioWakeLevel, GpioWakeMask, SleepError, SleepErrorKind, SleepManager, WakeCause,
+    WakeCauseSource, WakeSource, MAX_TIMER_MS,
+};
+use stoker::{
+    arm_transactionally, drive, ChipPolicy, DriveError, Entered, SleepAttemptMachine,
+    SleepAttemptPort, SleepPlan, WakeArmOps,
 };
 
 /// Error returned by [`EspSleepManager`].
@@ -261,25 +256,30 @@ impl Default for EspSleepManager {
 }
 
 impl EspSleepManager {
-    /// Validate `sources`, clear previous wake sources and configure the new ones.
+    /// Validates, then applies the wake configuration of `plan` through
+    /// [`arm_transactionally`].
     ///
-    /// The whole request is validated before the first ESP-IDF call, so a
-    /// [`EspSleepError::Config`] error leaves the wake configuration untouched.
-    fn configure(&self, sources: &[WakeSource]) -> Result<(), EspSleepError> {
-        validate_wake_sources(sources)?;
-
-        let mut has_gpio_level = false;
-        for source in sources {
-            if let WakeSource::GpioLevel { pin_mask, .. } = source {
-                validate_gpio_wake_mask(*pin_mask)?;
-                has_gpio_level = true;
-            }
-        }
-
-        if has_gpio_level && self.isolate_gpio {
+    /// The plan comes from [`SleepAttemptMachine::new`], which validated the whole request;
+    /// the isolation check here is the last validation and touches no hardware.
+    /// A failing SDK call after that starts the shared rollback, which attempts to disarm
+    /// every wake source (the `SleepAttemptPort::arm` contract); the SDK error is returned.
+    fn configure(&self, plan: SleepPlan) -> Result<(), EspSleepError> {
+        if plan.has_pins() && self.isolate_gpio {
             return Err(SleepError::IsolationConflict.into());
         }
+        arm_transactionally(&mut IdfWakeArmOps { manager: self }, plan)
+    }
+}
 
+/// ESP-IDF SDK calls of one transactional arm; order and rollback are `stoker`'s.
+struct IdfWakeArmOps<'a> {
+    manager: &'a EspSleepManager,
+}
+
+impl WakeArmOps for IdfWakeArmOps<'_> {
+    type Error = EspSleepError;
+
+    fn clear(&mut self, keep_pins: u64) -> Result<(), EspSleepError> {
         // Clear any wake sources left over from a previous sleep cycle so the
         // caller gets deterministic behaviour regardless of prior state.
         //
@@ -301,12 +301,8 @@ impl EspSleepManager {
             not(esp_idf_soc_pm_support_ext1_wakeup)
         )))]
         {
-            // SAFETY: esp_sleep_disable_ext1_wakeup_io with a zero mask writes only
-            // the SDK's static s_config fields (mask and trigger mode) and clears
-            // the RTC_EXT1_TRIG_EN bit the disable-all already cleared
-            // (sleep_modes.c:1817-1843); safe to call before deep sleep entry.
-            let ret = unsafe { sys::esp_sleep_disable_ext1_wakeup_io(0) };
-            check(ret, "clearing stale EXT1 wake state")?;
+            let _ = keep_pins;
+            clear_ext1_state("clearing stale EXT1 wake state")?;
         }
 
         // The disable-all above does not undo per-pin deep-sleep GPIO arming on
@@ -315,93 +311,95 @@ impl EspSleepManager {
             esp_idf_soc_gpio_support_deepsleep_wakeup,
             not(esp_idf_soc_pm_support_ext1_wakeup)
         ))]
-        disarm_unused_gpio_wake_pins(sources)?;
+        disarm_unused_gpio_wake_pins(keep_pins)?;
 
-        for source in sources {
-            match source {
-                WakeSource::Timer { duration_ms } => {
-                    // Unreachable after validate_wake_sources caps the duration at
-                    // MAX_TIMER_MS; the arithmetic stays checked.
-                    let duration_us =
-                        duration_ms
-                            .checked_mul(1_000)
-                            .ok_or(SleepError::TimerTooLong {
-                                duration_ms: *duration_ms,
-                                max_ms: MAX_TIMER_MS,
-                            })?;
-                    // SAFETY: esp_sleep_enable_timer_wakeup configures the RTC
-                    // timer wakeup source. Safe to call before deep sleep entry;
-                    // duration_us has been validated above.
-                    let ret = unsafe { sys::esp_sleep_enable_timer_wakeup(duration_us) };
-                    check(ret, "configuring timer wakeup")?;
-                    log::info!("Sleep: timer wake configured for {}ms", duration_ms);
+        Ok(())
+    }
+
+    fn arm_timer(&mut self, duration_ms: u64) -> Result<(), EspSleepError> {
+        // Unreachable after SleepAttemptMachine::new caps the duration at
+        // MAX_TIMER_MS; the arithmetic stays checked.
+        let duration_us = duration_ms
+            .checked_mul(1_000)
+            .ok_or(SleepError::TimerTooLong {
+                duration_ms,
+                max_ms: MAX_TIMER_MS,
+            })?;
+        // SAFETY: esp_sleep_enable_timer_wakeup configures the RTC
+        // timer wakeup source. Safe to call before deep sleep entry;
+        // duration_us has been validated above.
+        let ret = unsafe { sys::esp_sleep_enable_timer_wakeup(duration_us) };
+        check(ret, "configuring timer wakeup")?;
+        log::info!("Sleep: timer wake configured for {}ms", duration_ms);
+        Ok(())
+    }
+
+    #[cfg(all(
+        esp_idf_soc_gpio_support_deepsleep_wakeup,
+        not(esp_idf_soc_pm_support_ext1_wakeup)
+    ))]
+    fn arm_pins(&mut self, pin_mask: u64, level: GpioWakeLevel) -> Result<(), EspSleepError> {
+        let mode = match level {
+            GpioWakeLevel::AnyHigh => {
+                sys::esp_deepsleep_gpio_wake_up_mode_t_ESP_GPIO_WAKEUP_GPIO_HIGH
+            }
+            GpioWakeLevel::AnyLow => {
+                sys::esp_deepsleep_gpio_wake_up_mode_t_ESP_GPIO_WAKEUP_GPIO_LOW
+            }
+        };
+        // SAFETY: esp_deep_sleep_enable_gpio_wakeup() arms the per-pin
+        // deep-sleep GPIO wake enable and ORs the pins into the SDK's wake
+        // mask (sleep_modes.c:1980-2011). pin_mask has been validated
+        // against GPIO0-5 and is non-zero. Must be called after disable-all
+        // and before deep sleep entry.
+        let ret = unsafe { sys::esp_deep_sleep_enable_gpio_wakeup(pin_mask, mode) };
+        check(ret, "configuring GPIO deep-sleep wakeup")?;
+        log::info!(
+            "Sleep: GPIO deep-sleep wake configured (mask: 0x{:x}, level: {:?})",
+            pin_mask,
+            level
+        );
+        Ok(())
+    }
+
+    #[cfg(not(all(
+        esp_idf_soc_gpio_support_deepsleep_wakeup,
+        not(esp_idf_soc_pm_support_ext1_wakeup)
+    )))]
+    fn arm_pins(&mut self, pin_mask: u64, level: GpioWakeLevel) -> Result<(), EspSleepError> {
+        let mode = match level {
+            GpioWakeLevel::AnyHigh => sys::esp_sleep_ext1_wakeup_mode_t_ESP_EXT1_WAKEUP_ANY_HIGH,
+            GpioWakeLevel::AnyLow => {
+                // ESP_EXT1_WAKEUP_ANY_LOW is only available on ESP32-S3 and
+                // newer chips. The original ESP32 only exposes ALL_LOW, which is
+                // equivalent to any-low for the single pin that SleepAttemptMachine::new
+                // lets through there (multi-pin AnyLow is rejected on that chip).
+                #[cfg(esp32)]
+                {
+                    sys::esp_sleep_ext1_wakeup_mode_t_ESP_EXT1_WAKEUP_ALL_LOW
                 }
-                #[cfg(all(
-                    esp_idf_soc_gpio_support_deepsleep_wakeup,
-                    not(esp_idf_soc_pm_support_ext1_wakeup)
-                ))]
-                WakeSource::GpioLevel { pin_mask, level } => {
-                    let mode = match level {
-                        GpioWakeLevel::AnyHigh => {
-                            sys::esp_deepsleep_gpio_wake_up_mode_t_ESP_GPIO_WAKEUP_GPIO_HIGH
-                        }
-                        GpioWakeLevel::AnyLow => {
-                            sys::esp_deepsleep_gpio_wake_up_mode_t_ESP_GPIO_WAKEUP_GPIO_LOW
-                        }
-                    };
-                    // SAFETY: esp_deep_sleep_enable_gpio_wakeup() arms the per-pin
-                    // deep-sleep GPIO wake enable and ORs the pins into the SDK's wake
-                    // mask (sleep_modes.c:1980-2011). pin_mask has been validated
-                    // against GPIO0-5 and is non-zero. Must be called after disable-all
-                    // and before deep sleep entry.
-                    let ret = unsafe { sys::esp_deep_sleep_enable_gpio_wakeup(*pin_mask, mode) };
-                    check(ret, "configuring GPIO deep-sleep wakeup")?;
-                    log::info!(
-                        "Sleep: GPIO deep-sleep wake configured (mask: 0x{:x}, level: {:?})",
-                        pin_mask,
-                        level
-                    );
-                }
-                #[cfg(not(all(
-                    esp_idf_soc_gpio_support_deepsleep_wakeup,
-                    not(esp_idf_soc_pm_support_ext1_wakeup)
-                )))]
-                WakeSource::GpioLevel { pin_mask, level } => {
-                    let mode = match level {
-                        GpioWakeLevel::AnyHigh => {
-                            sys::esp_sleep_ext1_wakeup_mode_t_ESP_EXT1_WAKEUP_ANY_HIGH
-                        }
-                        GpioWakeLevel::AnyLow => {
-                            // ESP_EXT1_WAKEUP_ANY_LOW is only available on ESP32-S3 and
-                            // newer chips. The original ESP32 only exposes ALL_LOW (all
-                            // configured pins must be low simultaneously). The semantics
-                            // differ, but ALL_LOW is the closest available mode on ESP32.
-                            #[cfg(esp32)]
-                            {
-                                sys::esp_sleep_ext1_wakeup_mode_t_ESP_EXT1_WAKEUP_ALL_LOW
-                            }
-                            #[cfg(not(esp32))]
-                            {
-                                sys::esp_sleep_ext1_wakeup_mode_t_ESP_EXT1_WAKEUP_ANY_LOW
-                            }
-                        }
-                    };
-                    // SAFETY: esp_sleep_enable_ext1_wakeup_io() configures EXT1 wake
-                    // on RTC GPIOs. pin_mask has been validated against the chip's
-                    // wake-pin mask and is non-zero. Must be called after disable-all
-                    // and before deep sleep entry.
-                    let ret = unsafe { sys::esp_sleep_enable_ext1_wakeup_io(*pin_mask, mode) };
-                    check(ret, "configuring GPIO EXT1 wakeup")?;
-                    log::info!(
-                        "Sleep: EXT1 GPIO wake configured (mask: 0x{:x}, level: {:?})",
-                        pin_mask,
-                        level
-                    );
+                #[cfg(not(esp32))]
+                {
+                    sys::esp_sleep_ext1_wakeup_mode_t_ESP_EXT1_WAKEUP_ANY_LOW
                 }
             }
-        }
+        };
+        // SAFETY: esp_sleep_enable_ext1_wakeup_io() configures EXT1 wake
+        // on RTC GPIOs. pin_mask has been validated against the chip's
+        // wake-pin mask and is non-zero. Must be called after disable-all
+        // and before deep sleep entry.
+        let ret = unsafe { sys::esp_sleep_enable_ext1_wakeup_io(pin_mask, mode) };
+        check(ret, "configuring GPIO EXT1 wakeup")?;
+        log::info!(
+            "Sleep: EXT1 GPIO wake configured (mask: 0x{:x}, level: {:?})",
+            pin_mask,
+            level
+        );
+        Ok(())
+    }
 
-        if self.isolate_gpio {
+    fn finish(&mut self) -> Result<(), EspSleepError> {
+        if self.manager.isolate_gpio {
             // SAFETY: esp_sleep_config_gpio_isolate isolates all digital GPIO
             // pins to prevent floating inputs from leaking current during sleep.
             // Returns void in ESP-IDF v5.x. Must be called after wake sources
@@ -410,33 +408,73 @@ impl EspSleepManager {
                 sys::esp_sleep_config_gpio_isolate();
             }
         }
-
         Ok(())
+    }
+
+    fn undo_sources(&mut self) -> Result<(), EspSleepError> {
+        // SAFETY: as in `clear`; disabling every wake source is safe at any time
+        // before deep sleep entry.
+        let ret = unsafe {
+            sys::esp_sleep_disable_wakeup_source(sys::esp_sleep_source_t_ESP_SLEEP_WAKEUP_ALL)
+        };
+        let all = check(ret, "rolling back wake sources");
+        #[cfg(not(all(
+            esp_idf_soc_gpio_support_deepsleep_wakeup,
+            not(esp_idf_soc_pm_support_ext1_wakeup)
+        )))]
+        let all = all.and(clear_ext1_state("rolling back EXT1 wake state"));
+        all
+    }
+
+    fn armed_pins(&mut self) -> u64 {
+        #[cfg(all(
+            esp_idf_soc_gpio_support_deepsleep_wakeup,
+            not(esp_idf_soc_pm_support_ext1_wakeup)
+        ))]
+        {
+            armed_gpio_wake_pins()
+        }
+        // EXT1 chips have no per-pin enable to undo; `undo_sources` cleared EXT1.
+        #[cfg(not(all(
+            esp_idf_soc_gpio_support_deepsleep_wakeup,
+            not(esp_idf_soc_pm_support_ext1_wakeup)
+        )))]
+        {
+            0
+        }
+    }
+
+    fn undo_pin(&mut self, pin: u8) -> Result<(), EspSleepError> {
+        #[cfg(all(
+            esp_idf_soc_gpio_support_deepsleep_wakeup,
+            not(esp_idf_soc_pm_support_ext1_wakeup)
+        ))]
+        {
+            disarm_gpio_wake_pin(u32::from(pin), "rolling back GPIO wake pin")
+        }
+        #[cfg(not(all(
+            esp_idf_soc_gpio_support_deepsleep_wakeup,
+            not(esp_idf_soc_pm_support_ext1_wakeup)
+        )))]
+        {
+            let _ = pin;
+            Ok(())
+        }
     }
 }
 
-/// Validates a `GpioLevel` pin mask against the chip's deep-sleep wake pins.
-///
-/// C2/C3 use the GPIO0-5 constant explicitly: stoker's `build.rs` sets no cfg for
-/// riscv targets, so `validate_gpio_level_source` would pick the S3 mask there.
-#[cfg(all(
-    esp_idf_soc_gpio_support_deepsleep_wakeup,
-    not(esp_idf_soc_pm_support_ext1_wakeup)
-))]
-fn validate_gpio_wake_mask(pin_mask: u64) -> Result<(), SleepError> {
-    validate_gpio_level_source_against(pin_mask, ESP32C3_WAKE_PIN_MASK)
-}
-
-/// Validates a `GpioLevel` pin mask against the EXT1 wake pins of the chip.
-///
-/// The valid mask is chip-specific (ESP32 vs ESP32-S3, selected by the `esp32` cfg);
-/// see `validate_gpio_level_source`.
+/// Clears the SDK's EXT1 pin mask and trigger mode.
 #[cfg(not(all(
     esp_idf_soc_gpio_support_deepsleep_wakeup,
     not(esp_idf_soc_pm_support_ext1_wakeup)
 )))]
-fn validate_gpio_wake_mask(pin_mask: u64) -> Result<(), SleepError> {
-    validate_gpio_level_source(pin_mask)
+fn clear_ext1_state(what: &str) -> Result<(), EspSleepError> {
+    // SAFETY: esp_sleep_disable_ext1_wakeup_io with a zero mask writes only
+    // the SDK's static s_config fields (mask and trigger mode) and clears
+    // the RTC_EXT1_TRIG_EN bit the disable-all already cleared
+    // (sleep_modes.c:1817-1843); safe to call before deep sleep entry.
+    let ret = unsafe { sys::esp_sleep_disable_ext1_wakeup_io(0) };
+    check(ret, what)
 }
 
 /// Mask of the C2/C3 pins whose deep-sleep wake enable bit is set in
@@ -478,26 +516,28 @@ fn armed_gpio_wake_pins() -> u64 {
     esp_idf_soc_gpio_support_deepsleep_wakeup,
     not(esp_idf_soc_pm_support_ext1_wakeup)
 ))]
-fn disarm_unused_gpio_wake_pins(sources: &[WakeSource]) -> Result<(), EspSleepError> {
-    let keep = sources
-        .iter()
-        .find_map(|source| match source {
-            WakeSource::GpioLevel { pin_mask, .. } => Some(*pin_mask),
-            WakeSource::Timer { .. } => None,
-        })
-        .unwrap_or(0);
+fn disarm_unused_gpio_wake_pins(keep: u64) -> Result<(), EspSleepError> {
     let disarm = armed_gpio_wake_pins() & !keep;
     for pin in 0..6u32 {
         if disarm & (1u64 << pin) == 0 {
             continue;
         }
-        // SAFETY: gpio_deep_sleep_wakeup_disable() clears the pin's hardware wake
-        // enable and restores its sleep-select (gpio.c:1001-1017); called only on a
-        // pin that is armed for wake. Pins 0-5 are valid GPIO numbers on C2/C3.
-        let ret = unsafe { sys::gpio_deep_sleep_wakeup_disable(pin as sys::gpio_num_t) };
-        check(ret, "disarming unused GPIO wake pin")?;
+        disarm_gpio_wake_pin(pin, "disarming unused GPIO wake pin")?;
     }
     Ok(())
+}
+
+/// Clears one C2/C3 pin's deep-sleep wake enable.
+#[cfg(all(
+    esp_idf_soc_gpio_support_deepsleep_wakeup,
+    not(esp_idf_soc_pm_support_ext1_wakeup)
+))]
+fn disarm_gpio_wake_pin(pin: u32, what: &str) -> Result<(), EspSleepError> {
+    // SAFETY: gpio_deep_sleep_wakeup_disable() clears the pin's hardware wake
+    // enable and restores its sleep-select (gpio.c:1001-1017); called only on a
+    // pin that is armed for wake. Pins 0-5 are valid GPIO numbers on C2/C3.
+    let ret = unsafe { sys::gpio_deep_sleep_wakeup_disable(pin as sys::gpio_num_t) };
+    check(ret, what)
 }
 
 /// IO_MUX register of each C2/C3 deep-sleep wake pin, GPIO0-5 (same offsets on both chips).
@@ -514,131 +554,201 @@ const WAKE_PIN_IO_MUX_REGS: [u32; 6] = [
     sys::PERIPHS_IO_MUX_MTDI_U,
 ];
 
-/// Returns `true` when a C2/C3 `GpioLevel` wake pin is already at its wake level.
+/// Chip policy of this build for [`SleepAttemptMachine`].
 ///
-/// The C2/C3 hardware does not reject deep sleep for such a pin: the chip sleeps and
-/// wakes again at once (bench H1), so [`try_sleep`][SleepManager::try_sleep] reads the
-/// pins itself. Only pins with the pad input enable set are read, because
-/// `gpio_get_level` returns 0 for a pad without it; a pin without input enable is
-/// skipped with a warning.
+/// ESP32-C2 shares the C3 row (same guard); the ESP32-C6 has its own row, which never
+/// reads the pins in software. Other chips map to [`ChipPolicy::Other`].
+const fn chip_policy() -> ChipPolicy {
+    if cfg!(esp32) {
+        ChipPolicy::Esp32
+    } else if cfg!(esp32s3) {
+        ChipPolicy::Esp32S3
+    } else if cfg!(esp32c6) {
+        ChipPolicy::Esp32C6
+    } else if cfg!(all(
+        esp_idf_soc_gpio_support_deepsleep_wakeup,
+        not(esp_idf_soc_pm_support_ext1_wakeup)
+    )) {
+        ChipPolicy::Esp32C3
+    } else {
+        ChipPolicy::Other
+    }
+}
+
+/// IO_MUX register of a wake pin; the pin was validated against the chip's wake pins.
 #[cfg(all(
     esp_idf_soc_gpio_support_deepsleep_wakeup,
     not(esp_idf_soc_pm_support_ext1_wakeup)
 ))]
-fn gpio_wake_pins_asserted(sources: &[WakeSource]) -> bool {
-    // validate_wake_sources allows at most one GpioLevel source.
-    let Some((pin_mask, level)) = sources.iter().find_map(|source| match source {
-        WakeSource::GpioLevel { pin_mask, level } => Some((*pin_mask, *level)),
-        WakeSource::Timer { .. } => None,
-    }) else {
-        return false;
-    };
-    let wake_level = match level {
-        GpioWakeLevel::AnyHigh => 1,
-        GpioWakeLevel::AnyLow => 0,
-    };
-    for (pin, &mux_reg) in WAKE_PIN_IO_MUX_REGS.iter().enumerate() {
-        if pin_mask & (1u64 << pin) == 0 {
-            continue;
-        }
-        // SAFETY: mux_reg is the always-mapped IO_MUX register of GPIO0-5 on C2/C3
-        // (io_mux_reg.h); a volatile 32-bit read has no side effects. The input enable
-        // is bit FUN_IE_S, the bit gpio_ll_input_enable sets.
-        let mux = unsafe { core::ptr::read_volatile(mux_reg as *const u32) };
-        if mux & (1 << sys::FUN_IE_S) == 0 {
-            log::warn!(
-                "Sleep: GPIO{} has no input enable; its level is not checked before sleep",
-                pin
-            );
-            continue;
-        }
-        // SAFETY: gpio_get_level only reads GPIO_IN_REG; pin is a valid GPIO number (0-5).
-        let read = unsafe { sys::gpio_get_level(pin as sys::gpio_num_t) };
-        if read == wake_level {
-            log::info!("Sleep: GPIO{} is already at its wake level", pin);
-            return true;
-        }
-    }
-    false
+fn wake_pin_mux_reg(pin: u32) -> u32 {
+    WAKE_PIN_IO_MUX_REGS[pin as usize]
 }
 
-/// Returns `true` when the global digital-pad hold is effective and a `GpioLevel` wake pin
-/// is already at its wake level (ESP32 and ESP32-S3).
+/// IO_MUX register of a wake pin; the pin was validated against the chip's RTC wake pins.
+#[cfg(not(all(
+    esp_idf_soc_gpio_support_deepsleep_wakeup,
+    not(esp_idf_soc_pm_support_ext1_wakeup)
+)))]
+fn wake_pin_mux_reg(pin: u32) -> u32 {
+    // SAFETY: the mask was validated against the chip's RTC wake pins, all below
+    // SOC_GPIO_PIN_COUNT, so the index is in range of the register table.
+    unsafe { sys::GPIO_PIN_MUX_REG[pin as usize] }
+}
+
+/// Reads the `GpioLevel` wake pins for [`SleepAttemptMachine`]; bit N set = GPIO N high.
 ///
-/// With the hold effective (`RTC_CNTL_DIG_ISO_REG` bit 11 set, bit 14 clear), sleep entry
-/// isolates every unheld digital pad and `esp_deep_sleep_try_to_start()` never returns
-/// when the hardware rejects the sleep (interrupt watchdog reset, bench R2-S3).
-/// Reading the pins first turns that hang into a software `Rejected`.
-/// Only pins with the pad input enable set are read, because `gpio_get_level` returns 0 for
-/// a pad without it; a pin without input enable is skipped with a warning.
-/// `AnyLow` on the original ESP32 is EXT1 `ALL_LOW`, so the guard asserts only when every
-/// masked pin is low and readable; elsewhere a skipped pin is just excluded.
-/// The read happens before the prepare hooks RTC-route the pins, so it sees the digital level.
-/// For the same reason the internal pull that sleep entry applies is not active yet: a wake
-/// pin needs an external bias (or a pull set on its digital driver) against its wake level,
-/// or a floating pin can read as asserted and every retry is rejected while the hardware
-/// would have slept.
-/// On the ESP32 with `AnyLow`, one skipped pin disables the guard for that request, so the
-/// hang protection is void until the pin has input enable.
-#[cfg(any(esp32, esp32s3))]
-fn held_wake_pins_asserted(sources: &[WakeSource]) -> bool {
-    // SAFETY: RTC_CNTL_DIG_ISO_REG is an always-mapped RTC_CNTL register on both chips
-    // (ESP32: base + 0x88, ESP32-S3: base + 0x94); a volatile 32-bit read has no side effects.
-    let dig_iso = unsafe { core::ptr::read_volatile(sys::RTC_CNTL_DIG_ISO_REG as *const u32) };
-    if !digital_hold_effective(dig_iso) {
-        return false;
-    }
-    // validate_wake_sources allows at most one GpioLevel source.
-    let Some((pin_mask, level)) = sources.iter().find_map(|source| match source {
-        WakeSource::GpioLevel { pin_mask, level } => Some((*pin_mask, *level)),
-        WakeSource::Timer { .. } => None,
-    }) else {
-        return false;
-    };
+/// Only pins with the pad input enable set are read, because `gpio_get_level` returns 0
+/// for a pad without it; a pin without input enable is skipped with a warning and
+/// reported at the level opposite to its wake level, which keeps it from tripping the
+/// guard (the guard is void for that pin).
+/// The read happens after the wake sources are configured but before sleep entry runs
+/// the prepare hooks that RTC-route the pins, so it sees the digital level.
+/// For the same reason the internal pull that sleep entry applies is not active yet: a
+/// wake pin needs an external bias (or a pull set on its digital driver) against its
+/// wake level, or a floating pin can read as asserted and every retry is rejected while
+/// the hardware would have slept.
+fn read_wake_pins(mask: u64, level: GpioWakeLevel) -> u64 {
     let mut levels = 0u64;
-    let mut checked = 0u64;
     for pin in 0..64u32 {
-        if pin_mask & (1u64 << pin) == 0 {
+        if mask & (1u64 << pin) == 0 {
             continue;
         }
-        // SAFETY: the mask was validated against the chip's RTC wake pins, all below
-        // SOC_GPIO_PIN_COUNT, so the index is in range of the register table.
-        let mux_reg = unsafe { sys::GPIO_PIN_MUX_REG[pin as usize] };
-        // SAFETY: each IO_MUX register in the table is always mapped; a volatile 32-bit read
-        // has no side effects. FUN_IE_S is the bit gpio_ll_input_enable sets.
-        let mux = unsafe { core::ptr::read_volatile(mux_reg as *const u32) };
+        // SAFETY: each IO_MUX register of a wake pin is always mapped; a volatile 32-bit
+        // read has no side effects. FUN_IE_S is the bit gpio_ll_input_enable sets.
+        let mux = unsafe { core::ptr::read_volatile(wake_pin_mux_reg(pin) as *const u32) };
         if mux & (1 << sys::FUN_IE_S) == 0 {
             log::warn!(
                 "Sleep: GPIO{} has no input enable; its level is not checked before sleep",
                 pin
             );
+            if level == GpioWakeLevel::AnyLow {
+                levels |= 1u64 << pin;
+            }
             continue;
         }
-        checked |= 1u64 << pin;
         // SAFETY: gpio_get_level only reads the GPIO input register; pin is a valid GPIO.
         if unsafe { sys::gpio_get_level(pin as sys::gpio_num_t) } != 0 {
             levels |= 1u64 << pin;
         }
     }
-    // The guard must match the hardware reject condition exactly, never be stricter, or a
-    // caller's retry loop would livelock. ESP32-S3 EXT1 is ANY_HIGH / ANY_LOW: a pin that
-    // could not be read is simply excluded. The original ESP32 uses ALL_LOW for `AnyLow`:
-    // a pin that could not be read has an unknown level, so all-low cannot be proven and
-    // the guard does not assert.
-    #[cfg(esp32)]
-    let asserted = match level {
-        GpioWakeLevel::AnyLow => checked == pin_mask && wake_pins_all_low(levels, pin_mask),
-        GpioWakeLevel::AnyHigh => wake_pins_asserted(levels, checked, level),
-    };
-    #[cfg(not(esp32))]
-    let asserted = wake_pins_asserted(levels, checked, level);
-    if asserted {
-        log::warn!(
-            "Sleep: wake pin already at its wake level with the global digital-pad hold \
-             effective; rejecting in software (a hardware reject would hang)"
-        );
+    levels
+}
+
+/// Reads whether the global digital-pad hold is effective (ESP32 and ESP32-S3).
+///
+/// With the hold effective (`RTC_CNTL_DIG_ISO_REG` bit 11 set, bit 14 clear), sleep entry
+/// isolates every unheld digital pad and `esp_deep_sleep_try_to_start()` never returns
+/// when the hardware rejects the sleep (interrupt watchdog reset, bench R2-S3).
+#[cfg(any(esp32, esp32s3))]
+fn read_hold_effective() -> bool {
+    // SAFETY: RTC_CNTL_DIG_ISO_REG is an always-mapped RTC_CNTL register on both chips
+    // (ESP32: base + 0x88, ESP32-S3: base + 0x94); a volatile 32-bit read has no side effects.
+    let dig_iso = unsafe { core::ptr::read_volatile(sys::RTC_CNTL_DIG_ISO_REG as *const u32) };
+    digital_hold_effective(dig_iso)
+}
+
+/// No other chip is given the hold read by [`chip_policy`].
+#[cfg(not(any(esp32, esp32s3)))]
+fn read_hold_effective() -> bool {
+    false
+}
+
+/// Best-effort restore of the request's wake pins as plain digital inputs after a
+/// hardware rejection (ADR-003 point 1).
+///
+/// The prepare hooks (ext1_wakeup_prepare / gpio_deep_sleep_wakeup_prepare) RTC-route
+/// and hold the wake pins before the reject decision (sleep_modes.c:840-850) and the
+/// deep-sleep reject tail undoes neither, so release them here: the hold alone blocks
+/// reconfiguration, and the RTC routing alone blocks gpio_get_level.
+///
+/// Deliberate exception to the module's error convention: the release is best-effort.
+/// The caller is owed kind Rejected; a release failure must not morph it into
+/// Platform, and a leftover hold is the previously shipped behaviour, so a failure is
+/// logged and the loop continues.
+#[cfg(not(all(
+    esp_idf_soc_gpio_support_deepsleep_wakeup,
+    not(esp_idf_soc_pm_support_ext1_wakeup)
+)))]
+fn release_wake_pins(pin_mask: u64) {
+    for pin in 0..64u32 {
+        if pin_mask & (1u64 << pin) == 0 {
+            continue;
+        }
+        // SAFETY: rtc_gpio_hold_dis releases the RTC pad hold that
+        // ext1_wakeup_prepare applied (rtcio_hal_hold_enable,
+        // sleep_modes.c:1874-1896); it is idempotent (a pure bit-clear)
+        // on an unheld pin. The mask was validated against the chip's
+        // RTC wake pins, so every pin is a valid RTC GPIO — including
+        // input-only pins 34-39 on the original ESP32, which
+        // gpio_hold_dis would refuse (GPIO_IS_VALID_OUTPUT_GPIO), hence
+        // the rtc_ variant here.
+        let ret = unsafe { sys::rtc_gpio_hold_dis(pin as sys::gpio_num_t) };
+        if ret != sys::ESP_OK {
+            log::warn!(
+                "Sleep: releasing RTC hold on GPIO{} failed: ESP-IDF error 0x{:08x}",
+                pin,
+                ret
+            );
+        }
+        // SAFETY: ext1_wakeup_prepare also RTC-routed the pad
+        // (rtcio_hal_function_select, MUX_SEL at sleep_modes.c:1890), which
+        // disconnects it from the digital domain even though the digital
+        // IO_MUX config is untouched — gpio_get_level would read garbage.
+        // rtc_gpio_deinit restores the digital routing (rtc_io.c:59-72; on
+        // S3/C6 it also balances the prepare hook's LP-IO clock enable);
+        // it does NOT release the hold, hence the hold_dis first, mirroring
+        // the boot-time release order (sleep_gpio.c:156-171). Idempotent on
+        // a digitally routed pin; the only failure is EINVAL on a non-RTC
+        // GPIO, which the validated mask rules out.
+        let ret = unsafe { sys::rtc_gpio_deinit(pin as sys::gpio_num_t) };
+        if ret != sys::ESP_OK {
+            log::warn!(
+                "Sleep: restoring digital routing on GPIO{} failed: ESP-IDF error 0x{:08x}",
+                pin,
+                ret
+            );
+        }
     }
-    asserted
+}
+
+/// Best-effort restore of the armed C2/C3 wake pins after a hardware rejection
+/// (ADR-003 point 1); see the EXT1 variant for the reasoning.
+/// The pins to restore are read back from the wake-enable register, not taken from the
+/// request, so only pins that are actually armed are touched.
+#[cfg(all(
+    esp_idf_soc_gpio_support_deepsleep_wakeup,
+    not(esp_idf_soc_pm_support_ext1_wakeup)
+))]
+fn release_wake_pins(_pin_mask: u64) {
+    let armed = armed_gpio_wake_pins();
+    for pin in 0..6u32 {
+        if armed & (1u64 << pin) == 0 {
+            continue;
+        }
+        // SAFETY: gpio_deep_sleep_wakeup_disable clears the pin's hardware
+        // wake enable and restores its sleep-select (gpio.c:1001-1017);
+        // called only on a pin whose armed bit is set — on an unarmed pin
+        // it would re-enable sleep-select. gpio_hold_dis releases the
+        // hold gpio_deep_sleep_wakeup_prepare applied (gpio_hold_en,
+        // sleep_modes.c:1953-1982); pins 0-5 are output-capable, so
+        // gpio_hold_dis is valid here (unlike input-only EXT1 pins).
+        let ret = unsafe { sys::gpio_deep_sleep_wakeup_disable(pin as sys::gpio_num_t) };
+        if ret != sys::ESP_OK {
+            log::warn!(
+                "Sleep: disarming GPIO wake pin {} failed: ESP-IDF error 0x{:08x}",
+                pin,
+                ret
+            );
+        }
+        let ret = unsafe { sys::gpio_hold_dis(pin as sys::gpio_num_t) };
+        if ret != sys::ESP_OK {
+            log::warn!(
+                "Sleep: releasing hold on GPIO{} failed: ESP-IDF error 0x{:08x}",
+                pin,
+                ret
+            );
+        }
+    }
 }
 
 impl SleepManager for EspSleepManager {
@@ -663,7 +773,8 @@ impl SleepManager for EspSleepManager {
     ///   wake-source configuration call failed.
     /// - The device does not enter sleep if an error is returned.
     fn sleep(&mut self, sources: &[WakeSource]) -> Result<(), EspSleepError> {
-        self.configure(sources)?;
+        let plan = SleepAttemptMachine::new(chip_policy(), sources)?.plan();
+        self.configure(plan)?;
 
         log::info!("Entering deep sleep");
 
@@ -703,9 +814,15 @@ impl SleepManager for EspSleepManager {
     ///   On ESP32-C2/C3 the hardware does not reject a held GPIO wake pin, so the
     ///   manager reads the `GpioLevel` pins right before sleep entry and returns this
     ///   error itself (same `code`); the wake sources stay configured and no pin is held.
+    ///   On C2/C3 the per-pin wake enable and the hold are cleared again, as after a hardware reject.
     ///   Only pins configured as inputs are read, and a pin needs an external bias
     ///   against the wake level, because the internal pull is applied after the read.
     ///   A pin that reaches its wake level after the read still wakes the chip at once.
+    ///   On the original ESP32 the manager reads the `GpioLevel` pins right before sleep
+    ///   entry on every attempt, whether or not the hold below is effective, and applies
+    ///   the same guard as the hardware (`AnyLow` with several pins is rejected there as
+    ///   `Unsupported`; one `AnyLow` pin uses EXT1 `ALL_LOW`, which is equivalent). This closes
+    ///   the earlier difference where only the hold case was guarded.
     ///   On ESP32 and ESP32-S3 the hardware never returns from a rejected sleep while the
     ///   global digital-pad hold is effective (`RTC_CNTL_DIG_ISO_REG` bit 11 set, bit 14
     ///   clear, for example after `gpio_deep_sleep_hold_en()`): sleep entry isolates every
@@ -717,34 +834,57 @@ impl SleepManager for EspSleepManager {
     ///   wake level after the read, and non-pin hardware rejections, can still hang while the
     ///   hold is effective.
     fn try_sleep(&mut self, sources: &[WakeSource]) -> Result<(), EspSleepError> {
-        self.configure(sources)?;
-
-        // The C2/C3 hardware does not reject a held GPIO wake pin; it sleeps and wakes
-        // at once. Read the pins as late as possible, right before sleep entry.
-        #[cfg(all(
-            esp_idf_soc_gpio_support_deepsleep_wakeup,
-            not(esp_idf_soc_pm_support_ext1_wakeup)
-        ))]
-        if gpio_wake_pins_asserted(sources) {
-            // Same shape as the hardware reject below: ESP_ERR_SLEEP_REJECT is
-            // ESP_ERR_INVALID_STATE in IDF v5.3.3, and bindgen exposes only the latter.
-            return Err(EspSleepError::Idf {
-                code: sys::ESP_ERR_INVALID_STATE,
-                kind: SleepErrorKind::Rejected,
-            });
+        // The machine decides when each step runs; this tier does the register reads,
+        // the sleep call and the pin release.
+        let machine = SleepAttemptMachine::new(chip_policy(), sources)?;
+        let mut port = IdfSleepPort {
+            manager: self,
+            level: machine.plan().level,
+            returned_code: None,
+        };
+        match drive(machine, &mut port) {
+            Ok(()) => Ok(()),
+            Err(DriveError::Arm(err)) => Err(err),
+            // Mapped by call site: any return from esp_deep_sleep_try_to_start is a
+            // rejection. ESP_ERR_SLEEP_REJECT aliases ESP_ERR_INVALID_STATE, so the code
+            // alone cannot identify it; a software reject uses the same code.
+            Err(DriveError::Rejected(kind)) => Err(EspSleepError::Idf {
+                code: port.returned_code.unwrap_or(sys::ESP_ERR_INVALID_STATE),
+                kind,
+            }),
+            // The port answers every action in phase, so this cannot happen.
+            Err(DriveError::Protocol) => Err(EspSleepError::Idf {
+                code: sys::ESP_FAIL,
+                kind: SleepErrorKind::Platform,
+            }),
         }
+    }
+}
 
-        // On ESP32 and ESP32-S3 a hardware reject never returns while the global
-        // digital-pad hold is effective; reject in software when a wake pin is asserted.
-        #[cfg(any(esp32, esp32s3))]
-        if held_wake_pins_asserted(sources) {
-            // Same shape as the hardware reject below (see the C2/C3 pre-read above).
-            return Err(EspSleepError::Idf {
-                code: sys::ESP_ERR_INVALID_STATE,
-                kind: SleepErrorKind::Rejected,
-            });
-        }
+/// IO of one [`try_sleep`][SleepManager::try_sleep] attempt for `stoker::drive`.
+struct IdfSleepPort<'a> {
+    manager: &'a EspSleepManager,
+    level: GpioWakeLevel,
+    /// The code of the sleep call that returned, if any; a software reject has none.
+    returned_code: Option<sys::esp_err_t>,
+}
 
+impl SleepAttemptPort for IdfSleepPort<'_> {
+    type Error = EspSleepError;
+
+    fn arm(&mut self, plan: SleepPlan) -> Result<(), EspSleepError> {
+        self.manager.configure(plan)
+    }
+
+    fn read_hold(&mut self) -> bool {
+        read_hold_effective()
+    }
+
+    fn read_pins(&mut self, mask: u64) -> u64 {
+        read_wake_pins(mask, self.level)
+    }
+
+    fn enter(&mut self) -> Entered {
         log::info!("Trying to enter deep sleep");
 
         // SAFETY: All wake sources have been configured above. GPIO pins are
@@ -753,118 +893,36 @@ impl SleepManager for EspSleepManager {
         // request is rejected.
         let code = unsafe { sys::esp_deep_sleep_try_to_start() };
         if code == sys::ESP_OK {
-            return Ok(());
+            Entered::Slept
+        } else {
+            self.returned_code = Some(code);
+            Entered::Returned
         }
+    }
 
-        // A hardware rejection leaves the wake pins held and (on EXT1 chips)
-        // RTC-routed: the prepare hooks (ext1_wakeup_prepare /
-        // gpio_deep_sleep_wakeup_prepare) apply both before the reject decision
-        // (sleep_modes.c:840-850), and the deep-sleep reject tail undoes neither.
-        // Release them here so the adapter meets the tier-parity postcondition
-        // (ADR-003 point 1): the request's wake pins are usable as plain digital
-        // inputs the moment this call returns — the hold alone blocks
-        // reconfiguration, and the RTC routing alone blocks gpio_get_level.
-        //
-        // Deliberate exception to the module's error convention: the release is
-        // best-effort. This path owes the caller kind Rejected; a release failure
-        // must not morph it into Platform, and a leftover hold is the previously
-        // shipped behaviour, so a best-effort release is a strict improvement.
-        // A failure is logged and the loop continues.
-        #[cfg(not(all(
+    fn release(&mut self, pins: u64) {
+        if pins == 0 {
+            // Timer-only plan: no pin was armed, held or RTC-routed, and the next attempt
+            // disables every wake source first, so there is nothing to undo.
+            return;
+        }
+        // On EXT1 chips the prepare hooks hold and RTC-route the pins only inside
+        // esp_deep_sleep_try_to_start, so a software reject (no returned code) left nothing
+        // to undo. On ESP32-C2/C3 `configure` already set the per-pin wake enable (and the
+        // sleep-select), so the disarm must run on a software reject too.
+        let c2_c3 = cfg!(all(
             esp_idf_soc_gpio_support_deepsleep_wakeup,
             not(esp_idf_soc_pm_support_ext1_wakeup)
-        )))]
-        {
-            let pin_mask = sources
-                .iter()
-                .find_map(|source| match source {
-                    WakeSource::GpioLevel { pin_mask, .. } => Some(*pin_mask),
-                    WakeSource::Timer { .. } => None,
-                })
-                .unwrap_or(0);
-            for pin in 0..64u32 {
-                if pin_mask & (1u64 << pin) == 0 {
-                    continue;
-                }
-                // SAFETY: rtc_gpio_hold_dis releases the RTC pad hold that
-                // ext1_wakeup_prepare applied (rtcio_hal_hold_enable,
-                // sleep_modes.c:1874-1896); it is idempotent (a pure bit-clear)
-                // on an unheld pin. The mask was validated against the chip's
-                // RTC wake pins, so every pin is a valid RTC GPIO — including
-                // input-only pins 34-39 on the original ESP32, which
-                // gpio_hold_dis would refuse (GPIO_IS_VALID_OUTPUT_GPIO), hence
-                // the rtc_ variant here.
-                let ret = unsafe { sys::rtc_gpio_hold_dis(pin as sys::gpio_num_t) };
-                if ret != sys::ESP_OK {
-                    log::warn!(
-                        "Sleep: releasing RTC hold on GPIO{} failed: ESP-IDF error 0x{:08x}",
-                        pin,
-                        ret
-                    );
-                }
-                // SAFETY: ext1_wakeup_prepare also RTC-routed the pad
-                // (rtcio_hal_function_select, MUX_SEL at sleep_modes.c:1890), which
-                // disconnects it from the digital domain even though the digital
-                // IO_MUX config is untouched — gpio_get_level would read garbage.
-                // rtc_gpio_deinit restores the digital routing (rtc_io.c:59-72; on
-                // S3/C6 it also balances the prepare hook's LP-IO clock enable);
-                // it does NOT release the hold, hence the hold_dis first, mirroring
-                // the boot-time release order (sleep_gpio.c:156-171). Idempotent on
-                // a digitally routed pin; the only failure is EINVAL on a non-RTC
-                // GPIO, which the validated mask rules out.
-                let ret = unsafe { sys::rtc_gpio_deinit(pin as sys::gpio_num_t) };
-                if ret != sys::ESP_OK {
-                    log::warn!(
-                        "Sleep: restoring digital routing on GPIO{} failed: ESP-IDF error 0x{:08x}",
-                        pin,
-                        ret
-                    );
-                }
-            }
+        ));
+        if self.returned_code.is_some() || c2_c3 {
+            release_wake_pins(pins);
         }
-        #[cfg(all(
-            esp_idf_soc_gpio_support_deepsleep_wakeup,
-            not(esp_idf_soc_pm_support_ext1_wakeup)
-        ))]
-        {
-            let armed = armed_gpio_wake_pins();
-            for pin in 0..6u32 {
-                if armed & (1u64 << pin) == 0 {
-                    continue;
-                }
-                // SAFETY: gpio_deep_sleep_wakeup_disable clears the pin's hardware
-                // wake enable and restores its sleep-select (gpio.c:1001-1017);
-                // called only on a pin whose armed bit is set — on an unarmed pin
-                // it would re-enable sleep-select. gpio_hold_dis releases the
-                // hold gpio_deep_sleep_wakeup_prepare applied (gpio_hold_en,
-                // sleep_modes.c:1953-1982); pins 0-5 are output-capable, so
-                // gpio_hold_dis is valid here (unlike input-only EXT1 pins).
-                let ret = unsafe { sys::gpio_deep_sleep_wakeup_disable(pin as sys::gpio_num_t) };
-                if ret != sys::ESP_OK {
-                    log::warn!(
-                        "Sleep: disarming GPIO wake pin {} failed: ESP-IDF error 0x{:08x}",
-                        pin,
-                        ret
-                    );
-                }
-                let ret = unsafe { sys::gpio_hold_dis(pin as sys::gpio_num_t) };
-                if ret != sys::ESP_OK {
-                    log::warn!(
-                        "Sleep: releasing hold on GPIO{} failed: ESP-IDF error 0x{:08x}",
-                        pin,
-                        ret
-                    );
-                }
-            }
+        if self.returned_code.is_none() {
+            log::warn!(
+                "Sleep: wake pin already at its wake level; rejecting in software \
+                 (the hardware would hang or sleep and wake at once)"
+            );
         }
-
-        // Mapped by call site: any return from esp_deep_sleep_try_to_start is a
-        // rejection. ESP_ERR_SLEEP_REJECT aliases ESP_ERR_INVALID_STATE, so the code
-        // alone cannot identify it.
-        Err(EspSleepError::Idf {
-            code,
-            kind: SleepErrorKind::Rejected,
-        })
     }
 }
 

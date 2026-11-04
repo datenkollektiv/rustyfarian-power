@@ -18,6 +18,7 @@ doc_flags   := "-p stoker --target " + host_target + " --no-deps"
 esp32s3_target := "xtensa-esp32s3-espidf"
 esp32_target   := "xtensa-esp32-espidf"
 c3_target      := "riscv32imc-esp-espidf"
+c6_target      := "riscv32imac-esp-espidf"
 hal_crate        := "-p rustyfarian-esp-hal-power"
 hal_c3_target    := "riscv32imc-unknown-none-elf"
 hal_c6_target    := "riscv32imac-unknown-none-elf"
@@ -59,6 +60,10 @@ check-esp32:
 check-c3:
     MCU=esp32c3 CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p rustyfarian-esp-idf-power --features critical-section-impl --target {{ c3_target }} --lib --example idf_c3_deep_sleep_gpio --example idf_c3_rtc_retention
 
+# check the ESP-IDF power crate and its C6 examples for the ESP32-C6 target (ESP32-C6-DevKitC-1, requires espup)
+check-c6:
+    MCU=esp32c6 CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p rustyfarian-esp-idf-power --features critical-section-impl --target {{ c6_target }} --lib --example idf_c6_deep_sleep_gpio --example idf_c6_rtc_retention
+
 # verify device-side rustdoc snippets type-check for the ESP32 target (requires espup)
 # run this whenever touching rust,ignore doc snippets or esp-idf-gated code
 check-docs-esp32:
@@ -73,6 +78,7 @@ check-hal:
     cargo check {{ hal_std }} {{ hal_crate }} --target {{ hal_s3_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32s3,unstable
     cargo check {{ hal_std }} {{ hal_crate }} --target {{ hal_s3_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32s3,unstable,examples --examples
     cargo check {{ hal_std }} {{ hal_crate }} --target {{ hal_esp32_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32,unstable,examples --examples
+    cargo check {{ hal_std }} {{ hal_crate }} --target {{ hal_c6_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32c6,unstable,examples --examples
     BENCH_CASE=H1 cargo check {{ hal_std }} {{ hal_crate }} --target {{ hal_c3_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32c3,unstable,examples,bench --examples
 
 # check the esp-hal crate for the ESP32-C3 only (fast; esp toolchain, no espup)
@@ -129,6 +135,18 @@ run-hal-c3 example features="esp32c3,unstable,examples": (build-example-hal-c3 e
 flash-hal-c3 example features="esp32c3,unstable,examples": (build-example-hal-c3 example features)
     espflash flash --chip esp32c3 {{ hal_dir }}/{{ hal_c3_target }}/release/examples/{{ example }}
 
+# build a named esp-hal example for C6 (no_std bare-metal, release optimization, optional features)
+build-example-hal-c6 example features="esp32c6,unstable,examples":
+    cargo build {{ hal_std }} {{ hal_crate }} --release --target {{ hal_c6_target }} --target-dir {{ hal_dir }} --no-default-features --features {{ features }} --example {{ example }}
+
+# build and flash a named esp-hal C6 example, then open serial monitor
+run-hal-c6 example features="esp32c6,unstable,examples": (build-example-hal-c6 example features)
+    espflash flash --monitor --chip esp32c6 {{ hal_dir }}/{{ hal_c6_target }}/release/examples/{{ example }}
+
+# build and flash a named esp-hal C6 example without opening the monitor (bench host scripts attach their own reader)
+flash-hal-c6 example features="esp32c6,unstable,examples": (build-example-hal-c6 example features)
+    espflash flash --chip esp32c6 {{ hal_dir }}/{{ hal_c6_target }}/release/examples/{{ example }}
+
 # build a named esp-hal example for ESP32 (no_std bare-metal, release optimization, optional features)
 build-example-hal-esp32 example features="esp32,unstable,examples":
     cargo build {{ hal_std }} {{ hal_crate }} --release --target {{ hal_esp32_target }} --target-dir {{ hal_dir }} --no-default-features --features {{ features }} --example {{ example }}
@@ -179,6 +197,7 @@ clippy-hal:
     cargo clippy {{ hal_std }} {{ hal_crate }} --target {{ hal_s3_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32s3,unstable -- -D warnings
     cargo clippy {{ hal_std }} {{ hal_crate }} --target {{ hal_s3_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32s3,unstable,examples --examples -- -D warnings
     cargo clippy {{ hal_std }} {{ hal_crate }} --target {{ hal_esp32_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32,unstable,examples --examples -- -D warnings
+    cargo clippy {{ hal_std }} {{ hal_crate }} --target {{ hal_c6_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32c6,unstable,examples --examples -- -D warnings
     BENCH_CASE=H1 cargo clippy {{ hal_std }} {{ hal_crate }} --target {{ hal_c3_target }} --target-dir {{ hal_dir }} --no-default-features --features esp32c3,unstable,examples,bench --examples -- -D warnings
 
 # run host-side unit tests (no ESP toolchain required)
@@ -264,14 +283,17 @@ clean:
 # CI: ESP-IDF tier on the C3: check, then link both C3 examples (requires espup)
 ci-c3: check-c3 (build-example "idf_c3_deep_sleep_gpio") (build-example "idf_c3_rtc_retention")
 
+# CI: ESP-IDF tier on the C6: check, then link both C6 examples (requires espup)
+ci-c6: check-c6 (build-example "idf_c6_deep_sleep_gpio") (build-example "idf_c6_rtc_retention")
+
 # CI: ESP-IDF tier on the S3: link all three S3 examples (requires espup)
 ci-s3: (build-example "idf_s3_rtc_retention") (build-example "idf_s3_deep_sleep_gpio") (build-example "idf_s3_power_rail_gate")
 
 # CI: ESP-IDF tier on the original ESP32, compile-only (no link build, hardware deferred; requires espup)
 ci-esp32: check-esp32
 
-# CI: esp-hal tier: check all four chips, then link the C3 and S3 examples plus one bench case (esp toolchain, no espup)
-ci-hal: check-hal (build-example-hal-c3 "hal_c3_deep_sleep_gpio") (build-example-hal-c3 "hal_c3_rtc_retention") (build-example-hal-s3 "hal_s3_deep_sleep_gpio") (build-example-hal-s3 "hal_s3_power_rail_gate")
+# CI: esp-hal tier: check all four chips, then link the C3, C6, ESP32 and S3 examples plus one bench case (esp toolchain, no espup)
+ci-hal: check-hal (build-example-hal-c3 "hal_c3_deep_sleep_gpio") (build-example-hal-c3 "hal_c3_rtc_retention") (build-example-hal-s3 "hal_s3_deep_sleep_gpio") (build-example-hal-s3 "hal_s3_power_rail_gate") (build-example-hal-s3 "hal_s3_battery") (build-example-hal-esp32 "hal_esp32_battery") (build-example-hal-esp32 "hal_esp32_deep_sleep_gpio") (build-example-hal-c6 "hal_c6_deep_sleep_gpio")
     BENCH_CASE=H1 just build-example-hal-c3 hal_c3_sleep_bench esp32c3,unstable,examples,bench
 
 # --- Composite ------------------------------------------------------------

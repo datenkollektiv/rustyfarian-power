@@ -38,7 +38,8 @@ use esp_hal::{
 };
 use esp_println::println;
 use rustyfarian_esp_hal_power::{
-    EspHalSleepManager, GatedSleep, GpioRailGate, PowerRailGate, SleepManager, WakeSource,
+    EspHalSleepManager, GatedSleep, GpioRailGate, HeltecV3Vext, PowerRailGate, SleepManager,
+    WakeSource,
 };
 
 const AWAKE_MS: u32 = 10_000;

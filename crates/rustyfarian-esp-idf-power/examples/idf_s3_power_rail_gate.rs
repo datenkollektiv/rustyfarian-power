@@ -54,8 +54,8 @@ use esp_idf_hal::delay::FreeRtos;
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_hal::sys;
 use rustyfarian_esp_idf_power::{
-    EspSleepManager, EspWakeCauseSource, GatedSleep, GpioRailGate, PowerRailGate, SleepManager,
-    WakeCause, WakeCauseSource, WakeSource,
+    EspSleepManager, EspWakeCauseSource, GatedSleep, GpioRailGate, HeltecV3Vext, PowerRailGate,
+    SleepManager, WakeCause, WakeCauseSource, WakeSource,
 };
 
 /// Time the rail stays in each state during the demo loop.

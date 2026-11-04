@@ -54,8 +54,10 @@
 //! | `TimerTooShort`, `TimerTooLong`                                          | `InvalidConfig` | Clamp the duration into the tier's range.                               |
 //! | `ForeignWakePin`                                                         | `InvalidConfig` | `unlisten` the named pad or bind it, then retry.                        |
 //! | `IsolationConflict`                                                      | `InvalidConfig` | Construct the manager with `isolate_gpio: false` for GPIO wake sources. |
+//! | `AnyLowMultiplePins`                                                     | `Unsupported`   | Name one pin for `AnyLow`, or use `AnyHigh`; the chip cannot wake on any of several low pins. |
 //! | `Rejected`                                                               | `Rejected`      | Wait until the wake source clears (e.g. PIR released), then retry.      |
 //! | `UartBusy`                                                               | `Platform`      | Stop or flush UART output before sleeping, then retry.                  |
+//! | `AttemptOutOfPhase`                                                      | `Platform`      | Adapter bug; log it and fall back to a reset.                           |
 //!
 //! Platform error types add their own `Platform` cases (for example `EspSleepError::Idf`
 //! when an ESP-IDF call fails): log it and fall back to a reset rather than staying awake on battery.
@@ -80,6 +82,9 @@
 //!
 //! The `EspSleepManager` and `EspWakeCauseSource` hardware drivers live in the
 //! companion `rustyfarian-esp-idf-power` crate.
+
+pub mod arm;
+pub mod attempt;
 
 /// The reason the device woke from sleep, or [`WakeCause::PowerOn`] on cold boot.
 ///
@@ -176,8 +181,9 @@ pub enum GpioWakeLevel {
     /// external device pulls LOW to trigger).
     ///
     /// **ESP32 (original) note:** `ESP_EXT1_WAKEUP_ANY_LOW` does not exist on
-    /// this chip; `ESP_EXT1_WAKEUP_ALL_LOW` (all configured pins must be low)
-    /// is used instead.
+    /// this chip, so `AnyLow` over several pins is rejected on both tiers
+    /// ([`SleepError::AnyLowMultiplePins`]).
+    /// A single pin wakes as `ESP_EXT1_WAKEUP_ALL_LOW`, which is equivalent for one pin.
     /// On ESP32-S3 and newer chips the true ANY_LOW semantics are used.
     AnyLow,
 }
@@ -292,6 +298,18 @@ pub enum SleepError {
     },
     /// A [`WakeSource::GpioLevel`] source was combined with GPIO isolation.
     IsolationConflict,
+    /// A [`WakeSource::GpioLevel`] with [`GpioWakeLevel::AnyLow`] named more than one pin on a
+    /// chip that cannot wake on any one of several low pins.
+    ///
+    /// The original ESP32 raises it on both tiers: its wake hardware (EXT1) combines
+    /// several low pads with AND. Raised by
+    /// [`SleepAttemptMachine::new`](crate::SleepAttemptMachine::new) where
+    /// [`ChipPolicy::any_low_multi_pin`](crate::ChipPolicy::any_low_multi_pin) is `false`.
+    AnyLowMultiplePins,
+    /// The tier fed the sleep attempt machine an input that did not fit its phase.
+    ///
+    /// An adapter bug, not a wake-source condition; returned by [`SleepManager::try_sleep`] only.
+    AttemptOutOfPhase,
 }
 
 impl core::fmt::Display for SleepError {
@@ -358,6 +376,15 @@ impl core::fmt::Display for SleepError {
                 "a GpioLevel wake source requires isolate_gpio: false; \
                  GPIO isolation prevents wake-capable pins from triggering"
             ),
+            Self::AnyLowMultiplePins => write!(
+                f,
+                "AnyLow wake on several pins is not supported on this tier and chip; \
+                 name a single pin or use AnyHigh"
+            ),
+            Self::AttemptOutOfPhase => write!(
+                f,
+                "sleep attempt aborted: the tier fed an out-of-phase input"
+            ),
         }
     }
 }
@@ -387,9 +414,9 @@ pub trait Error: core::fmt::Debug {
 pub enum SleepErrorKind {
     /// The request cannot be honoured as written on this chip and tier.
     InvalidConfig,
-    /// The tier does not implement the requested wake-source kind.
+    /// The chip cannot honour the requested wake-source combination.
     ///
-    /// Reserved: no [`SleepError`] variant maps to it in 0.3.0.
+    /// Only [`SleepError::AnyLowMultiplePins`] maps to it.
     Unsupported,
     /// The hardware refused to sleep because a wake source was already asserted.
     Rejected,
@@ -403,7 +430,7 @@ impl Error for SleepError {
     fn kind(&self) -> SleepErrorKind {
         match self {
             Self::Rejected => SleepErrorKind::Rejected,
-            Self::UartBusy { .. } => SleepErrorKind::Platform,
+            Self::UartBusy { .. } | Self::AttemptOutOfPhase => SleepErrorKind::Platform,
             // Listed one by one so a new variant forces a kind decision here.
             Self::GpioMaskZero
             | Self::GpioMaskOutOfRange { .. }
@@ -415,6 +442,7 @@ impl Error for SleepError {
             | Self::PinNotBound { .. }
             | Self::ForeignWakePin { .. }
             | Self::IsolationConflict => SleepErrorKind::InvalidConfig,
+            Self::AnyLowMultiplePins => SleepErrorKind::Unsupported,
         }
     }
 }
@@ -438,6 +466,10 @@ pub const ESP32C3_WAKE_PIN_MASK: u64 = 0x3F;
 pub const ESP32C6_WAKE_PIN_MASK: u64 = 0xFF;
 
 /// Validates the `pin_mask` field of a [`WakeSource::GpioLevel`] source.
+///
+/// Legacy path: it picks the chip mask from a build-script cfg.
+/// The tiers use [`attempt::ChipPolicy::wake_pin_mask`] instead, through
+/// [`SleepAttemptMachine::new`](attempt::SleepAttemptMachine::new); keep this for existing callers.
 ///
 /// This is a pure function with no hardware or ESP-IDF dependency.
 /// It is called by `EspSleepManager::sleep()` before any FFI call, and is
@@ -587,8 +619,8 @@ pub fn wake_pins_asserted(levels: u64, pin_mask: u64, level: GpioWakeLevel) -> b
 /// Returns `true` when every pin of a non-empty `pin_mask` is low.
 ///
 /// Pure function: `levels` has bit N set when GPIO N reads high.
-/// This is the original ESP32's EXT1 `ALL_LOW` reject condition, the one place where
-/// [`GpioWakeLevel::AnyLow`] means "all pins low" (see that variant).
+/// This is the EXT1 `ALL_LOW` condition; the attempt machine no longer uses it, because
+/// multi-pin `AnyLow` is rejected on the original ESP32.
 /// Pins outside `pin_mask` are ignored and an empty mask never asserts.
 #[must_use]
 pub fn wake_pins_all_low(levels: u64, pin_mask: u64) -> bool {
@@ -1098,6 +1130,9 @@ mod tests {
         let msg = SleepError::IsolationConflict.to_string();
         assert!(msg.contains("GpioLevel"), "unexpected: {msg}");
         assert!(msg.contains("isolate_gpio: false"), "unexpected: {msg}");
+        let msg = SleepError::AnyLowMultiplePins.to_string();
+        assert!(msg.contains("AnyLow"), "unexpected: {msg}");
+        assert!(msg.contains("single pin"), "unexpected: {msg}");
     }
 
     #[test]
@@ -1105,6 +1140,10 @@ mod tests {
         assert_eq!(SleepError::Rejected.kind(), SleepErrorKind::Rejected);
         assert_eq!(
             SleepError::UartBusy { uart: 0 }.kind(),
+            SleepErrorKind::Platform
+        );
+        assert_eq!(
+            SleepError::AttemptOutOfPhase.kind(),
             SleepErrorKind::Platform
         );
         let invalid = [
@@ -1131,6 +1170,10 @@ mod tests {
         for e in invalid {
             assert_eq!(e.kind(), SleepErrorKind::InvalidConfig, "{e:?}");
         }
+        assert_eq!(
+            SleepError::AnyLowMultiplePins.kind(),
+            SleepErrorKind::Unsupported
+        );
     }
 
     #[test]

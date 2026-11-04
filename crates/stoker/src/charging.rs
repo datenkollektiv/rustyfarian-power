@@ -4,10 +4,13 @@
 //! for detecting the charge trajectory of a connected LiPo battery.
 //!
 //! This module is hardware-independent and always compiled.
-//! The ESP-IDF hardware implementation (`EspChargingMonitor`) lives in the
-//! companion `rustyfarian-esp-idf-power` crate.
+//! [`GpioChargingMonitor`] is the GPIO-backed monitor, generic over
+//! `embedded_hal::digital::InputPin` (ADR-004 rung 1), so both tiers share one type.
+//! The ESP-IDF wrapper (`EspChargingMonitor`) lives in the companion `rustyfarian-esp-idf-power` crate.
 
 use core::fmt;
+
+use embedded_hal::digital::InputPin;
 
 /// The energy source driving the charge controller.
 ///
@@ -159,9 +162,133 @@ impl ChargingMonitor for NoopChargingMonitor {
     }
 }
 
+/// Classifies the STAT and VBUS pin levels of a charge controller.
+///
+/// Pure core of the GPIO charging monitors.
+/// `stat_low` is `true` when the open-drain STAT pin reads low, `vbus_high` when VBUS is present.
+/// STAT low with VBUS absent is the pathological combination and yields
+/// [`ChargingState::Unknown`]; the caller may log it.
+#[must_use]
+pub fn classify_charging(stat_low: bool, vbus_high: bool, source: ChargingSource) -> ChargingState {
+    match (stat_low, vbus_high) {
+        (true, true) => ChargingState::Charging { source },
+        (false, true) => ChargingState::Full,
+        (false, false) => ChargingState::NoBattery,
+        (true, false) => ChargingState::Unknown,
+    }
+}
+
+/// GPIO-backed [`ChargingMonitor`] for an MCP73831-style charge controller.
+///
+/// Reads a STAT pin (low means charging) and a VBUS-detect pin (high means present),
+/// then classifies them with [`classify_charging`].
+/// A pin read error yields [`ChargingState::Unknown`], because the trait is infallible.
+///
+/// Pin configuration (pull, direction) is the caller's job; this type only reads.
+///
+/// | STAT | VBUS | [`ChargingState`]         |
+/// |------|------|---------------------------|
+/// | LOW  | HIGH | `Charging { source }`     |
+/// | HIGH | HIGH | `Full`                    |
+/// | HIGH | LOW  | `NoBattery`               |
+/// | LOW  | LOW  | `Unknown` (not expected)  |
+pub struct GpioChargingMonitor<STAT: InputPin, VBUS: InputPin> {
+    stat: STAT,
+    vbus: VBUS,
+    source: ChargingSource,
+}
+
+impl<STAT: InputPin, VBUS: InputPin> GpioChargingMonitor<STAT, VBUS> {
+    /// Creates a monitor over two configured input pins.
+    ///
+    /// `source` is the charge source reported when STAT is low.
+    pub fn new(stat: STAT, vbus: VBUS, source: ChargingSource) -> Self {
+        Self { stat, vbus, source }
+    }
+}
+
+impl<STAT: InputPin, VBUS: InputPin> ChargingMonitor for GpioChargingMonitor<STAT, VBUS> {
+    fn read_charging_state(&mut self) -> ChargingState {
+        match (self.stat.is_low(), self.vbus.is_high()) {
+            (Ok(stat_low), Ok(vbus_high)) => classify_charging(stat_low, vbus_high, self.source),
+            _ => ChargingState::Unknown,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use embedded_hal::digital::{ErrorType, InputPin};
+
+    struct MockPin(Result<bool, ()>);
+
+    #[derive(Debug)]
+    struct MockErr;
+
+    impl embedded_hal::digital::Error for MockErr {
+        fn kind(&self) -> embedded_hal::digital::ErrorKind {
+            embedded_hal::digital::ErrorKind::Other
+        }
+    }
+
+    impl ErrorType for MockPin {
+        type Error = MockErr;
+    }
+
+    impl InputPin for MockPin {
+        fn is_high(&mut self) -> Result<bool, MockErr> {
+            self.0.map_err(|_| MockErr)
+        }
+        fn is_low(&mut self) -> Result<bool, MockErr> {
+            self.0.map(|h| !h).map_err(|_| MockErr)
+        }
+    }
+
+    fn read(stat: Result<bool, ()>, vbus: Result<bool, ()>) -> ChargingState {
+        GpioChargingMonitor::new(MockPin(stat), MockPin(vbus), ChargingSource::Usb)
+            .read_charging_state()
+    }
+
+    #[test]
+    fn gpio_monitor_four_combinations() {
+        assert_eq!(
+            read(Ok(false), Ok(true)),
+            ChargingState::Charging {
+                source: ChargingSource::Usb
+            }
+        );
+        assert_eq!(read(Ok(true), Ok(true)), ChargingState::Full);
+        assert_eq!(read(Ok(true), Ok(false)), ChargingState::NoBattery);
+        assert_eq!(read(Ok(false), Ok(false)), ChargingState::Unknown);
+    }
+
+    #[test]
+    fn gpio_monitor_pin_error_is_unknown() {
+        assert_eq!(read(Err(()), Ok(true)), ChargingState::Unknown);
+        assert_eq!(read(Ok(false), Err(())), ChargingState::Unknown);
+    }
+
+    #[test]
+    fn classify_charging_truth_table() {
+        let usb = ChargingSource::Usb;
+        assert_eq!(
+            classify_charging(true, true, usb),
+            ChargingState::Charging { source: usb }
+        );
+        assert_eq!(
+            classify_charging(true, true, ChargingSource::Solar),
+            ChargingState::Charging {
+                source: ChargingSource::Solar
+            }
+        );
+        assert_eq!(classify_charging(false, true, usb), ChargingState::Full);
+        assert_eq!(
+            classify_charging(false, false, usb),
+            ChargingState::NoBattery
+        );
+        assert_eq!(classify_charging(true, false, usb), ChargingState::Unknown);
+    }
 
     #[test]
     fn display_charging_usb() {

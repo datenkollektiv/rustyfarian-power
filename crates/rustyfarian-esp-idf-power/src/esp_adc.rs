@@ -12,7 +12,7 @@ use esp_idf_hal::adc::oneshot::{AdcChannelDriver, AdcDriver};
 use esp_idf_hal::adc::{AdcChannel, ADC1, ADCU1};
 use esp_idf_hal::gpio::ADCPin;
 
-use stoker::{BatteryConfig, BatteryMonitor, BatteryStatus};
+use stoker::{average_mv, BatteryConfig, BatteryMonitor, BatteryStatus};
 
 /// Battery monitor using ESP-IDF ADC oneshot driver.
 ///
@@ -79,28 +79,25 @@ where
 
     /// Read averaged ADC voltage in millivolts (before divider compensation).
     fn read_averaged_mv(&mut self) -> u16 {
-        let num_samples = self.config.samples.max(1) as u32;
-        let mut sum: u32 = 0;
-        let mut valid_count: u32 = 0;
+        let num_samples = self.config.samples.max(1) as usize;
+        let mut valid_count = 0;
 
-        for _ in 0..num_samples {
-            match self.channel.read() {
-                Ok(value) => {
-                    sum += value as u32;
-                    valid_count += 1;
-                }
-                Err(e) => {
-                    log::warn!("ADC read failed: {:?}", e);
-                }
+        let avg_mv = average_mv((0..num_samples).map(|_| match self.channel.read() {
+            Ok(value) => {
+                valid_count += 1;
+                Some(value)
             }
-        }
+            Err(e) => {
+                log::warn!("ADC read failed: {:?}", e);
+                None
+            }
+        }));
 
         if valid_count == 0 {
             log::error!("All ADC reads failed");
             return 0;
         }
 
-        let avg_mv = (sum / valid_count) as u16;
         log::debug!(
             "Battery ADC raw: {} mV ({}/{} samples)",
             avg_mv,

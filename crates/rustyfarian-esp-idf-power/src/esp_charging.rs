@@ -3,10 +3,10 @@
 //! Reads the MCP73831 STAT pin and a USB VBUS detect pin to determine
 //! the current charging state.
 
-use esp_idf_hal::gpio::{Input, InputPin, Level, OutputPin, PinDriver, Pull};
+use esp_idf_hal::gpio::{Input, InputPin, OutputPin, PinDriver, Pull};
 use esp_idf_hal::sys::EspError;
 
-use stoker::{ChargingMonitor, ChargingSource, ChargingState};
+use stoker::{ChargingMonitor, ChargingSource, ChargingState, GpioChargingMonitor};
 
 /// Charging monitor for boards with an MCP73831 charge controller.
 ///
@@ -45,9 +45,7 @@ use stoker::{ChargingMonitor, ChargingSource, ChargingState};
 /// Correlate with [`crate::BatteryMonitor::read`] if you need to tell them apart:
 /// a voltage ≥ 4.1 V suggests `Full`; a voltage below the minimum suggests no battery.
 pub struct EspChargingMonitor<'d> {
-    stat: PinDriver<'d, Input>,
-    vbus: PinDriver<'d, Input>,
-    source: ChargingSource,
+    inner: GpioChargingMonitor<PinDriver<'d, Input>, PinDriver<'d, Input>>,
 }
 
 impl<'d> EspChargingMonitor<'d> {
@@ -77,33 +75,19 @@ impl<'d> EspChargingMonitor<'d> {
         // VBUS is input-only on some targets (e.g. GPIO34 on original ESP32).
         // Pull::Floating avoids calling set_pull on a pin that does not support it.
         let vbus = PinDriver::input(vbus_pin, Pull::Floating)?;
-        Ok(Self { stat, vbus, source })
+        Ok(Self {
+            inner: GpioChargingMonitor::new(stat, vbus, source),
+        })
     }
 }
 
 impl ChargingMonitor for EspChargingMonitor<'_> {
     fn read_charging_state(&mut self) -> ChargingState {
-        let stat_level = self.stat.get_level();
-        let vbus_level = self.vbus.get_level();
-        log::debug!(
-            "ChargingMonitor: STAT={:?} VBUS={:?}",
-            stat_level,
-            vbus_level
-        );
-
-        let stat_low = stat_level == Level::Low;
-        let vbus_high = vbus_level == Level::High;
-
-        match (stat_low, vbus_high) {
-            (true, true) => ChargingState::Charging {
-                source: self.source,
-            },
-            (false, true) => ChargingState::Full,
-            (false, false) => ChargingState::NoBattery,
-            (true, false) => {
-                log::warn!("EspChargingMonitor: STAT LOW with VBUS absent — unexpected state");
-                ChargingState::Unknown
-            }
+        let state = self.inner.read_charging_state();
+        log::debug!("ChargingMonitor: state={:?}", state);
+        if state == ChargingState::Unknown {
+            log::warn!("EspChargingMonitor: unknown charging state (STAT LOW with VBUS absent, or pin read failed)");
         }
+        state
     }
 }

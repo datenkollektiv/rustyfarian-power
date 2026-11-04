@@ -66,6 +66,31 @@ jobs:
         uses: extractions/setup-just@v4
       - name: Check and link the C3 examples (ESP-IDF tier)
         run: just ci-c3
+  # Same toolchain as check-c3; a separate job so the C6 ESP-IDF build runs in parallel.
+  # Checks and links the two C6 examples (deep-sleep GPIO, RTC retention) via `just ci-c6`.
+  check-c6:
+    # Pinned to 24.04: see check-c3 (esp-clang libxml2 soname on ubuntu-latest).
+    runs-on: ubuntu-24.04
+    env:
+      RUSTUP_TOOLCHAIN: esp
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Setup ESP-RS toolchain
+        uses: esp-rs/xtensa-toolchain@v1.7.0
+        with:
+          default: true
+          ldproxy: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+      - name: Setup cargo config
+        run: cp .cargo/config.toml.dist .cargo/config.toml
+      - name: Setup just
+        uses: extractions/setup-just@v4
+      - name: Check and link the C6 examples (ESP-IDF tier)
+        run: just ci-c6
   # Same toolchain as check-c3; a separate job so the S3 ESP-IDF build runs in
   # parallel. Links all three S3 examples (retention, deep-sleep GPIO, power rail gate);
   # the S3 has no separate `check` step because the links compile the same code.

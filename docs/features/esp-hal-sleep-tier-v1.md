@@ -49,16 +49,19 @@ Facts verified 2026-10-12 against esp-hal 1.2.2 in the cargo registry (`sleep_de
 - [x] ADR `docs/adr/001-hal-neutral-sleep-contract.md` written (Proposed) with the spike result recorded; linked from parity v1
 - [x] ADR-001 review round 1 applied: validate-then-arm, interrupts masked across arm/sleep/cleanup, timer guarantee narrowed (spike attempt 3, `just check-hal-c3` exit 0)
 - [x] ADR-001 review round 2 applied: timer maximum, UART drain before arming, foreign-wake-pin rule (spike attempt 4, `just check-hal-c3` exit 0)
-- [ ] ADR-001 accepted (after the bench sets the timer constants and passes the § 4b-4d cases)
+- ADR-001 acceptance follows the final hardware pass, which sets the timer constants and runs the § 4b-4d cases
 - [ ] Three esp-rs issues filed (GPIO light-sleep-only doc, `rtc_fastmem_pd_en` unused on C3, C3 metadata lists Touch/Ulp)
   - `src/rtc_cntl/sleep/mod.rs:4-7` says GPIO wake is light-sleep only, but LP pads wake from deep sleep.
   - `RtcSleepConfig::deep()` sets `rtc_fastmem_pd_en` for the C3 (`sleep/esp32c3.rs:295`), but `apply()` never reads it.
   - `_generated_esp32c3.rs:862-875` lists `Touch` and `Ulp` wake sources the C3 does not have.
 - [x] `rustyfarian-esp-hal-power` sleep module: `SleepManager`, `WakeCauseSource`, `try_sleep` (C3 and S3, 2026-10-14; S3 bench in [esp32s3-deep-sleep-gpio-wake-v1](archive/esp32s3-deep-sleep-gpio-wake-v1.md))
 - [x] Example `hal_c3_deep_sleep_gpio`, twin of the IDF example, same wiring (built 2026-10-15 as part of plan item 1)
-- [ ] Hardware-validated on the C3 DevKitM-1: GPIO4 wake, timer fallback, bench cases `wake-pin-held-at-entry` (expect `Rejected`), `wake-cause-survives-rejection` (ADR-001 § 5), `held-level-custom-handler`, `rejection-retry-loop`, `short-timer-sweep` with queued UART output and GPIO plus timer, measuring guard-to-sleep-entry, and `foreign-wake-pin` (ADR-001 § 4b-4d)
+- [x] Sleep module on ESP32 (`CHIP_POLICY = Esp32`, guard `Always`, multi-pin `AnyLow` rejected as `AnyLowMultiplePins`) and ESP32-C6 (`Esp32C6`, guard `Never`, EXT1 mask `0xFF`), 2026-11-04; the hal C6 `ReadHold` answers `HoldEffective(false)` because the chip has no `dig_iso`
+- [x] Examples `hal_esp32_deep_sleep_gpio` (GPIO25 PIR, EXT1) and `hal_c6_deep_sleep_gpio` (GPIO2 PIR, EXT1, timer fallback), 2026-11-04
+- Hardware checks for the final pass: ESP32 timer and single-pin EXT1 wake (`Ext1`, bit 25); ESP32 held-pin `Rejected` and multi-pin `AnyLow` rejection; ESP32 UART2 drain; C6 timer wake (`reset=DeepSleep cause=Timer`); C6 EXT1 wake (`Ext1`, mask `0x4`); C6 held-pin test (`Never` or `Always`); C6 UART0/UART1 drain (`fsm_status` path unproven); regression on C3 and S3
+- Hardware validation: a single final pass follows the tier-parity changes, before the release; it is not a gate for this feature (C3 DevKitM-1): GPIO4 wake, timer fallback, bench cases `wake-pin-held-at-entry` (expect `Rejected`), `wake-cause-survives-rejection` (ADR-001 § 5), `held-level-custom-handler`, `rejection-retry-loop`, `short-timer-sweep` with queued UART output and GPIO plus timer, measuring guard-to-sleep-entry, and `foreign-wake-pin` (ADR-001 § 4b-4d)
 - [ ] Example documents GPIO4 = MTMS (JTAG) and the pull against the wake level
-- [ ] rustbox-spookhouse measures deep-sleep current on both stacks from the same wiring
+- rustbox-spookhouse measures deep-sleep current on both stacks from the same wiring, after the final hardware pass
 - [ ] Tests passing (`just verify`, hal check recipe)
 - [ ] CHANGELOG `[Unreleased]`: Added (hal sleep module)
 

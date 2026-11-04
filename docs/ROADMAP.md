@@ -1,6 +1,6 @@
 # Roadmap
 
-*Last updated: October 2026*
+*Last updated: November 2026*
 
 Charging detection and deep-sleep wake-source handling are working on both Heltec V3 and Adafruit Feather V2.
 The Feather V2 has a complete `EspChargingMonitor`; the Heltec V3 charging implementation is blocked on schematic verification of the charge controller IC and its GPIO — an inversion relative to the README's "primary target" framing that near-term work must resolve.
@@ -27,13 +27,17 @@ On 2026-10-12 rustbox-spookhouse filed three C3 sleep requests; all three have f
 timeline
     title rustyfarian-power Roadmap
 
-    Ready     : esp-hal parity v1 — no_std stoker, ADC battery + charging monitors on C3/C6/ESP32/S3, blocking + async (feature-doc)
+    Ready     : IDF C6 tier v1 — ESP-IDF tier on the ESP32-C6: EXT1 sleep, retention, CI link builds (feature-doc)
+              : Tier parity wave — esp-hal sleep, wake, reset, RTC clock and ADC monitor on ESP32 and C6; ADR-003 capability table (feature-doc)
+              : esp-hal parity v1 — no_std stoker, ADC battery + charging monitors on C3/C6/ESP32/S3, blocking + async (feature-doc)
               : esp-hal sleep tier v1 — ADR first, C3 sleep module in the hal crate before ADC, hal_c3_deep_sleep_gpio (feature-doc)
               : RTC retention v1 — validity-checked envelope in stoker, ResetReasonSource, .rtc_noinit + esp-hal placement (feature-doc)
               : esp-hal RTC clock v1 — EspHalRtcClock::now_us() with IDF-style tick accumulation in RTC memory, slept time drift-free across boots (feature-doc)
-              : Power rail gate v1 — PowerRailGate + sleep coordinator in stoker, GpioRailGate per tier, Heltec V3 Vext preset and bench (feature-doc)
+              : Power rail gate v1 — PowerRailGate + sleep coordinator in stoker, generic GpioRailGate in stoker (ADR-004 rung 1), Heltec V3 Vext preset per tier and bench (feature-doc)
+              : Sleep attempt machine v1 — sans-IO try_sleep core in stoker driven by both tiers, unified chip guard table, ADR-004 (feature-doc)
 
-    Near term : Verify Heltec V3 schematic — battery/USB power-path confirmed; VEXT = GPIO36 active-low (2026-10-24); still need charge-controller IC marking and CHRG/STAT GPIO
+    Near term : Final hardware pass before the release — C6 held-pin policy, ESP32 hal ADC vs IDF, EXT1 and RTC clock on both tiers (feature-docs)
+              : Verify Heltec V3 schematic — battery/USB power-path confirmed; VEXT = GPIO36 active-low (2026-10-24); still need charge-controller IC marking and CHRG/STAT GPIO
               : Add dual-target CI matrix — separate build jobs for xtensa-esp32s3-espidf and xtensa-esp32-espidf
               : Harden EspWakeCauseSource multi-source disambiguation
               : Calibration example — raw ADC readings with statistics

@@ -34,7 +34,7 @@
 //!
 //! # Scope and caveats
 //!
-//! - ESP32-C3 and ESP32-S3 only.
+//! - ESP32-C3, ESP32-C6, ESP32-S3 and ESP32 only.
 //! - Calling `Rtc::time_since_power_up()` as well is allowed but its values keep the drift.
 //!   On the S3, call it from one core only: both use the `time_update` latch.
 //! - The register paths (`RTC_TIMER` latch, `LPWR` `STORE1`) are esp-hal 1.2.2 internals, not public API.
@@ -43,8 +43,13 @@
 use core::cell::Cell;
 
 use critical_section::Mutex;
+#[cfg(not(feature = "esp32c6"))]
 use esp_hal::delay::Delay;
-use esp_hal::peripherals::{LPWR, RTC_TIMER};
+#[cfg(not(feature = "esp32c6"))]
+use esp_hal::peripherals::LPWR;
+#[cfg(feature = "esp32c6")]
+use esp_hal::peripherals::LP_AON;
+use esp_hal::peripherals::RTC_TIMER;
 use stoker::retain::Retainable;
 use stoker::rtc_clock::{Accum, Advance};
 use stoker::ResetReasonSource;
@@ -62,20 +67,52 @@ static RETAINED: RtcRetainedCell<{ <Accum as Retainable>::SIZE }> = RtcRetainedC
 static STATE: Mutex<Cell<Option<Accum>>> = Mutex::new(Cell::new(None));
 
 /// Snapshot of the 48-bit `RTC_TIMER` counter, latched the way `Rtc::time_since_boot_raw` does it.
+///
+/// The ESP32 needs the update request held for one slow-clock period (20 pulses of 1 us at
+/// 150 kHz), waits for `time_valid` and reads `time1`/`time0`; the other chips take 10 pulses.
 fn read_ticks() -> u64 {
     let rtc = RTC_TIMER::regs();
+    // The C6 latches with one write to `update`; the other chips hold `time_update`.
+    #[cfg(feature = "esp32c6")]
+    rtc.update().write(|w| w.main_timer_update().set_bit());
+    #[cfg(not(feature = "esp32c6"))]
     let delay = Delay::new();
-    for _ in 0..10 {
-        rtc.time_update().write(|w| w.time_update().set_bit());
-        delay.delay_micros(1);
+    #[cfg(not(feature = "esp32c6"))]
+    {
+        let pulses = if cfg!(feature = "esp32") { 20 } else { 10 };
+        for _ in 0..pulses {
+            rtc.time_update().write(|w| w.time_update().set_bit());
+            delay.delay_micros(1);
+        }
     }
-    let high = rtc.time_high0().read().timer_value0_high().bits();
-    let low = rtc.time_low0().read().timer_value0_low().bits();
+    #[cfg(feature = "esp32")]
+    let (high, low) = {
+        while rtc.time_update().read().time_valid().bit_is_clear() {
+            delay.delay_micros(1);
+        }
+        (
+            rtc.time1().read().time_hi().bits(),
+            rtc.time0().read().time_lo().bits(),
+        )
+    };
+    #[cfg(feature = "esp32c6")]
+    let (high, low) = (
+        rtc.main_buf0_high().read().main_timer_buf0_high().bits(),
+        rtc.main_buf0_low().read().main_timer_buf0_low().bits(),
+    );
+    #[cfg(not(any(feature = "esp32", feature = "esp32c6")))]
+    let (high, low) = (
+        rtc.time_high0().read().timer_value0_high().bits(),
+        rtc.time_low0().read().timer_value0_low().bits(),
+    );
     stoker::rtc_clock::compose_ticks(u32::from(high), low)
 }
 
 /// Calibrated slow-clock period in microseconds with 19 fractional bits (`STORE1`); 0 before calibration.
 fn read_period_q19() -> u32 {
+    #[cfg(feature = "esp32c6")]
+    return LP_AON::regs().store1().read().bits();
+    #[cfg(not(feature = "esp32c6"))]
     LPWR::regs().store1().read().bits()
 }
 

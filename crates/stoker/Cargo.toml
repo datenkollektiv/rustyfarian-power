@@ -20,11 +20,14 @@ all-features = true
 bench-conformance = []
 
 [dependencies]
-# The only dependency: `RetainedCell` serialises its volatile copies inside
+# `RetainedCell` serialises its volatile copies inside
 # `critical_section::with`, so the safe `&self` API is sound on every tier. The
 # platform supplies the implementation (esp-hal `rt`, esp-idf-hal
 # `critical-section`); host tests use the crate's `std` implementation below.
 critical-section = { workspace = true }
+# Default features only: `GpioRailGate` is generic over `embedded_hal::digital::OutputPin`
+# (ADR-004 rung 1), so both tiers share one gate. The crate stays `no_std` and alloc-free.
+embedded-hal = { workspace = true }
 
 [dev-dependencies]
 critical-section = { workspace = true, features = ["std"] }

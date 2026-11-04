@@ -1,7 +1,7 @@
 //! GPIO-driven power rail gate on esp-hal.
 //!
 //! [`GpioRailGate`] implements [`PowerRailGate`] over any [`embedded_hal::digital::OutputPin`], which includes `esp_hal::gpio::Output`.
-//! It mirrors the ESP-IDF tier's gate; each tier defines its own generic type so `stoker` carries no HAL dependency.
+//! It is the shared `stoker::gate::GpioRailGate`; this module adds only the Heltec V3 `Vext` constructor, through the [`HeltecV3Vext`] extension trait.
 //!
 //! # Settle time
 //!
@@ -15,100 +15,32 @@
 
 pub use stoker::gate::*;
 
-use core::fmt;
-
-use embedded_hal::digital::OutputPin;
-
 /// Heltec WiFi LoRa 32 V3 `Vext_Ctrl` pin (GPIO36).
 ///
 /// esp-hal exposes no pin number on `Output`; this constant names the pin for documentation and for choosing `peripherals.GPIO36`.
 pub const HELTEC_V3_VEXT_GPIO: u8 = 36;
 
-/// Output level that switches the rail on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Polarity {
-    /// The rail is on while the pin is high.
-    ActiveHigh,
-    /// The rail is on while the pin is low.
-    ActiveLow,
-}
-
-/// Error from a [`GpioRailGate`]: the underlying pin failed to change level.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GpioRailGateError<E> {
-    /// The output pin reported an error.
-    Pin(E),
-}
-
-impl<E: fmt::Debug> Error for GpioRailGateError<E> {
-    fn kind(&self) -> GateErrorKind {
-        GateErrorKind::Platform
-    }
-}
-
-impl<E: fmt::Debug> fmt::Display for GpioRailGateError<E> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Pin(e) => write!(f, "rail gate pin error: {e:?}"),
-        }
-    }
-}
-
-impl<E: fmt::Debug> core::error::Error for GpioRailGateError<E> {}
-
-/// A power rail switched by one output pin.
+/// Heltec V3 `Vext` constructor for [`GpioRailGate`].
 ///
-/// `is_powered` reports the state of the last successful call; the pin is never read back.
-/// Both calls are idempotent and drive the pin again.
+/// An extension trait, because an inherent impl on the foreign generic type is forbidden;
+/// bring it into scope with `use rustyfarian_esp_hal_power::HeltecV3Vext`.
 ///
 /// # Examples
 ///
 /// ```rust,ignore
 /// use esp_hal::gpio::{Level, Output, OutputConfig};
-/// use rustyfarian_esp_hal_power::{GpioRailGate, PowerRailGate};
+/// use rustyfarian_esp_hal_power::{GpioRailGate, HeltecV3Vext, PowerRailGate};
 ///
 /// let vext = Output::new(peripherals.GPIO36, Level::High, OutputConfig::default());
 /// let mut gate = GpioRailGate::heltec_v3_vext(vext).unwrap();
 /// gate.power_on().unwrap();
 /// ```
-#[derive(Debug)]
-pub struct GpioRailGate<P: OutputPin> {
-    pin: P,
-    polarity: Polarity,
-    powered: bool,
-}
+pub trait HeltecV3Vext: Sized {
+    /// The pin the preset takes.
+    type Pin;
+    /// The error the preset returns.
+    type Error;
 
-impl<P: OutputPin> GpioRailGate<P> {
-    /// Takes the pin and drives the rail off, so [`PowerRailGate::is_powered`] starts `false`
-    /// and matches the pin.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`GpioRailGateError::Pin`] if the pin cannot be driven.
-    pub fn new(pin: P, polarity: Polarity) -> Result<Self, GpioRailGateError<P::Error>> {
-        let mut gate = Self {
-            pin,
-            polarity,
-            powered: false,
-        };
-        gate.drive(false)?;
-        Ok(gate)
-    }
-
-    fn drive(&mut self, on: bool) -> Result<(), GpioRailGateError<P::Error>> {
-        let high = on == (self.polarity == Polarity::ActiveHigh);
-        let result = if high {
-            self.pin.set_high()
-        } else {
-            self.pin.set_low()
-        };
-        result.map_err(GpioRailGateError::Pin)?;
-        self.powered = on;
-        Ok(())
-    }
-}
-
-impl<'d> GpioRailGate<esp_hal::gpio::Output<'d>> {
     /// Heltec WiFi LoRa 32 V3 `Vext` rail: `Vext_Ctrl` on GPIO36, active-low.
     ///
     /// The pin is pulled up and gates a P-MOSFET, so the rail is off unless the pin is driven low.
@@ -120,25 +52,14 @@ impl<'d> GpioRailGate<esp_hal::gpio::Output<'d>> {
     /// # Errors
     ///
     /// Returns [`GpioRailGateError::Pin`] if the pin cannot be driven.
-    pub fn heltec_v3_vext(
-        pin: esp_hal::gpio::Output<'d>,
-    ) -> Result<Self, GpioRailGateError<core::convert::Infallible>> {
-        Self::new(pin, Polarity::ActiveLow)
-    }
+    fn heltec_v3_vext(pin: Self::Pin) -> Result<Self, Self::Error>;
 }
 
-impl<P: OutputPin> PowerRailGate for GpioRailGate<P> {
-    type Error = GpioRailGateError<P::Error>;
+impl<'d> HeltecV3Vext for GpioRailGate<esp_hal::gpio::Output<'d>> {
+    type Pin = esp_hal::gpio::Output<'d>;
+    type Error = GpioRailGateError<core::convert::Infallible>;
 
-    fn power_on(&mut self) -> Result<(), Self::Error> {
-        self.drive(true)
-    }
-
-    fn power_off(&mut self) -> Result<(), Self::Error> {
-        self.drive(false)
-    }
-
-    fn is_powered(&self) -> bool {
-        self.powered
+    fn heltec_v3_vext(pin: esp_hal::gpio::Output<'d>) -> Result<Self, Self::Error> {
+        Self::new(pin, Polarity::ActiveLow)
     }
 }

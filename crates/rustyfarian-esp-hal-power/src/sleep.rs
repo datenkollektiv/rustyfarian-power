@@ -1,15 +1,16 @@
-//! Deep sleep with GPIO and timer wake on esp-hal, for the ESP32-C3 and ESP32-S3.
+//! Deep sleep with GPIO and timer wake on esp-hal, for the ESP32-C3, ESP32-C6, ESP32-S3 and ESP32.
 //!
 //! Implements [`SleepManager`] and [`WakeCauseSource`] from [`stoker`]; the design is recorded
-//! in `docs/adr/001-hal-neutral-sleep-contract.md`. The ESP32-C6 and the ESP32 have no sleep
-//! module yet.
+//! in `docs/adr/001-hal-neutral-sleep-contract.md`.
 //!
 //! # Chips
 //!
 //! | Chip     | Wake pads | Wake path in esp-hal                                  | Wake cause            |
 //! |:---------|:----------|:------------------------------------------------------|:----------------------|
 //! | ESP32-C3 | GPIO0-5   | per-pin deep-sleep GPIO wake                          | `Gpio(mask)`          |
+//! | ESP32-C6 | GPIO0-7   | EXT1 (one level per pad)                              | `Ext1(mask)`          |
 //! | ESP32-S3 | GPIO0-21  | EXT1 for a lone level, spilling to EXT0 / per-pin     | `Ext1(mask)`          |
+//! | ESP32    | RTC pads  | EXT1 (one level for the whole mask)                   | `Ext1(mask)`          |
 //!
 //! The wake cause is normalised per chip, not per tier: the same chip reports the same
 //! [`WakeCause`] variant on the ESP-IDF tier.
@@ -17,6 +18,12 @@
 //! On the S3, esp-hal allocates the wake hardware itself. A single pin level on GPIO0-21 goes to
 //! EXT1 (one level for the whole mask). Mixed levels spill to EXT0 and per-pin wake, and those
 //! keep the low-power peripherals powered, which costs current in sleep.
+//!
+//! On the ESP32 the wake pads are the RTC GPIOs (0, 2, 4, 12-15, 25-27, 32-39) and EXT1 combines
+//! several low pads with AND, not OR. esp-hal would spill the extra low pins to other paths, so
+//! [`GpioWakeLevel::AnyLow`] accepts a single pin only: several pins return
+//! [`SleepError::AnyLowMultiplePins`] (kind `Unsupported`) before anything is armed, on both
+//! tiers. `AnyHigh` takes any number of pads.
 //!
 //! # Ownership
 //!
@@ -57,15 +64,12 @@
 //! overwrites the per-pin wake record. esp-hal has no wake-pin status mask, so the pins whose
 //! `caused_wakeup()` is set are the ones the firmware hands to [`EspHalWakeCauseSource::capture`].
 
-#[cfg(feature = "esp32s3")]
+#[cfg(any(feature = "esp32", feature = "esp32s3"))]
 use esp_hal::peripherals::UART2;
 use esp_hal::{
     gpio::{Event, Input, WakeupConfig},
     peripherals::{GPIO, LPWR, UART0, UART1},
-    rtc_cntl::{
-        sleep::{LowPower, RtcSleepConfig},
-        wakeup_cause, WakeupSource,
-    },
+    rtc_cntl::sleep::{LowPower, RtcSleepConfig},
     time::{Duration, Instant},
 };
 
@@ -73,24 +77,41 @@ use esp_hal::{
 // items here so `rustyfarian_esp_hal_power::sleep::*` still reaches them. The glob also brings
 // the `stoker` sleep types used below into scope (an explicit import would shadow the re-export).
 pub use stoker::sleep::*;
+use stoker::{
+    drive, ChipPolicy, DriveError, Entered, SleepAttemptMachine, SleepAttemptPort, SleepPlan,
+};
 
 #[cfg(all(feature = "bench", not(feature = "esp32c3")))]
 compile_error!("the `bench` feature supports the ESP32-C3 only; enable `esp32c3`");
 
-/// Pads with a low-power wake path on this chip.
+/// Pre-read guard policy of this chip for the attempt machine.
 #[cfg(feature = "esp32c3")]
-const WAKE_PIN_MASK: u64 = stoker::sleep::ESP32C3_WAKE_PIN_MASK;
+const CHIP_POLICY: ChipPolicy = ChipPolicy::Esp32C3;
 
-/// Pads with a low-power wake path on this chip (GPIO0-21).
+/// Pre-read guard policy of this chip for the attempt machine.
+///
+/// `Never`: the C6 has no global digital-pad hold (no `dig_iso` register), so the pad-hold hang
+/// class does not exist here and the pins are read only if the hardware rejects. Whether a held
+/// EXT1 pin is rejected or wakes at once is a bench question (one-line change to `Always`).
+#[cfg(feature = "esp32c6")]
+const CHIP_POLICY: ChipPolicy = ChipPolicy::Esp32C6;
+
+/// Pre-read guard policy of this chip for the attempt machine.
 #[cfg(feature = "esp32s3")]
-const WAKE_PIN_MASK: u64 = stoker::sleep::ESP32S3_WAKE_PIN_MASK;
+const CHIP_POLICY: ChipPolicy = ChipPolicy::Esp32S3;
 
-// The foreign-pin scan walks `0..WAKE_PIN_MASK.count_ones()`, which only covers the mask when
-// the wake pads are contiguous from GPIO0.
-const _: () = assert!(
-    WAKE_PIN_MASK & (WAKE_PIN_MASK + 1) == 0,
-    "WAKE_PIN_MASK must be contiguous from bit 0"
-);
+/// Pre-read guard policy of this chip for the attempt machine.
+///
+/// `Always`: EXT0/EXT1 wakes cannot be rejected by the hardware here, so the pins are always read
+/// and the global pad-hold register (`ReadHold`) is never consulted.
+#[cfg(feature = "esp32")]
+const CHIP_POLICY: ChipPolicy = ChipPolicy::Esp32;
+
+/// Pads with a low-power wake path on this chip, from the shared chip table.
+const WAKE_PIN_MASK: u64 = match CHIP_POLICY.wake_pin_mask() {
+    Some(mask) => mask,
+    None => panic!("the esp-hal tier chips all have a wake-pin mask"),
+};
 
 /// Shortest timer the manager accepts, in milliseconds (request-level check, before any
 /// mutation).
@@ -209,6 +230,8 @@ struct Plan {
     event: Event,
     /// Requested timer, already checked against the floor and `u64` µs overflow.
     timer: Option<TimerPlan>,
+    /// The attempt state machine for this request; one machine per attempt.
+    machine: SleepAttemptMachine,
 }
 
 #[derive(Clone, Copy)]
@@ -261,42 +284,41 @@ pub struct BoundSleep<'a, 'p, 'i, 'd> {
 impl BoundSleep<'_, '_, '_, '_> {
     /// Validates the whole request without touching hardware.
     fn plan(&self, sources: &[WakeSource]) -> Result<Plan, SleepError> {
-        // Also rejects an empty slice, multiple timers or GPIO sources, and a timer above
-        // `MAX_TIMER_MS`.
-        validate_wake_sources(sources)?;
+        // Also rejects an empty slice, multiple timers or GPIO sources, a timer above
+        // `MAX_TIMER_MS` and an empty pin mask.
+        // On the original ESP32 it also refuses `AnyLow` over several pins: EXT1 combines low
+        // pads with AND, which is not the `AnyLow` (any pin) contract (ADR-003 point 2).
+        let machine = SleepAttemptMachine::new(CHIP_POLICY, sources)?;
+        let request = machine.plan();
 
         let mut plan = Plan {
             pin_mask: 0,
             event: Event::HighLevel,
             timer: None,
+            machine,
         };
-        for source in sources {
-            match *source {
-                WakeSource::GpioLevel { pin_mask, level } => {
-                    validate_gpio_level_source_against(pin_mask, WAKE_PIN_MASK)?;
-                    self.check_bound(pin_mask)?;
-                    plan.pin_mask = pin_mask;
-                    plan.event = match level {
-                        GpioWakeLevel::AnyHigh => Event::HighLevel,
-                        GpioWakeLevel::AnyLow => Event::LowLevel,
-                    };
-                }
-                WakeSource::Timer { duration_ms } => {
-                    if duration_ms < MIN_TIMER_MS {
-                        return Err(SleepError::TimerTooShort {
-                            duration_ms,
-                            min_ms: MIN_TIMER_MS,
-                        });
-                    }
-                    // Cannot overflow below `MAX_TIMER_MS`; checked anyway.
-                    let ahead_us = duration_ms.saturating_mul(1_000);
-                    Self::deadline_us(ahead_us, duration_ms)?;
-                    plan.timer = Some(TimerPlan {
-                        duration_ms,
-                        ahead_us,
-                    });
-                }
+        if request.has_pins() {
+            self.check_bound(request.pin_mask)?;
+            plan.pin_mask = request.pin_mask;
+            plan.event = match request.level {
+                GpioWakeLevel::AnyHigh => Event::HighLevel,
+                GpioWakeLevel::AnyLow => Event::LowLevel,
+            };
+        }
+        if let Some(duration_ms) = request.timer {
+            if duration_ms < MIN_TIMER_MS {
+                return Err(SleepError::TimerTooShort {
+                    duration_ms,
+                    min_ms: MIN_TIMER_MS,
+                });
             }
+            // Cannot overflow below `MAX_TIMER_MS`; checked anyway.
+            let ahead_us = duration_ms.saturating_mul(1_000);
+            Self::deadline_us(ahead_us, duration_ms)?;
+            plan.timer = Some(TimerPlan {
+                duration_ms,
+                ahead_us,
+            });
         }
         Ok(plan)
     }
@@ -341,7 +363,8 @@ impl BoundSleep<'_, '_, '_, '_> {
     /// set counts, the same field esp-hal reads for the wake level (`armed_level`).
     fn check_foreign_wake_pins(&self) -> Result<(), SleepError> {
         let bound = self.bound_mask();
-        for pin in 0..WAKE_PIN_MASK.count_ones() as u8 {
+        // The ESP32 mask is not contiguous, so walk its set bits.
+        for pin in (0..64u8).filter(|pin| WAKE_PIN_MASK & (1u64 << pin) != 0) {
             if bound & (1u64 << pin) != 0 {
                 continue;
             }
@@ -352,15 +375,27 @@ impl BoundSleep<'_, '_, '_, '_> {
         Ok(())
     }
 
-    /// Waits until every UART transmitter is empty and idle, the same condition esp-hal's
-    /// `wait_for_suspended` spins on at sleep entry (`uart/low_level/v1.rs`), bounded by
-    /// `UART_DRAIN_TIMEOUT_US`. Call with interrupts masked, so no handler refills a FIFO.
+    /// Waits until every UART transmitter is idle (and, except on the C6, its FIFO empty), the
+    /// condition esp-hal's `wait_for_suspended` spins on at sleep entry (`uart/low_level/v1.rs`,
+    /// `v2.rs` on the C6), bounded by `UART_DRAIN_TIMEOUT_US`. Call with interrupts masked, so
+    /// no handler refills a FIFO.
     fn drain_uarts() -> Result<(), SleepError> {
+        // The ESP32 has the transmitter state in `status`, the other chips in `fsm_status`.
+        // The C6 (UART v2) also treats TX_WAIT_SEND (0x0F) as suspended and does not wait for
+        // the FIFO count, exactly like esp-hal.
         macro_rules! tx_busy {
-            ($uart:ident) => {
-                $uart::regs().status().read().txfifo_cnt().bits() != 0
-                    || $uart::regs().fsm_status().read().st_utx_out().bits() != 0
-            };
+            ($uart:ident) => {{
+                let regs = $uart::regs();
+                #[cfg(feature = "esp32")]
+                let state = regs.status().read().st_utx_out().bits();
+                #[cfg(not(feature = "esp32"))]
+                let state = regs.fsm_status().read().st_utx_out().bits();
+                #[cfg(feature = "esp32c6")]
+                let busy = state != 0 && state != 0x0F;
+                #[cfg(not(feature = "esp32c6"))]
+                let busy = regs.status().read().txfifo_cnt().bits() != 0 || state != 0;
+                busy
+            }};
         }
 
         let start = Instant::now();
@@ -368,9 +403,9 @@ impl BoundSleep<'_, '_, '_, '_> {
         loop {
             let busy0 = tx_busy!(UART0);
             let busy1 = tx_busy!(UART1);
-            #[cfg(feature = "esp32s3")]
+            #[cfg(any(feature = "esp32", feature = "esp32s3"))]
             let busy2 = tx_busy!(UART2);
-            #[cfg(not(feature = "esp32s3"))]
+            #[cfg(not(any(feature = "esp32", feature = "esp32s3")))]
             let busy2 = false;
             if !busy0 && !busy1 && !busy2 {
                 return Ok(());
@@ -468,32 +503,17 @@ impl BoundSleep<'_, '_, '_, '_> {
         let _ = pin.apply_wakeup_config(&WakeupConfig::default());
     }
 
-    /// Returns `true` when the global digital-pad hold is effective and a masked wake pin is
-    /// already at its wake level. Call with interrupts masked, right before sleep entry.
-    ///
-    /// With the hold effective, sleep entry isolates every unheld digital pad and a hardware
-    /// rejection never returns (bench R2-S3). Reading the pins here turns that hang into
-    /// `Rejected`. Pins are read through the bound `Input`s, which carry the input enable.
-    #[cfg(feature = "esp32s3")]
-    fn hold_guard_trips(&self, plan: Plan) -> bool {
-        let dig_iso = LPWR::regs().dig_iso().read().bits();
-        if !digital_hold_effective(dig_iso) {
-            return false;
-        }
-        let levels = self
-            .pins
+    /// Reads the bound wake pins as a level mask (bit N set = GPIO N high). Call with
+    /// interrupts masked, right before sleep entry. Pins are read through the bound `Input`s,
+    /// which carry the input enable, so every masked pin is readable.
+    fn read_levels(&self) -> u64 {
+        self.pins
             .iter()
             .filter_map(|pin| {
                 let n = pin.peripheral_input().gpio_number()?;
                 pin.is_high().then_some(1u64 << n)
             })
-            .fold(0u64, |mask, bit| mask | bit);
-        let level = match plan.event {
-            Event::LowLevel => GpioWakeLevel::AnyLow,
-            _ => GpioWakeLevel::AnyHigh,
-        };
-        // `plan.pin_mask` was checked against the bound pins, so every masked pin is read above.
-        wake_pins_asserted(levels, plan.pin_mask, level)
+            .fold(0u64, |mask, bit| mask | bit)
     }
 
     /// Releases every bound pin and clears the standing deadline. Used after a rejection and
@@ -523,120 +543,105 @@ impl SleepManager for BoundSleep<'_, '_, '_, '_> {
         })
     }
 
-    /// Deep sleep that returns only when the hardware rejects it (a wake pin already at its
+    /// Deep sleep that returns only when the attempt is rejected (a wake pin already at its
     /// wake level). Mirrors `esp_deep_sleep_try_to_start` on the IDF tier.
+    ///
+    /// The attempt is driven by [`SleepAttemptMachine`], which decides when to read the wake
+    /// pins; this tier only performs the reads, the arming and the sleep call. On the ESP32-C3
+    /// the bound wake pins are always read right before sleep entry, and a pin already at its
+    /// wake level returns `Rejected` from software (the hardware path is not relied on).
     ///
     /// On the ESP32-S3 the hardware never returns from a rejected sleep while the global
     /// digital-pad hold is effective (`RTC_CNTL_DIG_ISO_REG` bit 11 set, bit 14 clear): sleep
     /// entry isolates every unheld digital pad and the chip stalls silently. When the hold is
-    /// effective, this method therefore reads the bound wake pins right before sleep entry and
-    /// returns `Rejected` itself for a pin already at its wake level. The global hold costs
-    /// the isolation of every unheld digital pad; per-pin holds on RTC pads do not need it.
-    /// A pin that reaches its wake level after the read, and non-pin hardware rejections,
-    /// can still stall while the hold is effective.
+    /// effective, the pins are therefore read right before sleep entry and `Rejected` is
+    /// returned for a pin already at its wake level. The global hold costs the isolation of
+    /// every unheld digital pad; per-pin holds on RTC pads do not need it. A pin that reaches
+    /// its wake level after the read, and non-pin hardware rejections, can still stall while
+    /// the hold is effective.
     ///
-    /// Validation runs first and touches nothing. Arming, the sleep call and the cleanup after
-    /// a rejection then run in one critical section, so no GPIO handler can observe the armed,
-    /// already-asserted pin: a custom handler that calls `unlisten()` would otherwise drop the
-    /// pin from the wake set (`gpio/low_level/mod.rs` `set_int_enable` clears `listening`).
+    /// Validation runs first and touches nothing. Arming, the pin reads, the sleep call and the
+    /// cleanup after a rejection then run in one critical section, so no GPIO handler can
+    /// observe the armed, already-asserted pin: a custom handler that calls `unlisten()` would
+    /// otherwise drop the pin from the wake set (`gpio/low_level/mod.rs` `set_int_enable`
+    /// clears `listening`).
     fn try_sleep(&mut self, sources: &[WakeSource]) -> Result<(), SleepError> {
         let plan = self.plan(sources)?;
         critical_section::with(|_| {
             #[cfg(feature = "bench")]
             bench::begin_attempt();
-            self.arm(plan)?;
-            // The ESP32-S3 hardware never returns from a rejected sleep while the global
-            // digital-pad hold is effective, so reject in software before isolation can run.
-            #[cfg(feature = "esp32s3")]
-            if self.hold_guard_trips(plan) {
-                self.disarm();
-                return Err(SleepError::Rejected);
-            }
-            #[cfg(feature = "bench")]
-            let armed_at = {
-                bench::marker_high();
-                bench::now_us()
+            let mut port = EspHalPort {
+                sleep: self,
+                plan,
+                #[cfg(feature = "bench")]
+                armed_at: 0,
             };
-            self.manager
-                .low_power
-                .sleep_deep_with_rejection(RtcSleepConfig::deep());
-            #[cfg(feature = "bench")]
-            bench::set_guard_us(bench::now_us().wrapping_sub(armed_at));
-            // Reaching this line *is* the rejection report (esp-hal 1.2.2 `sleep/mod.rs:150`).
-            // Release before interrupts come back, so the held level cannot fire a handler.
-            self.disarm();
-            Err(SleepError::Rejected)
+            match drive(plan.machine, &mut port) {
+                Ok(()) => Ok(()),
+                Err(DriveError::Arm(e)) => Err(e),
+                Err(DriveError::Rejected(_)) => Err(SleepError::Rejected),
+                Err(DriveError::Protocol) => Err(SleepError::AttemptOutOfPhase),
+            }
         })
     }
 }
 
-/// Wake cause captured once at boot from the pins the firmware re-creates.
-///
-/// esp-hal has no wake-pin status bitmask; `caused_wakeup()` is per pin, so the mask is
-/// rebuilt from the pins the firmware hands in. Capture it **before** the first `try_sleep`:
-/// a rejected sleep runs `record_wakeup()` again and overwrites the per-pin record.
-#[derive(Debug, Clone, Copy)]
-pub struct EspHalWakeCauseSource {
-    cause: WakeCause,
+/// The attempt port of this tier: performs the register and pin I/O the shared [`drive`] asks
+/// for, inside the caller's critical section. Bench hooks live here.
+struct EspHalPort<'s, 'a, 'p, 'i, 'd> {
+    sleep: &'s mut BoundSleep<'a, 'p, 'i, 'd>,
+    /// The validated request; `arm` uses it instead of the machine's `SleepPlan`.
+    plan: Plan,
+    #[cfg(feature = "bench")]
+    armed_at: u32,
 }
 
-impl EspHalWakeCauseSource {
-    /// Reads the wake cause; `pins` are the wake pins whose `caused_wakeup()` build the mask.
-    ///
-    /// Pin sources win over the timer when both fired. On the S3 an EXT1 wake reports
-    /// `Ext1(mask)`, on the C3 a GPIO wake reports `Gpio(mask)`.
-    #[must_use]
-    pub fn capture(pins: &[&Input<'_>]) -> Self {
-        let reason = wakeup_cause();
-        let fired_mask = || {
-            GpioWakeMask(
-                pins.iter()
-                    .filter(|pin| pin.caused_wakeup())
-                    .filter_map(|pin| pin.peripheral_input().gpio_number())
-                    .fold(0u64, |mask, n| mask | (1u64 << n)),
-            )
-        };
+impl SleepAttemptPort for EspHalPort<'_, '_, '_, '_, '_> {
+    type Error = SleepError;
 
-        let cause = if reason.is_empty() {
-            WakeCause::PowerOn
-        } else if cfg!(feature = "esp32s3") && reason_has_ext1(&reason) {
-            WakeCause::Ext1(fired_mask())
-        } else if cfg!(feature = "esp32s3") && reason_has_ext0(&reason) {
-            WakeCause::Ext0
-        } else if reason.contains(WakeupSource::Gpio) {
-            WakeCause::Gpio(fired_mask())
-        } else if reason.contains(WakeupSource::Timer) {
-            WakeCause::Timer
-        } else {
-            WakeCause::Other
-        };
-        Self { cause }
+    fn arm(&mut self, _plan: SleepPlan) -> Result<(), SleepError> {
+        self.sleep.arm(self.plan)?;
+        #[cfg(feature = "bench")]
+        {
+            bench::marker_high();
+            self.armed_at = bench::now_us();
+        }
+        Ok(())
+    }
+
+    // `RTC_CNTL_DIG_ISO_REG` (S3 policy only): global digital-pad hold state.
+    #[cfg(not(feature = "esp32c6"))]
+    fn read_hold(&mut self) -> bool {
+        digital_hold_effective(LPWR::regs().dig_iso().read().bits())
+    }
+
+    // The C6 has no global digital-pad hold; its policy never asks, and a stray request is
+    // answered "not effective".
+    #[cfg(feature = "esp32c6")]
+    fn read_hold(&mut self) -> bool {
+        false
+    }
+
+    fn read_pins(&mut self, _mask: u64) -> u64 {
+        self.sleep.read_levels()
+    }
+
+    fn enter(&mut self) -> Entered {
+        self.sleep
+            .manager
+            .low_power
+            .sleep_deep_with_rejection(RtcSleepConfig::deep());
+        // Reaching this line *is* the rejection report (esp-hal 1.2.2 `sleep/mod.rs:150`).
+        Entered::Returned
+    }
+
+    // The whole attempt runs with interrupts masked, so the pins are plain inputs again before
+    // the interrupts come back; a timer-only plan (`pins` = 0) clears its deadline here too.
+    fn release(&mut self, _pins: u64) {
+        #[cfg(feature = "bench")]
+        bench::set_guard_us(bench::now_us().wrapping_sub(self.armed_at));
+        self.sleep.disarm();
     }
 }
 
-// `WakeupSource::Ext0/Ext1` exist on the S3 only; these helpers keep the C3 arm compiling.
-#[cfg(feature = "esp32s3")]
-fn reason_has_ext1(reason: &esp_hal::rtc_cntl::WakeupReason) -> bool {
-    reason.contains(WakeupSource::Ext1)
-}
-
-#[cfg(not(feature = "esp32s3"))]
-fn reason_has_ext1(_: &esp_hal::rtc_cntl::WakeupReason) -> bool {
-    false
-}
-
-#[cfg(feature = "esp32s3")]
-fn reason_has_ext0(reason: &esp_hal::rtc_cntl::WakeupReason) -> bool {
-    reason.contains(WakeupSource::Ext0)
-}
-
-#[cfg(not(feature = "esp32s3"))]
-fn reason_has_ext0(_: &esp_hal::rtc_cntl::WakeupReason) -> bool {
-    false
-}
-
-impl WakeCauseSource for EspHalWakeCauseSource {
-    fn last_wake_cause(&self) -> WakeCause {
-        self.cause
-    }
-}
+pub use crate::wake::EspHalWakeCauseSource;

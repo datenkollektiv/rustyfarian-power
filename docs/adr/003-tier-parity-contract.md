@@ -1,7 +1,7 @@
 # ADR-003: Tier parity contract for the ESP-IDF and esp-hal tiers
 
 ## Status
-Accepted (2026-11-02).
+Accepted (2026-11-02); point 3 partially superseded by ADR-004 (2026-11-04).
 Implemented (2026-11-04): follow-ups closed or deferred by decision; see `docs/features/archive/tier-parity-v1.md` and the capability table in `docs/features/esp-hal-parity-v1.md`.
 
 Aligned with `rustyfarian-network` ADR-022 (tier parity, one async API surface) and ADR-021 (binary-owned providers), and `rustyfarian-ws2812` ADR-010 (interchangeable driver semantics), both accepted 2026-11-01.
@@ -46,6 +46,13 @@ Closing the gap is the condition for calling the tiers behaviourally interchange
 Where a HAL behaviour cannot be mapped into the shared observables at all, the method gets a different name.
 This follows `rustyfarian-ws2812` ADR-010: "methods with the same name mean the same thing on both drivers".
 
+Dated note (2026-11-04, tier-parity plan items 2 and 4): the esp-hal ESP32 is a documented platform exception under this point, not a same-name divergence.
+`SleepAttemptMachine::new_single_pin_any_low` rejects `GpioLevel { AnyLow }` over more than one pin with `SleepError::AnyLowMultiplePins` (kind `InvalidConfig`) before anything is armed.
+The IDF ESP32 keeps the EXT1 ALL_LOW semantics and accepts the same request.
+esp-hal 1.2.2 has no ESP32 path for a multi-pin low group (`ext1_v1.rs` spills those pins to EXT0 and per-pin wake), so the hardware interface does not allow the IDF behaviour.
+Point 1 scopes the parity claim to the shared supported operating range; this request falls outside it on the hal tier.
+Superseded later on 2026-11-04: both tiers now reject it (see the note under point 2).
+
 ### 2. Hardware differences are capabilities, not APIs
 A hardware difference is documented once, as a capability in a tier and chip scoped table, instead of being expressed as a diverging API.
 This follows `rustyfarian-network` ADR-022 decision 7.
@@ -53,7 +60,12 @@ The table distinguishes three classes — a hardware limitation (no software pat
 The missing esp-hal ADC battery monitor and charging monitor are unimplemented drivers, not evidence of semantic divergence.
 Interchangeability claims cover only capabilities that both tiers implement.
 
+Dated note (2026-11-04, replaces the earlier capability-row note): multi-pin `AnyLow` on the original ESP32 is rejected on both tiers with `SleepError::AnyLowMultiplePins` (kind `Unsupported`).
+The `try_sleep` row therefore has no ESP32 `AnyLow` exception; single-pin `AnyLow` is unchanged.
+The hardware pass checks the rejection on both ESP32 tiers and that single-pin `AnyLow` still wakes.
+
 ### 3. Portable policy lives in `stoker`; sequencing lives in the adapters
+Forward note (2026-11-04): ADR-004 partially supersedes this point; sequencing for multi-step flows such as `try_sleep` moves into `stoker` as a sans-IO machine (rung 3 of the ADR-004 ladder), and register work stays in the adapters.
 Portable policy and validation live in `stoker`, where they are host-testable.
 Hardware sequencing and register-dependent work remain in the tier adapters: draining UARTs, arming pins, guarding deadlines, entering critical sections, and cleaning up after rejection belong beside the hardware they drive.
 Pure decisions that benefit from host tests are extracted into `stoker` when useful, without forcing hardware workarounds into the core.

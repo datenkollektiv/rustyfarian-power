@@ -13,6 +13,47 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 - **Breaking:** `stoker` is `#![no_std]`, its validators return `stoker::SleepError` instead of `anyhow`, and `SleepManager` gains `type Error: stoker::sleep::Error` plus a required `try_sleep`; implementors wrap `anyhow::Error` in a newtype with `kind()` or use `stoker::SleepError` (ADR-001).
 - **Breaking:** `EspSleepManager::Error` is `EspSleepError`, `sleep(&[])` returns `NoWakeSource`, timers above `MAX_TIMER_MS` return `TimerTooLong`, isolation plus `GpioLevel` returns `IsolationConflict`, and `WakeCause::Gpio` carries a `GpioWakeMask`; the new error types are re-exported from `rustyfarian-esp-idf-power`.
 - Firmware that uses `RetainedCell` on the IDF tier enables `critical-section-impl` or links another interrupt- and multicore-safe provider; pre-release git pins that relied on the earlier default must opt in.
+- **Breaking:** `heltec_v3_vext` moves from an inherent method to the `HeltecV3Vext` extension trait on both tiers, so callers import the trait; the call shape is unchanged (ADR-004).
+
+Before:
+
+```rust
+use rustyfarian_esp_hal_power::GpioRailGate;
+let vext = GpioRailGate::heltec_v3_vext(pin);
+```
+
+After:
+
+```rust
+use rustyfarian_esp_hal_power::{GpioRailGate, HeltecV3Vext};
+let vext = GpioRailGate::heltec_v3_vext(pin);
+```
+
+- **Breaking:** on the ESP-IDF ESP32 tier, `try_sleep` and `sleep` reject a multi-pin `AnyLow` request with `SleepError::AnyLowMultiplePins` (kind `Unsupported`) before anything is armed, as the esp-hal tier already did.
+  The EXT1 `ALL_LOW` mode that used to accept it is no longer reachable for several pins.
+  Name one pin for `AnyLow`, or use `AnyHigh` if the wiring allows.
+
+Before (ESP32 only):
+
+```rust
+use rustyfarian_esp_idf_power::{EspSleepManager, GpioWakeLevel, WakeSource};
+use stoker::sleep::SleepManager;
+
+let mut manager = EspSleepManager::default();
+let sources = [WakeSource::GpioLevel { pin_mask: 0b11, level: GpioWakeLevel::AnyLow }];
+manager.try_sleep(&sources)?;
+```
+
+After (ESP32 only):
+
+```rust
+use rustyfarian_esp_idf_power::{EspSleepManager, GpioWakeLevel, WakeSource};
+use stoker::sleep::SleepManager;
+
+let mut manager = EspSleepManager::default();
+let sources = [WakeSource::GpioLevel { pin_mask: 1 << 25, level: GpioWakeLevel::AnyLow }];
+manager.try_sleep(&sources)?;
+```
 
 ### Added
 - ESP32-C3/C2 deep-sleep GPIO wake on the IDF tier, with a pre-sleep held-pin check that returns `Rejected`, `WakeCause::Gpio(mask)`, and `just check-c3` in CI.
@@ -25,10 +66,42 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 
 - `stoker::bench` (feature `bench-conformance`, off by default): `PinWindow`, the bench line formatters and `LineBuf`, shared by the C3 and S3 deep-sleep bench examples on both tiers.
 - Compile-time conformance modules in both tier crates instantiate every `stoker` trait with the concrete adapters (ADR-003 point 4).
+- `stoker::sleep::attempt`: `SleepAttemptMachine`, a sans-IO state machine with `SleepPlan` and the `ChipPolicy` guard table, which both tiers drive for `try_sleep` (ADR-004).
+- `stoker::average_mv` and `stoker::classify_charging`: pure functions with host tests, used by the ESP-IDF ADC and charging tiers.
+- `stoker::SleepError::AttemptOutOfPhase` (kind `Platform`): esp-hal `try_sleep` returns it, disarmed, if the attempt machine ever ignores an input, matching the IDF tier's `Platform` error instead of a false `Rejected`.
+- `stoker::gate::GpioRailGate`, `GpioRailGateError` and `Polarity` are generic over an `embedded-hal` 1.0 `OutputPin`; both tiers re-export the one shared type (ADR-004).
+- `stoker::charging::GpioChargingMonitor` implements `ChargingMonitor` over an STAT and a VBUS `InputPin`; a pin read error reports `Unknown`.
+- `ChipPolicy::wake_pin_mask()` in `stoker` is the single per-chip wake-pin mask table; `SleepAttemptMachine::new` rejects out-of-range `GpioLevel` masks with `GpioMaskOutOfRange`.
+- `stoker` depends on `embedded-hal` 1.0 with default features; it stays `#![no_std]` and alloc-free.
+- esp-hal tier: `EspHalChargingMonitor` (an alias for `GpioChargingMonitor` over two `Input` pins) is available on every chip.
+
+- ESP-IDF tier builds for ESP32-C6 (`riscv32imac-esp-espidf`): EXT1 deep-sleep wake, RTC retention, and the `idf_c6_deep_sleep_gpio` and `idf_c6_rtc_retention` examples.
+- `just check-c6`, `just ci-c6` and the CI job `check-c6` (pinned to `ubuntu-24.04`) for the ESP-IDF C6 tier.
+- esp-hal `EspHalAdcBatteryMonitor` (ADC1 only, 11 dB, per-chip calibration, averaged reads) on ESP32, ESP32-C3, ESP32-C6 and ESP32-S3.
+- Examples `hal_s3_battery` and `hal_esp32_battery` for the esp-hal ADC battery monitor.
+- esp-hal sleep module (`EspHalSleepManager`, `BoundSleep`) on ESP32 and ESP32-C6.
+- Examples `hal_esp32_deep_sleep_gpio` and `hal_c6_deep_sleep_gpio`, and the recipes `build-example-hal-c6`, `run-hal-c6` and `flash-hal-c6`.
+- esp-hal `EspHalWakeCauseSource` and `EspHalResetReasonSource` on ESP32 and ESP32-C6; the wake source moves to a public `wake` module.
+- esp-hal `EspHalRtcClock` on ESP32 and ESP32-C6.
+- `stoker::SleepError::AnyLowMultiplePins` (kind `Unsupported`): both tiers reject a multi-pin `AnyLow` request on the original ESP32 before arming anything.
+- `ChipPolicy::Esp32C6` on the ESP-IDF tier, selected by `cfg(esp32c6)`.
 
 ### Changed
+- `stoker::sleep::attempt::drive` runs the `try_sleep` dispatch over an I/O-only `SleepAttemptPort`; both tiers implement the port privately and keep only register I/O and error mapping (ADR-004).
+- The `Release` action contract is tightened: a tier answers `Released` only after undoing its arming and making the ADR-003 point 1 postcondition hold.
+- A timer-only rejection now also passes through `Release` (`pins: 0`), so the deadline cleanup is explicit on both tiers.
+- The ESP-IDF C6 build's `try_sleep` uses `ChipPolicy::Esp32C6` (guard `Never`, wake mask `0xFF`) instead of `Other`; C3, S3 and ESP32 IDF builds are unchanged (bench pending).
+- The esp-hal ADC battery monitor accepts only ADC1 pins (sealed `Adc1Pin`); an ADC2 pad does not compile.
+- The esp-hal `reset` and `wake` modules compile on all four chips; the C6 UART drain treats TX FSM states 0x00 and 0x0F as idle, as esp-hal does.
+- CI links the C6 examples (`just ci-c6`), and `just ci-hal` links the new ESP32 and C6 hal examples.
 - CI links the C3 and S3 examples on both tiers (`just ci-c3`, `ci-s3`, new `hal.yml` with `ci-hal`) and compiles the ESP-IDF ESP32 tier (`just ci-esp32`, compile-only); `just verify` and `just ci` also lint and test `stoker`'s `bench-conformance` feature.
 - `stoker` drops `anyhow` for `critical-section`, the IDF tier ships an ISR-safe `critical-section` provider behind the opt-in `critical-section-impl` feature, and the hal tier gates `sleep`/`reset`/`retain` on `unstable` outside `default-members`.
+- `try_sleep` on the original ESP32 pre-reads the EXT1 wake pins before sleep entry and returns `Rejected` (code `ESP_ERR_INVALID_STATE`) when one is already at its wake level; before, a held pin slept and woke at once (bench pending).
+- `try_sleep` on esp-hal C3 pre-reads the bound wake pins in software and returns `Rejected` when one is already at its wake level, instead of relying on the hardware (bench pending).
+- `try_sleep` reports the same error kinds on both tiers; when a request has several invalid fields, the reported one may differ.
+- The ESP-IDF ESP32-C6 build checks wake-pin masks against the C6 range (GPIO0-7, `ChipPolicy::Esp32C6`) instead of the ESP32-S3 range it applied by accident.
+- The esp-hal wake-pin mask is derived from `ChipPolicy::wake_pin_mask()` instead of per-chip feature constants; observable behaviour is unchanged.
+- ESP-IDF arming goes through the shared `stoker::arm_transactionally` (hidden `WakeArmOps` port): validation touches no hardware, and a failed SDK call rolls back by attempting every undo step, each C2/C3 pin independently; the original error is returned.
 
 ### Fixed
 - `try_sleep` no longer hangs on the ESP32/ESP32-S3 when the global digital-pad hold (`gpio_deep_sleep_hold_en`) is effective and a wake pin is already asserted: both tiers return `Rejected` from a pre-entry read instead (`stoker::digital_hold_effective`, `wake_pins_asserted`, `wake_pins_all_low`).
