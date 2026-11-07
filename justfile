@@ -34,6 +34,11 @@ idf_dir := if path_exists(ramdisk + "/targets/idf") == "true" { ramdisk + "/targ
 # bare-metal builds use a separate target dir so they do not thrash the IDF cache
 hal_dir := if path_exists(ramdisk + "/targets/hal") == "true" { ramdisk + "/targets/hal/" + file_name(justfile_directory()) } else { "target/hal" }
 
+# Guided bench runner: a local rustyfarian-bench checkout if RUSTYFARIAN_BENCH points at one,
+# otherwise the pinned release from GitHub.
+bench_dir := env("RUSTYFARIAN_BENCH", "")
+bench := if bench_dir != "" { 'uv run --project "' + bench_dir + '" rustyfarian-bench' } else { "uvx --from git+https://github.com/datenkollektiv/rustyfarian-bench@v0.3.0 rustyfarian-bench" }
+
 # list available recipes (default)
 _default:
     @just --list
@@ -158,6 +163,45 @@ run-hal-esp32 example features="esp32,unstable,examples": (build-example-hal-esp
 # build and flash a named esp-hal ESP32 example without opening the monitor (bench host scripts attach their own reader)
 flash-hal-esp32 example features="esp32,unstable,examples": (build-example-hal-esp32 example features)
     espflash flash --chip esp32 {{ hal_dir }}/{{ hal_esp32_target }}/release/examples/{{ example }}
+
+# guided hardware check: `just bench c3 retention`, `just bench hal_c3_rtc_retention`, `just bench c3` (see bench/README.md)
+bench target *args:
+    {{ bench }} --repo . run "{{ target }}" {{ args }}
+
+# list the bench scenarios
+bench-list:
+    {{ bench }} --repo . list
+
+# probe the connected boards (chip and MAC per port)
+bench-detect:
+    {{ bench }} detect
+
+# Bench build step (bench/bench.toml): `idf_*` via build-example, `hal_<chip>_*` via build-example-hal-<chip>
+bench-build NAME:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "{{ NAME }}" in
+        idf_*)       just build-example "{{ NAME }}" ;;
+        hal_c3_*)    just build-example-hal-c3 "{{ NAME }}" ;;
+        hal_c6_*)    just build-example-hal-c6 "{{ NAME }}" ;;
+        hal_esp32_*) just build-example-hal-esp32 "{{ NAME }}" ;;
+        hal_s3_*)    just build-example-hal-s3 "{{ NAME }}" ;;
+        *) echo "bench-build: unknown name {{ NAME }} (idf_*, hal_{c3,c6,esp32,s3}_*)" >&2; exit 1 ;;
+    esac
+
+# Bench flash step (bench/bench.toml): flash a bench-build artifact to PORT, without a monitor (espflash reads ESPFLASH_PORT)
+bench-flash NAME PORT:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export ESPFLASH_PORT="{{ PORT }}"
+    case "{{ NAME }}" in
+        idf_*)       just flash "{{ NAME }}" ;;
+        hal_c3_*)    just flash-hal-c3 "{{ NAME }}" ;;
+        hal_c6_*)    just flash-hal-c6 "{{ NAME }}" ;;
+        hal_esp32_*) just flash-hal-esp32 "{{ NAME }}" ;;
+        hal_s3_*)    just flash-hal-s3 "{{ NAME }}" ;;
+        *) echo "bench-flash: unknown name {{ NAME }} (idf_*, hal_{c3,c6,esp32,s3}_*)" >&2; exit 1 ;;
+    esac
 
 # run the C3 bench host driver (wraps `uv run scripts/c3-bench.py`)
 [positional-arguments]

@@ -1,0 +1,30 @@
+# PIR deep-sleep GPIO wake on GPIO4, both tiers (default build: 60 s timer fallback).
+# After a PIR wake the output stays HIGH for its hold time, so `try_sleep` is rejected and retried until it releases.
+# `--unattended` checks the timer wake with nobody in view; `--attended` checks the PIR wake.
+examples = ["hal_c3_deep_sleep_gpio", "idf_c3_deep_sleep_gpio"]
+
+[[step]]
+say = "Wait for the first sleep"
+expect = 'Sleeping: GPIO4 AnyHigh'
+timeout = 15
+optional = true   # can be printed before the port reopens after reset
+arm = false       # must read the backlog from the reset
+
+[[step]]
+say = "Stay out of the PIR's view (or cover it): the board wakes on the 60 s timer only"
+expect = ['Wake cause: Timer', 'Sleeping: GPIO4 AnyHigh']
+reject = 'Wake cause: Gpio|try_sleep failed|sleep failed|PANIC|panicked|Guru Meditation'
+timeout = 75
+
+[[step]]
+say = "Keep still until the PIR output is LOW, then wave a hand in front of the PIR"
+expect = ['Wake cause: Gpio', 'Sleeping: GPIO4 AnyHigh']
+reject = 'try_sleep failed|sleep failed|PANIC|panicked|Guru Meditation'
+timeout = 90
+attended = true
+
+[[step]]
+say = "Keep still: the board must sleep through the PIR hold time without a GPIO wake loop"
+duration = 20
+reject = 'Wake cause: Gpio|try_sleep failed|PANIC|panicked|Guru Meditation'
+attended = true   # follows the wave above

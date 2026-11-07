@@ -56,6 +56,7 @@ just pre-commit     # fmt, check, clippy, test (modifies files — local only)
 just build-example <name>   # chip inferred from the idf_{chip}_{name} prefix
 just run <name>             # build, flash, and open the serial monitor
 just run-hal-s3 <name>      # build and flash an esp-hal S3 example
+just bench <board> [check]  # guided on-device check via rustyfarian-bench v0.3.0 (bench/README.md)
 ```
 
 Run `just` with no arguments to list all recipes. Building the ESP32 (Feather V2) target additionally requires the `MCU=esp32` env var (esp-idf-sys reads it). ESP-IDF and esp-hal builds are isolated under `target/idf` and `target/hal`; an optional macOS RAM disk at `/Volumes/RustBuilds` speeds incremental builds.

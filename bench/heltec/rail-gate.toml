@@ -1,0 +1,27 @@
+# Vext rail gate (GPIO36, active-low) through GatedSleep, both tiers, 30 s timer sleep with the rail off.
+# hal: rail on for 10 s, then sleep; idf: two 10 s on/off cycles, then sleep.
+examples = ["hal_s3_power_rail_gate", "idf_s3_power_rail_gate"]
+
+[[step]]
+say = "Wait for the boot line"
+expect = 'BENCH case=rail tier=\w+ (event|phase)=boot'
+timeout = 10
+optional = true   # can be printed before the port reopens after reset
+arm = false       # must read the backlog from the reset
+
+[[step]]
+say = "Hands off: the rail cycles, then the board sleeps with the rail off (up to 60 s)"
+expect = 'BENCH case=rail tier=\w+ (event=sleep powered=false|phase=sleep)'
+reject = 'phase=on cycle=\d+ powered=false|phase=off cycle=\d+ powered=true|failed|PANIC|panicked|Guru Meditation'
+timeout = 60
+
+[[step]]
+say = "Wait for the 30 s timer wake"
+expect = 'BENCH case=rail tier=\w+ (event=boot reset=\w+ powered=true|phase=boot cause=Timer)'
+reject = 'failed|PANIC|panicked|Guru Meditation'
+timeout = 45
+
+[[step]]
+say = "Optional: with a meter on the Ve header pin, watch one awake/asleep transition"
+confirm = "Ve reads about 3.3 V while awake and about 0 V while asleep?"
+optional = true

@@ -1,0 +1,15 @@
+# Battery monitor on GPIO35 (200k/200k divider), both tiers.
+# hal prints `Battery: <status>` every second; idf prints one reading per boot, then deep-sleeps 60 s.
+# Without a battery on USB the charger holds BAT at ~4.16 V, a false ~96 % (docs/key-insights.md); judge with a battery fitted.
+examples = ["hal_esp32_battery", "idf_esp32_battery"]
+
+[[step]]
+say = "Wait for a battery reading"
+expect = 'Battery: '
+reject = 'ADC read failed|PANIC|panicked|Guru Meditation'
+timeout = 15
+arm = false       # idf prints its only reading right after the reset
+
+[[step]]
+say = "Compare the printed voltage with a meter across the battery"
+confirm = "Printed mV within about 100 mV of the meter?"

@@ -1,0 +1,22 @@
+# Bench definition for rustyfarian-bench (`just bench <target>`).
+# Scenarios live in bench/<board>/*.toml; see bench/README.md.
+# `bench-build` / `bench-flash` dispatch on the name: `idf_*` through the ESP-IDF recipes,
+# `hal_<chip>_*` through the esp-hal recipe for that chip.
+
+[commands]
+build = ["just", "bench-build", "{example}"]
+flash = ["just", "bench-flash", "{example}", "{port}"]
+
+[boards.c3]
+chip = "esp32c3"
+name = "ESP32-C3-MINI-1 / DevKitM-1 (UART bridge), HC-SR501 PIR on GPIO4"
+checks = ["retention"]   # first; needs no wiring
+
+[boards.heltec]
+chip = "esp32s3"
+name = "Heltec WiFi LoRa 32 V3 (ESP32-S3, CP2102 bridge)"
+checks = ["retention"]   # first; needs no battery
+
+[boards.esp32]
+chip = "esp32"
+name = "Adafruit ESP32 Feather V2"

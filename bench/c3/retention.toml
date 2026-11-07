@@ -1,0 +1,16 @@
+# RTC retention across timer deep sleep, both tiers (default build: action `sleep`, 5 s timer).
+# Each boot prints one `RET` line; after a timer wake the record must load and `boots` count on.
+examples = ["hal_c3_rtc_retention", "idf_c3_rtc_retention"]
+
+[[step]]
+say = "Wait for the first boot line"
+expect = 'RET reset=\w+ wake=\w+ load=\S+ boots=\d+'
+timeout = 10
+optional = true   # can be printed before the port reopens after reset
+arm = false       # must read the backlog from the reset
+
+[[step]]
+say = "Hands off: watch two 5 s timer wakes keep the record"
+expect = ['RET reset=DeepSleep wake=Timer load=ok', 'RET reset=DeepSleep wake=Timer load=ok']
+reject = 'load=err|store failed|sleep failed|PANIC|panicked|Guru Meditation'
+timeout = 30

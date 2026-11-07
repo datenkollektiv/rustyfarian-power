@@ -18,3 +18,7 @@ memory/
 
 .envrc
 __pycache__/
+
+# bench run artefacts (rustyfarian-bench): per-run serial logs and results (results record board MACs)
+bench/*/logs/
+bench/*/results.jsonl

@@ -56,6 +56,7 @@ manager.try_sleep(&sources)?;
 ```
 
 ### Added
+- `bench/`: a `rustyfarian-bench` definition with C3 (`retention`, `pir-wake`), Heltec V3 (`retention`, `rail-gate`, `battery`) and Feather V2 (`battery`) scenarios over the default example builds; run with `just bench <board>` (e.g. `just bench c3`) against the pinned `rustyfarian-bench` v0.3.0 (`RUSTYFARIAN_BENCH` selects a local checkout), with `bench-list`, `bench-detect` and the `bench-build` / `bench-flash` dispatch recipes alongside (ADR-005).
 - ESP32-C3/C2 deep-sleep GPIO wake on the IDF tier, with a pre-sleep held-pin check that returns `Rejected`, `WakeCause::Gpio(mask)`, and `just check-c3` in CI.
 - New bare-metal crate `rustyfarian-esp-hal-power` (esp-hal `=1.2.2`, MSRV 1.95) with a C3/S3 `sleep` module (`EspHalSleepManager`, `BoundSleep`, `EspHalWakeCauseSource`) and per-chip `just` recipes.
 - ESP32-S3 EXT1 wake reports `WakeCause::Ext1(mask)` on both tiers, hardware-validated on the CrowPanel 1.28" with touch and timer wake.
