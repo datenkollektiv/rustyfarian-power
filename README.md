@@ -1,7 +1,11 @@
 # Rustyfarian Power Management
 
 <p align="center">
-  <img src="docs/steampunk-meets-future-in-power-lab.png" alt="stoker — battery &amp; power management. A steampunk boiler-room on the left (no_std / esp-hal) and a futuristic power-monitor dashboard on the right (std / esp-idf), with the rustyfarian stoker mascot tending the fire between them: &quot;One chip. Two universes.&quot;" width="720">
+  <img src="docs/steampunk-meets-future-in-power-lab.png"
+       alt="stoker — battery &amp; power management. A steampunk boiler-room on the left (no_std / esp-hal)
+            and a futuristic power-monitor dashboard on the right (std / esp-idf),
+            with the rustyfarian stoker mascot tending the fire between them: &quot;One chip. Two universes.&quot;"
+       width="720">
 </p>
 
 [![CI](https://github.com/datenkollektiv/rustyfarian-power/actions/workflows/rust.yml/badge.svg)](https://github.com/datenkollektiv/rustyfarian-power/actions/workflows/rust.yml)
@@ -62,12 +66,19 @@ The `network → power` link uses `PowerRailGate`, which `stoker` defines and bo
 This library embodies the principle of **extracting testable pure logic from hardware-specific code** —
 a pattern common in application development but rare in embedded Rust.
 
-- **Hardware-independent core:** Voltage curves, sleep validation, wake-cause mapping, and configuration logic live in `config.rs` and `sleep.rs` — no ESP-IDF dependency, always compiled, fully testable on the host.
-- **Thin ESP-IDF wrappers:** `esp_adc.rs` and `esp_sleep.rs` are minimal translation layers between Rust types and ESP-IDF FFI. Real logic stays in the core; the wrappers handle hardware lifecycle only.
-- **Trait-first design:** Every hardware interaction is behind a trait (`BatteryMonitor`, `SleepManager`, `WakeCauseSource`). Consumers program against the trait, not the concrete type — enabling mock substitution in tests and alternative implementations in the future.
-- **No-op mocks ship with the crate:** `NoopSleepManager` and `NoopBatteryMonitor` provide complete, host-testable stand-ins without any hardware. Consumer crates should use them in their own test suites, not invent their own mocks.
-- **Fail-fast on misconfiguration:** Power management is operationally critical — silently entering a broken sleep state drains the battery. Errors in wake-source configuration are surfaced immediately and loudly, never swallowed.
-- **Asymmetry encoded in the type system:** `esp_deep_sleep_start()` never returns, so `SleepManager::sleep()` and `WakeCauseSource::last_wake_cause()` are deliberately separate traits. Merging them would imply a round-trip that does not exist in hardware.
+- **Hardware-independent core:** Voltage curves, sleep validation, wake-cause mapping, and configuration logic live in `config.rs` and `sleep.rs`.
+  - No ESP-IDF dependency, always compiled, fully testable on the host.
+- **Thin ESP-IDF wrappers:** `esp_adc.rs` and `esp_sleep.rs` are minimal translation layers between Rust types and ESP-IDF FFI.
+  - Real logic stays in the core; the wrappers handle hardware lifecycle only.
+- **Trait-first design:** Every hardware interaction is behind a trait (`BatteryMonitor`, `SleepManager`, `WakeCauseSource`).
+  - Consumers program against the trait, not the concrete type.
+  - This enables mock substitution in tests and alternative implementations in the future.
+- **No-op mocks ship with the crate:** `NoopSleepManager` and `NoopBatteryMonitor` provide complete, host-testable stand-ins without any hardware.
+  - Consumer crates should use them in their own test suites, not invent their own mocks.
+- **Fail-fast on misconfiguration:** Power management is operationally critical — silently entering a broken sleep state drains the battery.
+  - Errors in wake-source configuration are surfaced immediately and loudly, never swallowed.
+- **Asymmetry encoded in the type system:** `esp_deep_sleep_start()` never returns, so `SleepManager::sleep()` and `WakeCauseSource::last_wake_cause()` are deliberately separate traits.
+  - Merging them would imply a round-trip that does not exist in hardware.
 
 The core modules (`config.rs`, `sleep.rs`) can be fully unit-tested on your laptop without an ESP32 or ESP toolchain.
 
@@ -122,7 +133,8 @@ just run idf_esp32_battery
 just run idf_c3_deep_sleep_gpio
 ```
 
-**Elecrow CrowPanel 1.28" HMI** (ESP32-S3) — deep-sleeps until the CST816S touch INT on GPIO5 or a 60 s timer wakes it, on both tiers; the bench runbook is [docs/bench/s3-crowpanel-touch-sleep-bench-steps-v1.md](docs/bench/s3-crowpanel-touch-sleep-bench-steps-v1.md):
+**Elecrow CrowPanel 1.28" HMI** (ESP32-S3) — deep-sleeps until the CST816S touch INT on GPIO5 or a 60 s timer wakes it, on both tiers.
+Bench runbook: [docs/bench/s3-crowpanel-touch-sleep-bench-steps-v1.md](docs/bench/s3-crowpanel-touch-sleep-bench-steps-v1.md)
 
 ```shell
 just run idf_s3_deep_sleep_gpio
@@ -179,15 +191,32 @@ just pre-commit
 
 This repository publishes three crates, one per tier (see [release-plan.md](release-plan.md)):
 
-| Crate                                                           | Tier                         | Contents                                                                                                                                                                                                                                                                                                                                                                                                               | crates.io                                                                                                                         | Docs                                                                                                   |
-|:----------------------------------------------------------------|:-----------------------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------|
-| [`stoker`](crates/stoker)                                       | Pure / host-buildable        | `BatteryConfig`, `BatteryStatus`, `PowerSource`, the `BatteryMonitor` / `ChargingMonitor` / `SleepManager` / `WakeCauseSource` / `PowerRailGate` traits, `GatedSleep`, `ChargingState`, `WakeCause` / `WakeSource`, sleep validation, and the `Noop*` host mocks. No ESP-IDF dependency; fully host-testable.                                                                                                          | [![crates.io](https://img.shields.io/crates/v/stoker.svg)](https://crates.io/crates/stoker)                                       | [![docs.rs](https://img.shields.io/docsrs/stoker)](https://docs.rs/stoker)                             |
-| [`rustyfarian-esp-idf-power`](crates/rustyfarian-esp-idf-power) | ESP-IDF (std)                | `EspAdcBatteryMonitor`, `EspSleepManager`, `EspWakeCauseSource`, `EspResetReasonSource`, `EspChargingMonitor`, plus the hardware examples. Re-exports `stoker`'s surface, so firmware imports from one crate.                                                                                                                                                                                                          | [![crates.io](https://img.shields.io/crates/v/rustyfarian-esp-idf-power.svg)](https://crates.io/crates/rustyfarian-esp-idf-power) | [![readme](https://img.shields.io/badge/docs-readme-blue)](crates/rustyfarian-esp-idf-power/README.md) |
-| [`rustyfarian-esp-hal-power`](crates/rustyfarian-esp-hal-power) | Bare-metal (esp-hal, no_std) | Chip features `esp32c3` / `esp32c6` / `esp32` / `esp32s3`, re-exports `stoker`. The `sleep` module (`EspHalSleepManager`, `EspHalWakeCauseSource`) covers the C3 and S3 per [ADR-001](docs/adr/001-hal-neutral-sleep-contract.md); `EspHalResetReasonSource` and `RtcRetainedCell` place a `stoker` retention record in RTC fast memory; ADC drivers land per [esp-hal-parity-v1](docs/features/esp-hal-parity-v1.md). | [![crates.io](https://img.shields.io/crates/v/rustyfarian-esp-hal-power.svg)](https://crates.io/crates/rustyfarian-esp-hal-power) | [![readme](https://img.shields.io/badge/docs-readme-blue)](crates/rustyfarian-esp-hal-power/README.md) |
+| Crate                                                           | Tier                         | crates.io                                                                                                                         | Docs                                                                                                   |
+|:----------------------------------------------------------------|:-----------------------------|:----------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------|
+| [`stoker`](crates/stoker)                                       | Pure / host-buildable        | [![crates.io](https://img.shields.io/crates/v/stoker.svg)](https://crates.io/crates/stoker)                                       | [![docs.rs](https://img.shields.io/docsrs/stoker)](https://docs.rs/stoker)                             |
+| [`rustyfarian-esp-idf-power`](crates/rustyfarian-esp-idf-power) | ESP-IDF (std)                | [![crates.io](https://img.shields.io/crates/v/rustyfarian-esp-idf-power.svg)](https://crates.io/crates/rustyfarian-esp-idf-power) | [![readme](https://img.shields.io/badge/docs-readme-blue)](crates/rustyfarian-esp-idf-power/README.md) |
+| [`rustyfarian-esp-hal-power`](crates/rustyfarian-esp-hal-power) | Bare-metal (esp-hal, no_std) | [![crates.io](https://img.shields.io/crates/v/rustyfarian-esp-hal-power.svg)](https://crates.io/crates/rustyfarian-esp-hal-power) | [![readme](https://img.shields.io/badge/docs-readme-blue)](crates/rustyfarian-esp-hal-power/README.md) |
+
+Contents of `stoker`:
+- Types: `BatteryConfig`, `BatteryStatus`, `PowerSource`, `GatedSleep`, `ChargingState`, `WakeCause` / `WakeSource`.
+- Traits: `BatteryMonitor` / `ChargingMonitor` / `SleepManager` / `WakeCauseSource` / `PowerRailGate`.
+- Sleep validation and the `Noop*` host mocks.
+- No ESP-IDF dependency; fully host-testable.
+
+Contents of `rustyfarian-esp-idf-power`:
+- `EspAdcBatteryMonitor`, `EspSleepManager`, `EspWakeCauseSource`, `EspResetReasonSource`, `EspChargingMonitor`, plus the hardware examples.
+- Re-exports `stoker`'s surface, so firmware imports from one crate.
+
+Contents of `rustyfarian-esp-hal-power`:
+- Chip features `esp32c3` / `esp32c6` / `esp32` / `esp32s3`, re-exports `stoker`.
+- The `sleep` module (`EspHalSleepManager`, `EspHalWakeCauseSource`) covers the C3 and S3 per [ADR-001](docs/adr/001-hal-neutral-sleep-contract.md).
+- `EspHalResetReasonSource` and `RtcRetainedCell` place a `stoker` retention record in RTC fast memory.
+- ADC drivers land per [esp-hal-parity-v1](docs/features/esp-hal-parity-v1.md).
 
 > `rustyfarian-esp-idf-power` links to its crate README rather than docs.rs — `esp-idf-sys` cannot build in the docs.rs sandbox.
 
-The pure core uses the rustyfarian family's funfair naming (`stoker`, joining `bunting` / `pennant` / `ferriswheel` / `juggler`); the hardware tier uses the technical `rustyfarian-<hal>-<repo>` convention.
+The pure core uses the rustyfarian family's funfair naming (`stoker`, joining `bunting` / `pennant` / `ferriswheel` / `juggler`).
+The hardware tier uses the technical `rustyfarian-<hal>-<repo>` convention.
 
 ## License
 
@@ -198,4 +227,5 @@ Licensed under either of
 
 at your option.
 
-Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you,
+as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.

@@ -3,24 +3,26 @@ gate: none
 desk-work: available
 ---
 
-# Feature: esp-hal RTC 
+# Feature: esp-hal RTC Clock v1
 
 `EspHalRtcClock::now_us() -> u64` in `rustyfarian-esp-hal-power`, the esp-hal twin of the IDF `EspRtcClock`, so a slept time read across two boots is off by a share of the interval, not of the uptime.
 Requested by an upstream consumer on the esp-hal tier (filed 2026-10-24); not blocking, the consumer has an awake workaround.
-Measured on the DevKitM-1: `Rtc::time_since_power_up()` differences for a 60 s sleep drift to −8.5 %..+6.1 % after an hour, about 0.14 % of uptime, because every boot recalibrates the slow clock and the whole 48-bit count is converted with this boot's period.
-ESP-IDF avoids this by keeping accumulated microseconds and the last tick count in RTC memory and converting only the ticks since the last read (`esp_clk.c`); the consumer measured +0.7 % steady on the IDF tier.
+Measured on the DevKitM-1: `Rtc::time_since_power_up()` differences for a 60 s sleep drift to −8.5 %..+6.1 % after an hour, about 0.14 % of uptime.
+The cause: every boot recalibrates the slow clock and the whole 48-bit count is converted with this boot's period.
+ESP-IDF avoids this by keeping accumulated microseconds and the last tick count in RTC memory and converting only the ticks since the last read (`esp_clk.c`).
+The consumer measured +0.7 % steady on the IDF tier.
 
 ## Decisions
-|                                                                       Decision | Reason                                                                             | Rejected Alternative                                                       |
-|-------------------------------------------------------------------------------:|:-----------------------------------------------------------------------------------|:---------------------------------------------------------------------------|
-|         IDF-style accumulation of `(last_ticks, accumulated_us)` in RTC memory | Error proportional to the interval, same bound as IDF; monotonic across boots      | Raw ticks with one fixed period: no state, but drifts with temperature     |
-|           The tier reads `RTC_TIMER` and the calibration store register itself | esp-hal 1.2.2 keeps `time_since_boot_raw` and `rtc_ticks_to_us` `pub(crate)`       | Upstream esp-hal change; the consumer pins 1.2.2                           |
-| Period from esp-hal's boot calibration in `LP_AON STORE1` (19 fractional bits) | Same source esp-hal and IDF use; applied to delta ticks only, so uptime drops out  | Longer per-boot calibration: shrinks scatter, keeps uptime proportionality |
-|                 Shape `EspHalRtcClock::now_us() -> u64`, twin of `EspRtcClock` | One consumer call site for both tiers                                              | `WakeCause::Timer { slept_ms }`, rejected in ADR-001                       |
-|                                          esp-hal clock only, no `stoker` trait | One consumer; ADR-001 reserves an additive trait for a second one                  | `RtcClock` trait in `stoker` now                                           |
-|                         CRC-32 envelope on `Accum` (`Retainable`, 20 bytes LE) | Rejects garbage after flashing and torn writes; reuses `stoker::retain`            | Two plain persistent `u64`, as IDF does                                    |
-|                 `frac_q19` keeps the sub-µs remainder (deviates from the pair) | Frequent polling does not lose about 1 µs per call                                 | Whole-µs pair `(last_ticks, accumulated_us)` only                          |
-|            The clock reads the reset reason itself on the first call of a boot | ROM latches the cause, so a late first call still works; `Retained::load` needs it | Consumer passes the reset reason in                                        |
+|                                                                       Decision | Reason                                                                        | Rejected Alternative                                                       |
+|-------------------------------------------------------------------------------:|:------------------------------------------------------------------------------|:---------------------------------------------------------------------------|
+|         IDF-style accumulation of `(last_ticks, accumulated_us)` in RTC memory | Error proportional to the interval, same bound as IDF; monotonic across boots | Raw ticks with one fixed period: no state, but drifts with temperature     |
+|           The tier reads `RTC_TIMER` and the calibration store register itself | esp-hal 1.2.2 keeps `time_since_boot_raw` and `rtc_ticks_to_us` `pub(crate)`  | Upstream esp-hal change; the consumer pins 1.2.2                           |
+| Period from esp-hal's boot calibration in `LP_AON STORE1` (19 fractional bits) | Same source esp-hal and IDF use; delta ticks only, so uptime drops out        | Longer per-boot calibration: shrinks scatter, keeps uptime proportionality |
+|                 Shape `EspHalRtcClock::now_us() -> u64`, twin of `EspRtcClock` | One consumer call site for both tiers                                         | `WakeCause::Timer { slept_ms }`, rejected in ADR-001                       |
+|                                          esp-hal clock only, no `stoker` trait | One consumer; ADR-001 reserves an additive trait for a second one             | `RtcClock` trait in `stoker` now                                           |
+|                         CRC-32 envelope on `Accum` (`Retainable`, 20 bytes LE) | Rejects garbage after flashing and torn writes; reuses `stoker::retain`       | Two plain persistent `u64`, as IDF does                                    |
+|                 `frac_q19` keeps the sub-µs remainder (deviates from the pair) | Frequent polling does not lose about 1 µs per call                            | Whole-µs pair `(last_ticks, accumulated_us)` only                          |
+|            The clock reads the reset reason itself on the first call of a boot | ROM latches the cause, so a late first call works; `Retained::load` needs it  | Consumer passes the reset reason in                                        |
 
 ## Constraints
 - esp-hal stays pinned at 1.2.2; no upstream change is required.

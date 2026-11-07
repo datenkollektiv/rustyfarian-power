@@ -11,7 +11,8 @@ Give every rustyfarian application on ESP32 a single, ergonomic power management
 - Keep the API ergonomic enough that a new rustyfarian application can integrate power management in under a day.
 
 ## Target Beneficiaries
-Developers building battery-powered IoT applications in the rustyfarian ecosystem — for example, a remote beehive monitoring sensor that must operate in a field for a full season with minimal maintenance.
+Developers building battery-powered IoT applications in the rustyfarian ecosystem.
+For example, a remote beehive monitoring sensor that must operate in a field for a full season with minimal maintenance.
 
 ## Non-Goals
 - Wi-Fi connection management, MQTT, or LoRaWAN protocol logic — these belong in `rustyfarian-network`.

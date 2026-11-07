@@ -10,14 +10,18 @@ Plan item 1 of the tier-parity wave; the esp-hal C6 counterpart is in `esp-hal-s
 Capability status: `docs/features/esp-hal-parity-v1.md` § capability table.
 
 ## Decisions
-|                                                                                                           Decision | Reason                                                                                                           | Rejected Alternative                           |
-|-------------------------------------------------------------------------------------------------------------------:|:-----------------------------------------------------------------------------------------------------------------|:-----------------------------------------------|
-|                                          `cfg(esp32c6)` selects `ChipPolicy::Esp32C6` (guard `Never`, mask `0xFF`) | The C6 has EXT1 and no pre-read path; the stoker table already defines this row                                  | Keep `ChipPolicy::Other` (mask check skipped)  |
-|                                                              Build script only adds `rustc-check-cfg=cfg(esp32c6)` | esp-idf-sys 0.38.1 already emits the bare cfg; no MCU or triple parsing                                          | Parse `MCU` or the target triple in `build.rs` |
-|                                                                   C6 deep-sleep example uses GPIO2 as the wake pin | GPIO4-7 are JTAG and GPIO8/9 are strapping or LED; GPIO2 is not flagged by esp-metadata                          | GPIO4 (JTAG) or GPIO8/9 (strapping)            |
-|                         C6 example is leaner than the C3 one (no awake probe, no pin-read window, no `C3_*` knobs) | `Esp32C6` never pre-reads, so the C3 bench scaffolding does not apply                                            | Port the C3 example unchanged                  |
-| `[target.riscv32imac-esp-espidf]` (ldproxy, `espidf_time64`) in `.cargo/config.toml.dist` and `.cargo/config.toml` | Same time64 setting as the other IDF targets; `.cargo/config.toml` is gitignored, so `.dist` is the tracked copy | Target block only in the local file            |
-|                                                                         CI job `check-c6` pinned to `ubuntu-24.04` | The 26.04 image breaks ESP-IDF tool self-checks (see key-insights CI section)                                    | `ubuntu-latest`                                |
+|                                                                  Decision | Reason                                                                           | Rejected Alternative                           |
+|--------------------------------------------------------------------------:|:---------------------------------------------------------------------------------|:-----------------------------------------------|
+| `cfg(esp32c6)` selects `ChipPolicy::Esp32C6` (guard `Never`, mask `0xFF`) | The C6 has EXT1 and no pre-read path; the stoker table already defines this row  | Keep `ChipPolicy::Other` (mask check skipped)  |
+|                     Build script only adds `rustc-check-cfg=cfg(esp32c6)` | esp-idf-sys 0.38.1 already emits the bare cfg; no MCU or triple parsing          | Parse `MCU` or the target triple in `build.rs` |
+|                          C6 deep-sleep example uses GPIO2 as the wake pin | GPIO4-7 are JTAG, GPIO8/9 strapping or LED; GPIO2 not flagged by esp-metadata    | GPIO4 (JTAG) or GPIO8/9 (strapping)            |
+|                              C6 example is leaner than the C3 one [^lean] | `Esp32C6` never pre-reads, so the C3 bench scaffolding does not apply            | Port the C3 example unchanged                  |
+|      `[target.riscv32imac-esp-espidf]` block in both cargo configs [^cfg] | Same time64 setting as the other IDF targets; `.dist` is the tracked copy [^git] | Target block only in the local file            |
+|                                CI job `check-c6` pinned to `ubuntu-24.04` | The 26.04 image breaks ESP-IDF tool self-checks (see key-insights CI section)    | `ubuntu-latest`                                |
+
+[^lean]: No awake probe, no pin-read window, no `C3_*` knobs.
+[^cfg]: The block (ldproxy, `espidf_time64`) lives in `.cargo/config.toml.dist` and `.cargo/config.toml`.
+[^git]: `.cargo/config.toml` is gitignored.
 
 ## Constraints
 - Retention (`RetainedCell`) needs the opt-in `critical-section-impl` provider; `idf_c6_rtc_retention` enables it through its `[[example]]` `required-features`.

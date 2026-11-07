@@ -267,9 +267,9 @@ update:
 clean-hal:
     cargo clean --target-dir {{ hal_dir }}
 
-# clean build artifacts (target/ide, target/idf, target/hal, and RAM disk if mounted)
+# clean build artifacts: the whole local target/ (also builds from before the RAM disk was mounted), then the RAM disk dirs if mounted
 clean:
-    cargo clean --target-dir target/ide
+    cargo clean --target-dir target
     cargo clean --target-dir {{ idf_dir }}
     cargo clean --target-dir {{ hal_dir }}
 

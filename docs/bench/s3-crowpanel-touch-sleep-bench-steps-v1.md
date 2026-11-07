@@ -111,10 +111,12 @@ just serial-capture /dev/cu.usbmodem2101 240
 ```
 
 Method:
-- The firmware makes the stimulus: odd cycles and every `Ext1` wake are forced cycles, which cut `LCD_3V3` (GPIO1) and hold touch reset (GPIO13) LOW, so INT (GPIO5) reads `L` and the S3 rejects the sleep.
+- The firmware makes the stimulus: odd cycles and every `Ext1` wake are forced cycles.
+  Forced cycles cut `LCD_3V3` (GPIO1) and hold touch reset (GPIO13) LOW, so INT (GPIO5) reads `L` and the S3 rejects the sleep.
 - Right after the rejection the firmware reads GPIO5 through its existing input driver, re-reads the wake cause, and (IDF) retries once with GPIO0 + GPIO5 in the mask.
 - Two seconds into an 8 s window it restores the rail and reset, which gives an `L->H` edge on GPIO5, then retries until the sleep succeeds.
-- The recount is measured in firmware: the RTC time of each sleep entry is kept in RTC memory and subtracted from the RTC clock at the next `Timer` boot (`EspRtcClock`, `EspHalRtcClock`), at 1 ms resolution.
+- The recount is measured in firmware.
+  The RTC time of each sleep entry is kept in RTC memory and subtracted from the RTC clock at the next `Timer` boot (`EspRtcClock`, `EspHalRtcClock`), at 1 ms resolution.
   `SLEPT` includes the boot time up to the measurement, the same on forced and plain cycles, so forced cycles are compared with plain ones.
 - Touches by hand gave the `Ext1` wakes; the stimulus needs no hands.
 - Logs: `tmp/bench/2026-11-03/s3-idf-r2.log`, `tmp/bench/2026-11-03/s3-hal-r2.log`.
@@ -135,7 +137,8 @@ Method:
 - Wake cause: on both tiers a rejection keeps the cause and clears the pin mask, so the capture-before-the-first-`try_sleep` rule applies to the IDF tier too.
 
 Finding: a rejected deep sleep hangs the S3 while the global digital-pad hold (`DG_PAD_AUTOHOLD_EN`) is enabled, on both tiers; see `docs/project-lore.md` → ESP-IDF tier — ESP32-S3 deep sleep.
-The first IDF runs reset by interrupt watchdog on every forced cycle (`LASTSTAGE stage=3`, inside `try_sleep`), and the pre-change adapter `8669290` did the same; the first esp-hal runs stalled silently with `autohold_en=1` inherited from the IDF firmware.
+The first IDF runs reset by interrupt watchdog on every forced cycle (`LASTSTAGE stage=3`, inside `try_sleep`), and the pre-change adapter `8669290` did the same.
+The first esp-hal runs stalled silently with `autohold_en=1` inherited from the IDF firmware.
 Both examples now clear the hold before a forced attempt.
 
 ## R3-S3: `try_sleep` hold guard with the global pad hold kept on (2026-11-04)
@@ -144,11 +147,15 @@ Checks the library guard against the R2-S3 hang: with the hold effective, `try_s
 Firmware: both S3 examples with `S3_R2=1 S3_SLEEP_TIMER_MS=5000 S3_KEEP_AUTOHOLD=1`, so forced cycles keep the hold on (`FORCED ... autohold=1`); working tree on top of `8199212`.
 Logs: `tmp/bench/2026-11-03/s3-negctl.log`, `s3-guard-idf.log`, `s3-guard-hal.log`.
 
-| Run                                 | Forced cycles | Result                                                                                                     |
-|:------------------------------------|--------------:|:-----------------------------------------------------------------------------------------------------------|
-| Negative control, IDF without guard |             2 | `rst:0x8 TG1WDT_SYS_RST` at `LASTSTAGE stage=3` on both: the bench detects the hang                        |
-| IDF with guard                      |             6 | 6 `Rejected`, no IDF reject line (the guard answered), GPIO5 `L` then `L->H`, `MASKRETRY` 6 `err:Rejected` |
-| esp-hal with guard                  |             5 | 5 `Rejected` (`autohold_en=1` at boot), GPIO5 `L` then `L->H`, cycles 1-9 continuous                       |
+| Run                                 | Forced cycles | Result                      |
+|:------------------------------------|--------------:|:----------------------------|
+| Negative control, IDF without guard |             2 | hang detected on both       |
+| IDF with guard                      |             6 | 6 `Rejected`                |
+| esp-hal with guard                  |             5 | 5 `Rejected`                |
+
+- Negative control: `rst:0x8 TG1WDT_SYS_RST` at `LASTSTAGE stage=3` on both; the bench detects the hang.
+- IDF with guard: no IDF reject line (the guard answered), GPIO5 `L` then `L->H`, `MASKRETRY` 6 `err:Rejected`.
+- esp-hal with guard: `autohold_en=1` at boot, GPIO5 `L` then `L->H`, cycles 1-9 continuous.
 
 - Recount after a guarded rejection, IDF: `SLEPT` 5401-5402 ms after forced cycles against 5401-5402 ms after plain ones (RTC clock, 1 ms resolution).
 - Recount after a guarded rejection, esp-hal: unobserved; the boots after forced cycles printed nothing the capture received, although the cycle counter shows they ran.
@@ -163,19 +170,28 @@ Firmware: both S3 examples with `S3_R2=1 S3_SLEEP_TIMER_MS=5000 S3_R4=1`, plus `
 Logs: `tmp/bench/2026-11-03/r4-idf-hw-smoke.log`, `r4-idf-hw.log`, `r4-idf-guard.log`, `r4-hal-hw.log`, `r4-hal-guard.log`, `r4-hal-hw-iso.log`.
 
 Method:
-- Probe pads (digital-only, assumed unwired on the CrowPanel 1.28"): GPIO38 output HIGH with input enable and a user hold, GPIO39 output HIGH unheld, GPIO47 input with pull-up; GPIO1 and GPIO13 keep their RTC holds through the attempt (re-latched LOW so INT stays LOW).
-- The firmware snapshots, right before the forced `try_sleep` and right after its `Rejected`, each probe's IO_MUX word, out-sel word, output-enable bit and input bit, and the global `DIG_PAD_HOLD`, `PAD_HOLD` and `DIG_ISO` registers, then checks that writes to held GPIO38 and GPIO1 do not move their levels.
-- It prints `NONWAKE tier=.. path=hw|guard same=<0|1> holdok=<0|1> diff=<..>`; a per-boot self-test clears GPIO39's input enable and must report a difference (`detect=1`).
+- Probe pads (digital-only, assumed unwired on the CrowPanel 1.28"):
+  - GPIO38 output HIGH with input enable and a user hold.
+  - GPIO39 output HIGH unheld.
+  - GPIO47 input with pull-up.
+  - GPIO1 and GPIO13 keep their RTC holds through the attempt (re-latched LOW so INT stays LOW).
+- Right before the forced `try_sleep` and right after its `Rejected`, the firmware snapshots each probe's IO_MUX word, out-sel word, output-enable bit and input bit.
+- It also snapshots the global `DIG_PAD_HOLD`, `PAD_HOLD` and `DIG_ISO` registers, then checks that writes to held GPIO38 and GPIO1 do not move their levels.
+- It prints `NONWAKE tier=.. path=hw|guard same=<0|1> holdok=<0|1> diff=<..>`.
+- A per-boot self-test clears GPIO39's input enable and must report a difference (`detect=1`).
 
-| Tier    | Path  | Forced cycles | `same` | `holdok` | Self-test `detect=1` |
-|:--------|:------|--------------:|:-------|:---------|:---------------------|
-| ESP-IDF | hw    |             7 | 7 of 7 | 7 of 7   | 13 of 13             |
-| ESP-IDF | guard |             7 | 7 of 7 | 7 of 7   | 13 of 13             |
-| esp-hal | hw    |             7 | 0 of 7 | 7 of 7   | 8 of 8               |
-| esp-hal | guard |             7 | 7 of 7 | 7 of 7   | 7 of 7               |
+| Tier, path      | Forced cycles | `same` | `holdok` | Self-test `detect=1` |
+|:----------------|--------------:|:-------|:---------|:---------------------|
+| ESP-IDF, hw     |             7 | 7 of 7 | 7 of 7   | 13 of 13             |
+| ESP-IDF, guard  |             7 | 7 of 7 | 7 of 7   | 13 of 13             |
+| esp-hal, hw     |             7 | 0 of 7 | 7 of 7   | 8 of 8               |
+| esp-hal, guard  |             7 | 7 of 7 | 7 of 7   | 7 of 7               |
 
-- The esp-hal hardware-path difference is one global bit: `diff=iso:10000080>00000080` (rerun with the values printed, 3 of 3), `RTC_CNTL_WIFI_FORCE_ISO` cleared by esp-hal's sleep entry and not restored; every pad word and hold matched.
+- The esp-hal hardware-path difference is one global bit: `diff=iso:10000080>00000080` (rerun with the values printed, 3 of 3).
+  `RTC_CNTL_WIFI_FORCE_ISO` is cleared by esp-hal's sleep entry and not restored; every pad word and hold matched.
   This is power-domain configuration, excluded from the pad postcondition in ADR-003; see `docs/project-lore.md`.
-  After review the comparator masks that bit on both tiers and prints the token `iso` on both; not re-benched (board unplugged), but the logged values show it as the only differing bit, so the esp-hal hardware path now reads `same=1` by inference, not by measurement.
+  After review the comparator masks that bit on both tiers and prints the token `iso` on both.
+  Not re-benched (board unplugged), but the logged values show it as the only differing bit.
+  So the esp-hal hardware path now reads `same=1` by inference, not by measurement.
 - The GPIO1 hold check is weak on its own (a pad without input enable also reads LOW); GPIO38 reading HIGH after a LOW write proves the input path.
 - `hold38=1` on every boot confirms the user hold on the digital-only pad took effect on both tiers.

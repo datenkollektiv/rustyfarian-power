@@ -20,7 +20,8 @@ re-exports `stoker`'s public surface so firmware needs only one import.
 
 ## Features
 
-The opt-in feature `critical-section-impl` provides the firmware's `critical-section` implementation over the FreeRTOS port critical section, which `RetainedCell` needs to exclude interrupts and the other core.
+The opt-in feature `critical-section-impl` provides the firmware's `critical-section` implementation over the FreeRTOS port critical section.
+`RetainedCell` needs it to exclude interrupts and the other core.
 A firmware links exactly one provider, and `RetainedCell` is only as safe as that provider.
 Enable this feature unless the graph already links a provider; that provider must then also exclude interrupts and the other core before a cell is shared with an ISR.
 esp-idf-hal's `critical-section` feature (enabled, for example, by `rustyfarian-esp-idf-network`'s `lora`) is a task-level mutex that does not.

@@ -1,7 +1,8 @@
 # Bench Record: ESP32-C3 esp-hal Tier RTC Retention v1
 
 Run 2026-10-16 on an ESP32-C3-DevKitM-1 (CP2102N on `/dev/cu.usbserial-210`) with `hal_c3_rtc_retention`, the bare-metal twin of the IDF example.
-It checks the esp-hal half of [RTC retention v1](../features/rtc-retention-v1.md) and answers bench case R1 of the [C3 sleep bench plan](c3-devkitm1-sleep-bench-plan-v1.md): an `RtcRetainedCell<16>` in `.rtc_fast.persistent` through esp-hal 1.2.2 deep sleep.
+It checks the esp-hal half of [RTC retention v1](../features/rtc-retention-v1.md).
+It answers bench case R1 of the [C3 sleep bench plan](c3-devkitm1-sleep-bench-plan-v1.md): an `RtcRetainedCell<16>` in `.rtc_fast.persistent` through esp-hal 1.2.2 deep sleep.
 No wiring is needed.
 
 ## Setup

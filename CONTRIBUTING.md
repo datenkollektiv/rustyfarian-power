@@ -12,8 +12,10 @@ All kinds of contributions are welcome — code, documentation, bug reports, ide
 ## 🧰 Prerequisites
 
 - **[`just`](https://github.com/casey/just)** — the task runner behind every build/test/lint command; install it before running any `just …` recipe.
-- **Rust + the `esp` toolchain** — install via [`espup`](https://github.com/esp-rs/espup) (or `just setup-toolchain`); the channel is pinned in `rust-toolchain.toml`. Host-only checks run on stable, but building for the device needs the Espressif Xtensa toolchain.
-- **ESP-IDF tooling** — only required for device tasks (`just check-all`, `just build-example`, `just flash`); it is fetched automatically on the first ESP-IDF build. Pure host-side work (`just verify`) needs none of it.
+- **Rust + the `esp` toolchain** — install via [`espup`](https://github.com/esp-rs/espup) (or `just setup-toolchain`); the channel is pinned in `rust-toolchain.toml`.
+- Host-only checks run on stable, but building for the device needs the Espressif Xtensa toolchain.
+- **ESP-IDF tooling** — only required for device tasks (`just check-all`, `just build-example`, `just flash`); it is fetched automatically on the first ESP-IDF build.
+- Pure host-side work (`just verify`) needs no ESP-IDF tooling.
 - Optional: `cargo-deny` and `cargo-audit` (for `just deny` / `just audit`) — CI installs these automatically.
 
 Run `just doctor` for a one-glance check of your environment.
@@ -47,7 +49,9 @@ just check-all
 just build-example <example>
 ```
 
-`just audit` (and the scheduled Audit workflow) scans dependencies for security advisories. Note it generates a `Cargo.lock` if one isn't present — the lockfile is gitignored for this library, so this is expected and not something to commit.
+`just audit` (and the scheduled Audit workflow) scans dependencies for security advisories.
+It generates a `Cargo.lock` if one isn't present.
+The lockfile is gitignored for this library, so this is expected and not something to commit.
 
 ### 4. Open a Pull Request
 - Describe **what** you changed and **why**
