@@ -6,7 +6,7 @@ Wiring for `pir-wake` only: HC-SR501 OUT on GPIO4 (10 kΩ pull-down to GND), VCC
 | Check       | Examples                                          | Verdict                                                  |
 |:------------|:--------------------------------------------------|:---------------------------------------------------------|
 | `retention` | `hal_c3_rtc_retention`, `idf_c3_rtc_retention`    | two `RET reset=DeepSleep wake=Timer load=ok` lines       |
-| `pir-wake`  | `hal_c3_deep_sleep_gpio`, `idf_c3_deep_sleep_gpio` | unattended: a timer wake, no GPIO wake; attended: a `Wake cause: Gpio`, then 20 s without a wake loop |
+| `pir-wake`  | `hal_c3_deep_sleep_gpio`, `idf_c3_deep_sleep_gpio` | unattended: a timer wake, no GPIO wake; attended: a `Wake cause: Gpio`, the held pin `Rejected`, then 20 s without a wake loop |
 
 Each step waits for Enter before it starts timing; read the instruction, press Enter, then act.
 
@@ -18,6 +18,7 @@ just bench c3
 
 - A CP210x port open can reset the board, so the first `RET` line may show `reset=PowerOn`; the checks judge the timer wakes only.
 - Let the PIR warm up (about 60 s after power-on) before the `pir-wake` wave step; set its hold-time pot low.
+- An unattended `pir-wake` that fails on `Wake cause: Gpio` with `GPIO4 level before sleep: High` at power-on saw the PIR fire; it is inconclusive, not a failure — rerun with nobody in view.
 - Ctrl-C ends a run; it is recorded as `aborted`.
 
 ## Open

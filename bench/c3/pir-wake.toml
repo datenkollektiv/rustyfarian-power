@@ -18,7 +18,8 @@ timeout = 75
 
 [[step]]
 say = "Keep still until the PIR output is LOW, then wave a hand in front of the PIR"
-expect = ['Wake cause: Gpio', 'Sleeping: GPIO4 AnyHigh']
+# The PIR holds its output HIGH past the boot, so the first attempt must be rejected (wake-pin-held-at-entry).
+expect = ['Wake cause: Gpio', 'Sleeping: GPIO4 AnyHigh', 'try_sleep rejected \(first\).*kind=Rejected']
 reject = 'try_sleep failed|sleep failed|PANIC|panicked|Guru Meditation'
 timeout = 90
 attended = true

@@ -81,8 +81,8 @@ Facts verified 2026-10-12 against esp-hal 1.2.2 in the cargo registry (`sleep_de
   - C6 UART0/UART1 drain (`fsm_status` path unproven).
   - Regression on C3 and S3.
 - Hardware validation: a single final pass follows the tier-parity changes, before the release; it is not a gate for this feature.
-  - C3 DevKitM-1: GPIO4 wake, timer fallback.
-  - Bench case `wake-pin-held-at-entry` (expect `Rejected`).
+  - [x] C3 DevKitM-1: GPIO4 wake, timer fallback (2026-11-08, `just bench c3 pir-wake`, both tiers).
+  - [x] Bench case `wake-pin-held-at-entry` (expect `Rejected`) (2026-11-08, same run, both tiers).
   - Bench case `wake-cause-survives-rejection` (ADR-001 § 5).
   - Bench cases `held-level-custom-handler` and `rejection-retry-loop`.
   - Bench case `short-timer-sweep` with queued UART output and GPIO plus timer, measuring guard-to-sleep-entry.
@@ -119,3 +119,8 @@ Facts verified 2026-10-12 against esp-hal 1.2.2 in the cargo registry (`sleep_de
   - ESP32 target in `.cargo/config.toml.dist`.
   - Bench plan rewritten with stimulus wiring, host procedure (flash-hal-esp32, bench-c3 commands, ZZ safe-state), protocol table, and MANUAL verification items.
   - MANUAL items: W1 50 ms edge-to-boot with LA, W2 ±5 % timer, H5 guard-to-entry with PPK2.
+- 2026-11-08 — C3 DevKitM-1 (chip v0.3, CP2102 console) benched with `rustyfarian-bench` v0.3.0 (`just bench c3 pir-wake`, ADR-005):
+  - Unattended, PIR out of view: both tiers wake on the 60 s timer (`Wake cause: Timer`), no GPIO wake.
+  - Attended wave: both tiers wake with `Wake cause: Gpio`, mask `0x10`; GPIO4 reads HIGH at entry and `try_sleep` returns `kind=Rejected` (hal 20+, IDF 60+ retries at 50 ms) until the PIR releases.
+  - No GPIO wake loop in the 20 s after the rejections, so the held pin is not slept on (the 2026-10-12 H1 boot loop stays fixed).
+  - One unattended hal run is excluded as inconclusive: GPIO4 was already HIGH at power-on (PIR triggered by the operator), the rerun passed.
