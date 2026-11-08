@@ -1,0 +1,25 @@
+# Deep sleep on the ESP32, both tiers: GPIO25 EXT1 + 60 s timer, internal pull-down on GPIO25.
+# With nothing wired, every wake must be the timer (a floating pin would show as an EXT1 wake).
+# On the hal tier each `try_sleep` first drains UART0-2 through the ESP32-only `status().st_utx_out`
+# path while the console still prints: a misread is `UartBusy`, a too-early idle hangs sleep entry.
+examples = ["hal_esp32_deep_sleep_gpio", "idf_esp32_deep_sleep_gpio"]
+
+[[step]]
+say = "Wait for the first sleep"
+expect = 'Sleeping: GPIO25 AnyHigh'
+timeout = 15
+optional = true   # can be printed before the port reopens after reset
+arm = false       # must read the backlog from the reset
+
+[[step]]
+say = "Hands off: two 60 s timer wakes, no UartBusy, no GPIO wake"
+expect = ['Wake cause: Timer', 'Sleeping: GPIO25 AnyHigh', 'Wake cause: Timer', 'Sleeping: GPIO25 AnyHigh']
+reject = 'try_sleep failed|UartBusy|Wake cause: Ext1|PANIC|panicked|Guru Meditation'
+timeout = 150
+
+[[step]]
+say = "Hands off: after a timer wake the RTC clock continues (EspHalRtcClock survives deep sleep)"
+# Only a power-on or brownout may restart the clock at 0; after a 60 s sleep it reads at least 60 s.
+expect = ['Wake cause: Timer', 'RTC rtc_us=[1-9]\d{7,}']
+reject = 'RTC rtc_us=0\b|try_sleep failed|UartBusy|PANIC|panicked|Guru Meditation'
+timeout = 75

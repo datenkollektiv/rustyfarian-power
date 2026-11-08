@@ -107,6 +107,23 @@ const CHIP_POLICY: ChipPolicy = ChipPolicy::Esp32S3;
 #[cfg(feature = "esp32")]
 const CHIP_POLICY: ChipPolicy = ChipPolicy::Esp32;
 
+/// esp-hal's deep-sleep configuration, with RTC fast memory forced on on the ESP32.
+///
+/// esp-hal 1.2.2 `RtcSleepConfig::deep()` on the ESP32 clears `fastmem_force_pu`, `force_lpu`
+/// and `force_noiso` (through `rtc_fastmem_pd_en`; it never writes `fastmem_pd_en`), and the
+/// fast memory then loses its contents in deep sleep: `RtcRetainedCell` loaded `Invalid::Magic`
+/// and `EspHalRtcClock` restarted after every timer wake. Forcing the memory on keeps
+/// `.rtc_fast.persistent` (bench 2026-11-08, ESP32-WROOM-32: `load=ok` across two timer wakes).
+/// Costs the fast-memory retention current in deep sleep (a few µA, not yet measured).
+/// The other chips keep esp-hal's default.
+fn deep_sleep_config() -> RtcSleepConfig {
+    #[allow(unused_mut)]
+    let mut cfg = RtcSleepConfig::deep();
+    #[cfg(feature = "esp32")]
+    cfg.set_rtc_fastmem_pd_en(false);
+    cfg
+}
+
 /// Pads with a low-power wake path on this chip, from the shared chip table.
 const WAKE_PIN_MASK: u64 = match CHIP_POLICY.wake_pin_mask() {
     Some(mask) => mask,
@@ -539,7 +556,7 @@ impl SleepManager for BoundSleep<'_, '_, '_, '_> {
             self.arm(plan)?;
             #[cfg(feature = "bench")]
             bench::marker_high();
-            self.manager.low_power.sleep_deep(RtcSleepConfig::deep())
+            self.manager.low_power.sleep_deep(deep_sleep_config())
         })
     }
 
@@ -630,7 +647,7 @@ impl SleepAttemptPort for EspHalPort<'_, '_, '_, '_, '_> {
         self.sleep
             .manager
             .low_power
-            .sleep_deep_with_rejection(RtcSleepConfig::deep());
+            .sleep_deep_with_rejection(deep_sleep_config());
         // Reaching this line *is* the rejection report (esp-hal 1.2.2 `sleep/mod.rs:150`).
         Entered::Returned
     }

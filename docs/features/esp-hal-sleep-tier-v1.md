@@ -72,9 +72,9 @@ Facts verified 2026-10-12 against esp-hal 1.2.2 in the cargo registry (`sleep_de
   - The hal C6 `ReadHold` answers `HoldEffective(false)` because the chip has no `dig_iso`.
 - [x] Examples `hal_esp32_deep_sleep_gpio` (GPIO25 PIR, EXT1) and `hal_c6_deep_sleep_gpio` (GPIO2 PIR, EXT1, timer fallback), 2026-11-04
 - Hardware checks for the final pass:
-  - ESP32 timer and single-pin EXT1 wake (`Ext1`, bit 25).
-  - ESP32 held-pin `Rejected` and multi-pin `AnyLow` rejection.
-  - ESP32 UART2 drain.
+  - [x] ESP32 timer and single-pin EXT1 wake (`Ext1`, bit 25) (2026-11-08, Feather V2, `just bench esp32 sleep` + `esp32 ext1-wake`).
+  - ESP32 held-pin `Rejected` (done 2026-11-08, Feather V2, `just bench esp32 ext1-wake`) and multi-pin `AnyLow` rejection (open).
+  - [x] ESP32 UART2 drain (2026-11-08, Feather V2, `just bench esp32 sleep --unattended`).
   - C6 timer wake (`reset=DeepSleep cause=Timer`).
   - C6 EXT1 wake (`Ext1`, mask `0x4`).
   - C6 held-pin test (`Never` or `Always`).

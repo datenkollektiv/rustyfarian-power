@@ -323,6 +323,7 @@ Remove or update entries that are superseded.
 ## esp-hal and IDF C6 and ESP32 facts (tier-parity wave, 2026-11-04)
 
 - **C6 has no `dig_iso` register:** the hal `ReadHold` arm answers `HoldEffective(false)`, so no digital-pad hold can be read or applied on the C6.
+- **esp-hal 1.2.2 deep sleep loses RTC fast memory on the ESP32:** `RtcSleepConfig::deep()` clears `fastmem_force_pu`/`force_lpu`/`force_noiso`, so `.rtc_fast.persistent` reads garbage after a timer wake; the hal sleep path forces them on for the ESP32 (`deep_sleep_config()`), bench-confirmed 2026-11-08. The C3 is unaffected.
 - **The ESP32 wake-pin mask is not contiguous (`0xFF0E00F015`):** scan the set bits of the mask; the old contiguity `const` assert is gone.
 - **esp-hal 1.2.2 ext1 on the ESP32 spills multi-pin low groups:** `ext1_v1.rs` moves those pins to EXT0 and per-pin wake, so ESP32 multi-pin `AnyLow` cannot be expressed; the machine rejects it on both tiers with `AnyLowMultiplePins` (kind `Unsupported`; ADR-003 point 2).
 - **UART TX idle is chip-specific:** the ESP32 reads `status().st_utx_out`, the S3 and C3 read `fsm_status`, and UART v2 on the C6 treats TX FSM 0x00 and 0x0F as suspended with no FIFO wait (`uart/low_level/v2.rs`).

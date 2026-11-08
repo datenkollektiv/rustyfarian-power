@@ -180,6 +180,9 @@ bench-detect:
 bench-build NAME:
     #!/usr/bin/env bash
     set -euo pipefail
+    # the esp-hal Xtensa links need xtensa-esp32-elf-gcc on PATH (no `source ~/export-esp.sh` required)
+    . scripts/xtensa-toolchain.sh
+    case "{{ NAME }}" in hal_esp32_* | hal_s3_*) setup_xtensa_toolchain ;; esac
     case "{{ NAME }}" in
         idf_*)       just build-example "{{ NAME }}" ;;
         hal_c3_*)    just build-example-hal-c3 "{{ NAME }}" ;;
@@ -193,6 +196,9 @@ bench-build NAME:
 bench-flash NAME PORT:
     #!/usr/bin/env bash
     set -euo pipefail
+    # the esp-hal Xtensa links need xtensa-esp32-elf-gcc on PATH (no `source ~/export-esp.sh` required)
+    . scripts/xtensa-toolchain.sh
+    case "{{ NAME }}" in hal_esp32_* | hal_s3_*) setup_xtensa_toolchain ;; esac
     export ESPFLASH_PORT="{{ PORT }}"
     case "{{ NAME }}" in
         idf_*)       just flash "{{ NAME }}" ;;

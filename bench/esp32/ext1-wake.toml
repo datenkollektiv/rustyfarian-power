@@ -1,0 +1,40 @@
+# Single-pin EXT1 wake and held-pin rejection on GPIO25 (Feather V2 pin A1), with a jumper wire to 3V3.
+# Covers "timer and single-pin EXT1 wake report Ext1 with bit 25" and "ESP32 held-pin try_sleep returns
+# Rejected" on both tiers (multi-pin `AnyLow` is not part of this check).
+# Use the 3V3 pin only, never 5V/USB. GPIO25 is an input with the internal pull-down on.
+examples = ["hal_esp32_deep_sleep_gpio", "idf_esp32_deep_sleep_gpio"]
+# The wire steps start at once (no Enter): each expect step's first pattern is a fresh wake, so earlier lines cannot satisfy it.
+
+[[step]]
+say = "Hands off: wait until the board is asleep (A1 unconnected)"
+expect = 'Sleeping: GPIO25 AnyHigh'
+timeout = 15
+optional = true   # can be printed before the port reopens after reset
+arm = false       # must read the backlog from the reset
+attended = true   # part of the wire flow: absorbs the boot output, so the next instruction stays on screen
+
+[[step]]
+say = "Now: touch A1 (GPIO25) to 3V3 for about a second, then remove the wire"
+expect = ['Wake cause: Ext1 .*fired pins: 0x2000000, GPIO25 fired: true', 'Sleeping: GPIO25 AnyHigh']
+reject = 'try_sleep failed|PANIC|panicked|Guru Meditation'
+timeout = 60
+attended = true
+arm = false
+
+[[step]]
+say = "Now: connect A1 to 3V3 and leave it there: the wake pin is held, so every attempt must be rejected"
+# ESP32 guard `Always`: the pins are read before entry, so a held pin returns Rejected and the example retries every 50 ms.
+expect = ['Wake cause: Ext1 .*GPIO25 fired: true', 'GPIO25 level before sleep: High', 'try_sleep rejected \(first\).*kind=Rejected', 'try_sleep rejected: 20 so far']
+reject = 'try_sleep failed|PANIC|panicked|Guru Meditation'
+timeout = 60
+attended = true
+arm = false
+
+[[step]]
+say = "Now: remove the wire: the board must sleep and wake on the 60 s timer, with no EXT1 wake"
+# Rejections stop only once the pin reads LOW; the timer wake proves the board slept after the release.
+expect = ['Wake cause: Timer', 'GPIO25 level before sleep: Low']
+reject = 'Wake cause: Ext1|try_sleep failed|PANIC|panicked|Guru Meditation'
+timeout = 80
+attended = true   # follows the held wire above
+arm = false

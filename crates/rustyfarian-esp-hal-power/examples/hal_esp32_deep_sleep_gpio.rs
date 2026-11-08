@@ -37,12 +37,17 @@
 //! Reset reason: DeepSleep
 //! Wake cause: Ext1 — fired pins: 0x2000000, GPIO25 fired: true
 //! GPIO25 level before sleep: High
+//! RTC rtc_us=<n>
 //! Sleeping: GPIO25 AnyHigh + 60000 ms timer
+//! RTC rtc_us=<n>
 //! try_sleep rejected (first): <error>, kind=Rejected
 //! ```
 //!
 //! When the PIR releases, `try_sleep` succeeds and the chip sleeps again.
 //! After a power-on the first lines read `Reset reason: PowerOn` and `Wake cause: PowerOn`.
+//! `RTC rtc_us` is [`EspHalRtcClock`]: it restarts at a power-on and keeps counting through deep
+//! sleep, so after a timer wake the first value minus the last value before sleeping is the slept
+//! time plus the boot.
 
 #![no_std]
 #![no_main]
@@ -56,8 +61,9 @@ use esp_hal::{
 };
 use esp_println::println;
 use rustyfarian_esp_hal_power::{
-    Error, EspHalResetReasonSource, EspHalSleepManager, EspHalWakeCauseSource, GpioWakeLevel,
-    ResetReasonSource, SleepErrorKind, SleepManager, WakeCause, WakeCauseSource, WakeSource,
+    Error, EspHalResetReasonSource, EspHalRtcClock, EspHalSleepManager, EspHalWakeCauseSource,
+    GpioWakeLevel, ResetReasonSource, SleepErrorKind, SleepManager, WakeCause, WakeCauseSource,
+    WakeSource,
 };
 
 /// PIR output pin; bit position in the wake mask.
@@ -107,6 +113,9 @@ fn main() -> ! {
         other => println!("Wake cause: {:?}", other),
     }
     println!("GPIO{} level before sleep: {:?}", PIR_PIN, pir.level());
+    // The RTC clock keeps counting through deep sleep: the next boot's value minus the last
+    // value before sleeping is the slept time plus the boot.
+    println!("RTC rtc_us={}", EspHalRtcClock::now_us());
 
     let mut manager = EspHalSleepManager::new(peripherals.LPWR);
     let sources = [
@@ -120,6 +129,7 @@ fn main() -> ! {
     ];
 
     println!("Sleeping: GPIO{} AnyHigh + {} ms timer", PIR_PIN, TIMER_MS);
+    println!("RTC rtc_us={}", EspHalRtcClock::now_us());
 
     let mut rejected: u32 = 0;
     loop {

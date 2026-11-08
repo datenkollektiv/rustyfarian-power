@@ -198,6 +198,12 @@ Fix: treat `0x00` and `0x0F` as idle on the C6 (`sleep.rs` drain, 2026-11-04); t
 
 ---
 
+**On the ESP32, `.rtc_fast.persistent` does not survive esp-hal 1.2.2 deep sleep: `RtcRetainedCell` loads `Invalid::Magic` and `EspHalRtcClock` restarts at 0 after every timer wake.**
+`RtcSleepConfig::deep()` sets `rtc_fastmem_pd_en`, and the ESP32 `apply()` turns that into cleared `fastmem_force_pu`/`force_lpu`/`force_noiso`; it never writes `fastmem_pd_en` (`rtc_cntl/sleep/esp32.rs:349`), so reading the registers suggests the memory stays powered, but it does not keep its contents.
+The identical code passes on the C3, where the flag is unused.
+Fix: build the config with `set_rtc_fastmem_pd_en(false)` on the ESP32 (`deep_sleep_config()` in `sleep.rs`); bench-confirmed on a WROOM-32 2026-11-08 (`load=err:Magic` before, `load=ok` after, same board).
+Found only because a bench example printed the RTC clock at every boot.
+
 ## stoker — RTC retention cell
 
 **A `Sync` cell with safe `&self` methods that do unsynchronised volatile copies is a data race from safe code, and no documented single-context rule makes it sound.**

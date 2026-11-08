@@ -56,6 +56,8 @@ manager.try_sleep(&sources)?;
 ```
 
 ### Added
+- `rustyfarian-esp-idf-power`: `idf_esp32_deep_sleep_gpio`, the ESP-IDF twin of `hal_esp32_deep_sleep_gpio` (GPIO25 EXT1 + timer, `RTC rtc_us` per boot), so the ESP32 sleep bench checks run on both tiers.
+- `rustyfarian-esp-hal-power`: `hal_esp32_rtc_retention`, the ESP32 port of `hal_c3_rtc_retention`; `hal_esp32_deep_sleep_gpio` prints `RTC rtc_us` at boot and before sleeping. Both bench the ESP32 RTC fast-memory path.
 - `bench/`: a `rustyfarian-bench` definition with C3 (`retention`, `pir-wake`), Heltec V3 (`retention`, `rail-gate`, `battery`) and Feather V2 (`battery`) scenarios over the default example builds; run with `just bench <board>` (e.g. `just bench c3`) against the pinned `rustyfarian-bench` v0.3.0 (`RUSTYFARIAN_BENCH` selects a local checkout), with `bench-list`, `bench-detect` and the `bench-build` / `bench-flash` dispatch recipes alongside (ADR-005).
 - ESP32-C3/C2 deep-sleep GPIO wake on the IDF tier, with a pre-sleep held-pin check that returns `Rejected`, `WakeCause::Gpio(mask)`, and `just check-c3` in CI.
 - New bare-metal crate `rustyfarian-esp-hal-power` (esp-hal `=1.2.2`, MSRV 1.95) with a C3/S3 `sleep` module (`EspHalSleepManager`, `BoundSleep`, `EspHalWakeCauseSource`) and per-chip `just` recipes.
@@ -105,6 +107,7 @@ manager.try_sleep(&sources)?;
 - ESP-IDF arming goes through the shared `stoker::arm_transactionally` (hidden `WakeArmOps` port): validation touches no hardware, and a failed SDK call rolls back by attempting every undo step, each C2/C3 pin independently; the original error is returned.
 
 ### Fixed
+- `rustyfarian-esp-hal-power`: on the ESP32, deep sleep now keeps RTC fast memory powered, so `RtcRetainedCell` records and `EspHalRtcClock` survive a timer wake; esp-hal 1.2.2's default deep-sleep config lost them (`load=err:Magic`, clock back at 0).
 - `try_sleep` no longer hangs on the ESP32/ESP32-S3 when the global digital-pad hold (`gpio_deep_sleep_hold_en`) is effective and a wake pin is already asserted: both tiers return `Rejected` from a pre-entry read instead (`stoker::digital_hold_effective`, `wake_pins_asserted`, `wake_pins_all_low`).
 - `GpioWakeMask::contains_pin` returns `false` for `pin >= 64` instead of overflowing, and `EspSleepManager` validates every mask before the first ESP-IDF call.
 

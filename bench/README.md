@@ -2,7 +2,7 @@
 
 Guided, rerunnable hardware checks for both power tiers ([ADR-005](../docs/adr/005-adopt-rustyfarian-bench.md)).
 The runner is [`rustyfarian-bench`](https://github.com/datenkollektiv/rustyfarian-bench) (Python + uv).
-It needs `uv`, `espflash` and the ESP-RS toolchain for the build step (`source ~/export-esp.sh`).
+It needs `uv`, `espflash` and the ESP-RS toolchain (`espup`); `bench-build` and `bench-flash` put the Xtensa linker on `PATH` themselves, so no `source ~/export-esp.sh` is needed.
 
 | Board                          | Directory          | State       |
 |:-------------------------------|:-------------------|:------------|
