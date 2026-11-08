@@ -8,7 +8,7 @@ It needs `uv`, `espflash` and the ESP-RS toolchain for the build step (`source ~
 |:-------------------------------|:-------------------|:------------|
 | ESP32-C3-MINI-1 / DevKitM-1    | [c3/](c3/)         | passed 2026-11-08 (DevKitM-1) |
 | Heltec WiFi LoRa 32 V3 (S3)    | [heltec/](heltec/) | in progress |
-| Adafruit ESP32 Feather V2      | [esp32/](esp32/)   | in progress |
+| Adafruit ESP32 Feather V2      | [esp32/](esp32/)   | unattended passed 2026-11-08 |
 | CrowPanel 1.28" HMI (S3)       | `s3/`              | open        |
 | ESP32-C6-DevKitC-1             | `c6/`              | open        |
 
