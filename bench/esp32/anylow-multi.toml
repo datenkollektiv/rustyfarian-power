@@ -1,0 +1,18 @@
+# Multi-pin AnyLow (GPIO25 + GPIO26, Feather V2 pins A1 + A0) on the ESP32, both tiers (bench variant `anylow-multi`).
+# The ESP32 cannot wake on any of several low pins, so `try_sleep` must refuse the request as
+# `AnyLowMultiplePins` (kind `Unsupported`) before arming; the example then falls back to a timer-only sleep.
+# No wiring: the refusal is a validation result.
+examples = ["hal_esp32_deep_sleep_gpio+anylow-multi", "idf_esp32_deep_sleep_gpio+anylow-multi"]
+
+[[step]]
+say = "Wait for the refusal right after the reset"
+expect = ['Sleeping: GPIO25\+GPIO26 AnyLow', 'try_sleep failed: .*kind=Unsupported']
+reject = 'try_sleep rejected|timer-only sleep failed|PANIC|panicked|Guru Meditation'
+timeout = 20
+arm = false       # must read the backlog from the reset
+
+[[step]]
+say = "Hands off: the fallback timer-only sleep wakes on the 60 s timer, and the refusal repeats"
+expect = ['Wake cause: Timer', 'try_sleep failed: .*kind=Unsupported']
+reject = 'Wake cause: Ext1|try_sleep rejected|timer-only sleep failed|PANIC|panicked|Guru Meditation'
+timeout = 80

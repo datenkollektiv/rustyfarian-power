@@ -54,7 +54,10 @@ Detection probes every candidate port with espflash, which resets whatever is on
 - `<board>/results.jsonl` — one JSON line per example run (git-ignored: it records board MACs).
 
 The commands call `just bench-build NAME` and `just bench-flash NAME PORT`, which dispatch on the name: `idf_*` through `build-example` / `flash`, `hal_<chip>_*` through `build-example-hal-<chip>` / `flash-hal-<chip>`.
-Scenarios use the default build of each example; build-time switches (`C3_SLEEP_TIMER_MS`, `S3_R2`, …) do not reach the runner's build step.
+Scenarios use the default build of each example, or a **bench variant**: `NAME+VARIANT` in a scenario's `examples` makes `bench-build` and `bench-flash` build and flash NAME with `BENCH_VARIANT=VARIANT`.
+Examples that support variants read it at build time and fail the build on an unknown value; results and logs keep the full `NAME+VARIANT`.
+Variants so far: `anylow`, `anylow-multi` on `{hal,idf}_esp32_deep_sleep_gpio`.
+The older per-example switches (`C3_SLEEP_TIMER_MS`, `S3_R2`, …) do not reach the runner until an example maps them to a variant.
 
 ## Relation to the other bench tools
 

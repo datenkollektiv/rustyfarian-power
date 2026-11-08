@@ -56,6 +56,7 @@ manager.try_sleep(&sources)?;
 ```
 
 ### Added
+- Bench variants: a scenario example named `NAME+VARIANT` is built and flashed with `BENCH_VARIANT=VARIANT` (`just bench-build` / `bench-flash`, ADR-005 decision 7); `{hal,idf}_esp32_deep_sleep_gpio` read it (`anylow`, `anylow-multi`), with the new `esp32/anylow` and `esp32/anylow-multi` scenarios. The examples' `try_sleep failed:` line now prints the error kind.
 - `rustyfarian-esp-idf-power`: `idf_esp32_deep_sleep_gpio`, the ESP-IDF twin of `hal_esp32_deep_sleep_gpio` (GPIO25 EXT1 + timer, `RTC rtc_us` per boot), so the ESP32 sleep bench checks run on both tiers.
 - `rustyfarian-esp-hal-power`: `hal_esp32_rtc_retention`, the ESP32 port of `hal_c3_rtc_retention`; `hal_esp32_deep_sleep_gpio` prints `RTC rtc_us` at boot and before sleeping. Both bench the ESP32 RTC fast-memory path.
 - `bench/`: a `rustyfarian-bench` definition with C3 (`retention`, `pir-wake`), Heltec V3 (`retention`, `rail-gate`, `battery`) and Feather V2 (`battery`) scenarios over the default example builds; run with `just bench <board>` (e.g. `just bench c3`) against the pinned `rustyfarian-bench` v0.3.0 (`RUSTYFARIAN_BENCH` selects a local checkout), with `bench-list`, `bench-detect` and the `bench-build` / `bench-flash` dispatch recipes alongside (ADR-005).

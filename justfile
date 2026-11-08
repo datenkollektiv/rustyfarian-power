@@ -176,19 +176,23 @@ bench-list:
 bench-detect:
     {{ bench }} detect
 
-# Bench build step (bench/bench.toml): `idf_*` via build-example, `hal_<chip>_*` via build-example-hal-<chip>
+# Bench build step (bench/bench.toml): `idf_*` via build-example, `hal_<chip>_*` via build-example-hal-<chip>; `NAME+VARIANT` sets BENCH_VARIANT
 bench-build NAME:
     #!/usr/bin/env bash
     set -euo pipefail
     # the esp-hal Xtensa links need xtensa-esp32-elf-gcc on PATH (no `source ~/export-esp.sh` required)
+    # `NAME+VARIANT` builds NAME with BENCH_VARIANT=VARIANT (examples that support variants read it at build time)
+    name="{{ NAME }}"
+    base="${name%%+*}"
+    if [ "$base" != "$name" ]; then export BENCH_VARIANT="${name#*+}"; else unset BENCH_VARIANT; fi
     . scripts/xtensa-toolchain.sh
-    case "{{ NAME }}" in hal_esp32_* | hal_s3_*) setup_xtensa_toolchain ;; esac
-    case "{{ NAME }}" in
-        idf_*)       just build-example "{{ NAME }}" ;;
-        hal_c3_*)    just build-example-hal-c3 "{{ NAME }}" ;;
-        hal_c6_*)    just build-example-hal-c6 "{{ NAME }}" ;;
-        hal_esp32_*) just build-example-hal-esp32 "{{ NAME }}" ;;
-        hal_s3_*)    just build-example-hal-s3 "{{ NAME }}" ;;
+    case "$base" in hal_esp32_* | hal_s3_*) setup_xtensa_toolchain ;; esac
+    case "$base" in
+        idf_*)       just build-example "$base" ;;
+        hal_c3_*)    just build-example-hal-c3 "$base" ;;
+        hal_c6_*)    just build-example-hal-c6 "$base" ;;
+        hal_esp32_*) just build-example-hal-esp32 "$base" ;;
+        hal_s3_*)    just build-example-hal-s3 "$base" ;;
         *) echo "bench-build: unknown name {{ NAME }} (idf_*, hal_{c3,c6,esp32,s3}_*)" >&2; exit 1 ;;
     esac
 
@@ -197,15 +201,19 @@ bench-flash NAME PORT:
     #!/usr/bin/env bash
     set -euo pipefail
     # the esp-hal Xtensa links need xtensa-esp32-elf-gcc on PATH (no `source ~/export-esp.sh` required)
+    # `NAME+VARIANT` builds NAME with BENCH_VARIANT=VARIANT (examples that support variants read it at build time)
+    name="{{ NAME }}"
+    base="${name%%+*}"
+    if [ "$base" != "$name" ]; then export BENCH_VARIANT="${name#*+}"; else unset BENCH_VARIANT; fi
     . scripts/xtensa-toolchain.sh
-    case "{{ NAME }}" in hal_esp32_* | hal_s3_*) setup_xtensa_toolchain ;; esac
+    case "$base" in hal_esp32_* | hal_s3_*) setup_xtensa_toolchain ;; esac
     export ESPFLASH_PORT="{{ PORT }}"
-    case "{{ NAME }}" in
-        idf_*)       just flash "{{ NAME }}" ;;
-        hal_c3_*)    just flash-hal-c3 "{{ NAME }}" ;;
-        hal_c6_*)    just flash-hal-c6 "{{ NAME }}" ;;
-        hal_esp32_*) just flash-hal-esp32 "{{ NAME }}" ;;
-        hal_s3_*)    just flash-hal-s3 "{{ NAME }}" ;;
+    case "$base" in
+        idf_*)       just flash "$base" ;;
+        hal_c3_*)    just flash-hal-c3 "$base" ;;
+        hal_c6_*)    just flash-hal-c6 "$base" ;;
+        hal_esp32_*) just flash-hal-esp32 "$base" ;;
+        hal_s3_*)    just flash-hal-s3 "$base" ;;
         *) echo "bench-flash: unknown name {{ NAME }} (idf_*, hal_{c3,c6,esp32,s3}_*)" >&2; exit 1 ;;
     esac
 

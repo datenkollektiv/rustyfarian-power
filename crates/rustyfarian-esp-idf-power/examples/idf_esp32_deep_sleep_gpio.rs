@@ -56,6 +56,17 @@
 //! `RTC rtc_us` is [`EspRtcClock`]: the RTC timer since power-on, which keeps counting through
 //! deep sleep, so after a timer wake the first value minus the last value before sleeping is the
 //! slept time plus the boot.
+//!
+//! ## Bench variants
+//!
+//! `BENCH_VARIANT` at build time selects the wake configuration; the bench names it as
+//! `<example>+<variant>` (`just bench-build`), and an unknown value fails the build.
+//!
+//! | `BENCH_VARIANT` | Wake                        | Pull | Expected                                         |
+//! |:----------------|:----------------------------|:-----|:-------------------------------------------------|
+//! | unset           | GPIO25 `AnyHigh`            | down | as above                                         |
+//! | `anylow`        | GPIO25 `AnyLow`             | up   | GPIO25 to GND wakes with `Ext1` bit 25           |
+//! | `anylow-multi`  | GPIO25 + GPIO26 `AnyLow`    | up   | `try_sleep failed: … kind=Unsupported`, then a timer-only sleep |
 
 use esp_idf_hal::delay::FreeRtos;
 use esp_idf_hal::gpio::{AnyIOPin, PinDriver, Pull};
@@ -69,6 +80,69 @@ use rustyfarian_esp_idf_power::{
 
 /// PIR output pin; bit position in the wake mask.
 const PIR_PIN: u8 = 25;
+
+/// Second wake pin of the `anylow-multi` variant (Feather V2 pin A0).
+const SECOND_PIN: u8 = 26;
+
+/// Wake configuration chosen at build time by `BENCH_VARIANT` (`just bench-build NAME+VARIANT`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Variant {
+    /// Unset: GPIO25 `AnyHigh` with a pull-down (the default).
+    High,
+    /// `anylow`: GPIO25 `AnyLow` with a pull-up.
+    Low,
+    /// `anylow-multi`: GPIO25 + GPIO26 `AnyLow`; `try_sleep` must refuse it (`AnyLowMultiplePins`).
+    LowMulti,
+}
+
+/// Byte-string equality usable in a const context.
+const fn bytes_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+/// Parse `BENCH_VARIANT`; an unknown value fails the build.
+const fn parse_variant(value: Option<&str>) -> Variant {
+    let Some(v) = value else {
+        return Variant::High;
+    };
+    let b = v.as_bytes();
+    if b.is_empty() {
+        Variant::High
+    } else if bytes_eq(b, b"anylow") {
+        Variant::Low
+    } else if bytes_eq(b, b"anylow-multi") {
+        Variant::LowMulti
+    } else {
+        panic!("BENCH_VARIANT must be unset or one of: anylow, anylow-multi")
+    }
+}
+
+/// The build's wake configuration.
+const VARIANT: Variant = parse_variant(option_env!("BENCH_VARIANT"));
+/// Wake on a low level (pull-up) instead of a high one (pull-down).
+const WAKE_LOW: bool = !matches!(VARIANT, Variant::High);
+/// Arm GPIO26 as a second wake pin.
+const MULTI: bool = matches!(VARIANT, Variant::LowMulti);
+/// Wake pins as printed in the `Sleeping:` line.
+const PINS_LABEL: &str = if MULTI { "GPIO25+GPIO26" } else { "GPIO25" };
+/// Wake level as printed in the `Sleeping:` line.
+const LEVEL_LABEL: &str = if WAKE_LOW { "AnyLow" } else { "AnyHigh" };
+/// EXT1 pin mask of the build.
+const PIN_MASK: u64 = if MULTI {
+    (1 << PIR_PIN) | (1 << SECOND_PIN)
+} else {
+    1 << PIR_PIN
+};
 
 /// Delay between rejected `try_sleep` attempts.
 const RETRY_DELAY_MS: u32 = 50;
@@ -133,8 +207,25 @@ fn main() -> anyhow::Result<()> {
     let _peripherals = Peripherals::take()?;
     // SAFETY: PIR_PIN is a valid ESP32 GPIO and this is the only live driver of it until the
     // chip sleeps or restarts.
-    let pir = PinDriver::input(unsafe { AnyIOPin::steal(PIR_PIN) }, Pull::Down)?;
+    let pull = if WAKE_LOW { Pull::Up } else { Pull::Down };
+    let pir = PinDriver::input(unsafe { AnyIOPin::steal(PIR_PIN) }, pull)?;
     println!("GPIO{} level before sleep: {:?}", PIR_PIN, pir.get_level());
+    let second = if MULTI {
+        // SAFETY: SECOND_PIN is a valid ESP32 GPIO with no other driver, as for PIR_PIN.
+        Some(PinDriver::input(
+            unsafe { AnyIOPin::steal(SECOND_PIN) },
+            pull,
+        )?)
+    } else {
+        None
+    };
+    if let Some(p2) = &second {
+        println!(
+            "GPIO{} level before sleep: {:?}",
+            SECOND_PIN,
+            p2.get_level()
+        );
+    }
     // The RTC timer keeps counting through deep sleep: the next boot's value minus the last
     // value before sleeping is the slept time plus the boot.
     println!("RTC rtc_us={}", EspRtcClock::now_us());
@@ -145,15 +236,22 @@ fn main() -> anyhow::Result<()> {
     };
     let sources = [
         WakeSource::GpioLevel {
-            pin_mask: 1 << PIR_PIN,
-            level: GpioWakeLevel::AnyHigh,
+            pin_mask: PIN_MASK,
+            level: if WAKE_LOW {
+                GpioWakeLevel::AnyLow
+            } else {
+                GpioWakeLevel::AnyHigh
+            },
         },
         WakeSource::Timer {
             duration_ms: TIMER_MS,
         },
     ];
 
-    println!("Sleeping: GPIO{} AnyHigh + {} ms timer", PIR_PIN, TIMER_MS);
+    println!(
+        "Sleeping: {} {} + {} ms timer",
+        PINS_LABEL, LEVEL_LABEL, TIMER_MS
+    );
     println!("RTC rtc_us={}", EspRtcClock::now_us());
 
     let mut rejected: u32 = 0;
@@ -172,7 +270,10 @@ fn main() -> anyhow::Result<()> {
                 FreeRtos::delay_ms(RETRY_DELAY_MS);
             }
             Err(e) => {
-                println!("try_sleep failed: {e} — falling back to a timer-only sleep");
+                println!(
+                    "try_sleep failed: {e}, kind={:?} — falling back to a timer-only sleep",
+                    e.kind()
+                );
                 // A restart would retry the same failing configuration in a loop, so sleep
                 // on the timer alone; sleep() does not return unless that fails too.
                 if let Err(e) = manager.sleep(&[WakeSource::Timer {
