@@ -67,7 +67,7 @@ Run `just` with no arguments to list all recipes. Building the ESP32 (Feather V2
 
 **Trait-first:** All hardware reads sit behind a trait; supporting a new board means implementing the trait, not editing logic. Follow the `Noop*` mock pattern for any new trait.
 
-**Board presets:** Start from `BatteryConfig::heltec_v3()` or `adafruit_feather_v2()` — each encodes a calibrated divider ratio and ADC setup. `heltec_v3`'s `divider_ratio` is empirical (folds in ADC loading), not the textbook figure.
+**Board presets:** Start from `BatteryConfig::heltec_v3()` or `adafruit_feather_v2()` — each encodes a calibrated divider ratio and ADC setup. `heltec_v3`'s `divider_ratio` (5.05) is metered on hardware, not the textbook 4.9; recalibrate against a meter with the pack connected (`bench/heltec/battery-calib.toml`).
 
 **Error handling:** `stoker` returns typed `core::error::Error` enums (`SleepError`); `rustyfarian-esp-idf-power` returns `EspError` / `EspSleepError` (`anyhow` only in examples); no `.unwrap()` outside tests. Log via `log::info!/warn!/error!`.
 

@@ -90,6 +90,22 @@ where
     fn read_one_mv(&mut self) -> Option<u16> {
         nb::block!(self.adc.read_oneshot(&mut self.pin)).ok()
     }
+
+    /// The configuration this monitor evaluates readings with.
+    pub fn config(&self) -> &BatteryConfig {
+        &self.config
+    }
+
+    /// Averaged, calibrated pin millivolts before divider compensation.
+    ///
+    /// Takes `samples` conversions (at least one) and averages the valid ones; 0 if every
+    /// conversion failed. This is the `raw_pin_mV` of the divider-ratio calibration in
+    /// [`BatteryConfig::heltec_v3`]; pair it with a meter reading taken at the same moment.
+    /// [`BatteryMonitor::read`] is `config().evaluate_reading(read_raw_mv())`.
+    pub fn read_raw_mv(&mut self) -> u16 {
+        let samples = self.config.samples.max(1);
+        average_mv((0..samples).map(|_| self.read_one_mv()))
+    }
 }
 
 impl<'d, PIN> BatteryMonitor for EspHalAdcBatteryMonitor<'d, PIN>
@@ -101,8 +117,7 @@ where
     ///
     /// If every conversion fails the averaged reading is 0 mV, which the config reports as no battery.
     fn read(&mut self) -> BatteryStatus {
-        let samples = self.config.samples.max(1);
-        let raw_mv = average_mv((0..samples).map(|_| self.read_one_mv()));
+        let raw_mv = self.read_raw_mv();
         self.config.evaluate_reading(raw_mv)
     }
 }

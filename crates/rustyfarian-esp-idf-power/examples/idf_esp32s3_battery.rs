@@ -9,7 +9,7 @@
 //! - **Battery sense:** GPIO1 (ADC1_CH0), through an on-board divider that is
 //!   **always connected** — GPIO37/`ADC_CTRL` does *not* gate it on V3.1 (it may on
 //!   other revisions), so no control-pin handling is needed.
-//! - `heltec_v3()` carries the empirically measured `divider_ratio` (5.55); compare the
+//! - `heltec_v3()` carries the hardware-calibrated `divider_ratio` (5.05); compare the
 //!   reported voltage to a multimeter and nudge it if your unit differs.
 //!
 //! ## ⚠️ Battery polarity
@@ -30,20 +30,21 @@
 //! ## Expected output (serial monitor)
 //!
 //! ```text
-//! [INFO] Battery monitor initialized (divider: 5.55x, range: 3000-4200mV)
+//! [INFO] Battery monitor initialized (divider: 5.05x, range: 3000-4200mV)
 //! Heltec V3.1 battery monitor — reading GPIO1 every 2 s
 //! Battery: 3842mV (70%)
 //! ```
 //!
 //! ## No battery + USB caveat
 //!
-//! With USB connected and no battery, GPIO1 still reads the charger/BMS rail through the
-//! always-on divider (~711–735 mV → ~3950–4080 mV), so the status reports a **phantom
-//! ~80 % `Battery`** (not `No battery`), and the reading is noticeably unstable. The
-//! Heltec V3 exposes no charge-status or battery-present GPIO — the TP4054's CHRG output
-//! drives only the orange LED (schematic-confirmed) — so this cannot be detected in
-//! software. In real battery-powered use (no USB) a missing cell just means the board is
-//! off, so this is a bench/USB artifact.
+//! With USB connected and no battery, GPIO1 reads the charger/BMS rail through the
+//! always-on divider, so the no-cell reading is ambiguous and varies by board/run.
+//! Observed 2026-06-19: `Battery ~80 %` (rail ~3950–4080 mV compensated, unstable).
+//! Observed 2026-11-09: `No battery` (rail below the 3000 mV floor).
+//! The Heltec V3 exposes no charge-status or battery-present GPIO — the TP4054's CHRG
+//! output drives only the orange LED (schematic-confirmed) — so either reading remains
+//! a bench/USB artifact; in battery-only use a missing cell means the board is off.
+//! See `docs/project-lore.md` → Hardware — Heltec V3 & LiPo batteries.
 //!
 //! ## Run
 //!
@@ -86,6 +87,33 @@ impl log::Log for RomLogger {
 
 static LOGGER: RomLogger = RomLogger;
 
+const fn bytes_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+/// `BENCH_VARIANT` at build time (`just bench-build NAME+VARIANT`): `calib` adds a
+/// `Calib:` line printing the compensated and averaged raw pin mV in every power state, for
+/// divider-ratio calibration (see `bench/heltec/battery-calib.toml`). Unknown values fail the build.
+const fn parse_calib(value: Option<&str>) -> bool {
+    match value {
+        Some(v) if bytes_eq(v.as_bytes(), b"calib") => true,
+        None => false,
+        _ => panic!("BENCH_VARIANT must be unset or one of: calib"),
+    }
+}
+
+const CALIB: bool = parse_calib(option_env!("BENCH_VARIANT"));
+
 fn main() -> anyhow::Result<()> {
     // SAFETY: link_patches must run before any ESP-IDF API call.
     esp_idf_hal::sys::link_patches();
@@ -114,7 +142,14 @@ fn main() -> anyhow::Result<()> {
     // cadence makes the allocator churn negligible; a long-running sample would preformat
     // fixed strings or log less often instead.
     loop {
-        let status = battery.read();
+        let status = if CALIB {
+            let raw_mv = battery.read_raw_mv();
+            let status = battery.config().evaluate_reading(raw_mv);
+            say(&format!("Calib: comp={} raw={raw_mv}", status.voltage_mv));
+            status
+        } else {
+            battery.read()
+        };
         say(&format!("Battery: {status}"));
         std::thread::sleep(std::time::Duration::from_secs(2));
     }

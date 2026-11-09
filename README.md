@@ -116,7 +116,7 @@ just run idf_esp32s3_battery
 Expected serial output:
 
 ```text
-[INFO] Battery monitor initialized (divider: 5.55x, range: 3000-4200mV)
+[INFO] Battery monitor initialized (divider: 5.05x, range: 3000-4200mV)
 Heltec V3.1 battery monitor — reading GPIO1 every 2 s
 Battery: 3842mV (70%)
 ```

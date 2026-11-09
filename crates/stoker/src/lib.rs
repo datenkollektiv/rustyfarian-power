@@ -392,6 +392,29 @@ mod tests {
     }
 
     #[test]
+    fn heltec_v3_full_cell_is_battery_not_external() {
+        // Bench 2026-11-09 (Heltec V3.1, pack connected and charging): 820 mV raw at GPIO1
+        // against 4140 mV metered. A `divider_ratio` of about 5.2 or more pushes a full
+        // 4.2 V cell past `usb_detection_mv` and prints `USB/Ext` instead of a voltage.
+        let config = BatteryConfig::heltec_v3();
+        let status = config.evaluate_reading(820);
+        assert_eq!(status.power_source, PowerSource::Battery);
+        assert!(
+            (4135..=4145).contains(&status.voltage_mv),
+            "{}",
+            status.voltage_mv
+        );
+        // A full cell at the charge ceiling (4.2 V) stays below the USB threshold.
+        let full = config.evaluate_reading(832);
+        assert_eq!(full.power_source, PowerSource::Battery);
+        assert!(
+            full.voltage_mv < config.usb_detection_mv,
+            "{}",
+            full.voltage_mv
+        );
+    }
+
+    #[test]
     fn evaluate_reading_zero_unknown() {
         let config = BatteryConfig::default();
         let status = config.evaluate_reading(0);

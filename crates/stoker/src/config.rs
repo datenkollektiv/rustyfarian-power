@@ -49,24 +49,31 @@ impl BatteryConfig {
     /// that is **always connected** — GPIO37/ADC_CTRL does *not* gate it on V3.1
     /// (it may on other revisions; confirm against your board).
     ///
-    /// `divider_ratio` is **5.55**, an *empirical* value: `metered_VBAT / raw_ADC_mV`
-    /// measured on hardware, not the textbook divider figure. It runs higher than the
-    /// physical (390 kΩ + 100 kΩ) / 100 kΩ ≈ 4.9 because the ~80 kΩ source impedance
-    /// loads the ESP-IDF one-shot ADC, which then reads ~11 % low. Because it folds in
-    /// that ADC loading, the ratio is specific to this crate's ADC setup — verify the
+    /// `divider_ratio` is **5.05**, calibrated on hardware 2026-11-09: `metered_VBAT / raw_ADC_mV`
+    /// = 4140 mV metered at the pack terminals ÷ 820 mV raw pin reading, both taken with the
+    /// pack connected and charging on USB, within a minute of each other (ESP-IDF curve
+    /// fitting; the esp-hal eFuse curve reads the same net within 3 mV). That is ~3 % above
+    /// the textbook divider ((390 kΩ + 100 kΩ) / 100 kΩ ≈ 4.9).
+    /// The old 5.55 measured the ESP-IDF one-shot ADC in its uncalibrated (curve-error)
+    /// state, not a property of the board; both tiers now run eFuse calibration. Verify the
     /// reported voltage against a multimeter and nudge `divider_ratio` if your unit differs.
     ///
-    /// Recalibrate whenever the ADC attenuation, sampling config, board revision, or VBAT
-    /// sense path changes — the ratio absorbs all of those, so a stale value reads wrong.
+    /// Recalibrate whenever the ADC calibration, attenuation, sampling config, board
+    /// revision, or VBAT sense path changes — the ratio absorbs all of those, so a stale
+    /// value reads wrong.
     ///
     /// Quick procedure:
-    /// 1. Meter the real battery voltage at the cell (`metered_VBAT`).
-    /// 2. Read the raw pin millivolts before divider compensation (the `read_averaged_mv`
-    ///    debug log, or `BatteryStatus.voltage_mv / divider_ratio`).
+    /// 1. Meter the battery voltage at the pack terminals (`metered_VBAT`) **with the pack
+    ///    connected to the board**, at the same moment as step 2. A reading taken before
+    ///    plugging the pack in (the polarity check) is its open-circuit voltage and does not
+    ///    pair with the ADC reading.
+    /// 2. Read the raw pin millivolts before divider compensation (`read_raw_mv()` on the
+    ///    tier monitor, or the `Calib:` line of the `+calib` bench variant; do not divide
+    ///    `BatteryStatus.voltage_mv` back, that truncates one mV low).
     /// 3. Set `divider_ratio = metered_VBAT / raw_pin_mV`.
     pub fn heltec_v3() -> Self {
         Self {
-            divider_ratio: 5.55,
+            divider_ratio: 5.05,
             max_voltage_mv: 4200,
             min_voltage_mv: 3000,
             usb_detection_mv: 4300,

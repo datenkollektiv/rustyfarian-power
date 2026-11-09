@@ -28,6 +28,10 @@ fn main() {
     // Emitted bare by esp-idf-sys for the ESP32-C6 and relayed by `sysenv::output()`
     // (the triple `riscv32imac-esp-espidf` is shared with the ESP32-H2, so no triple match).
     println!("cargo:rustc-check-cfg=cfg(esp32c6)");
+    // Emitted bare by esp-idf-sys and relayed the same way; `esp_adc.rs` keeps ADC line
+    // fitting on these two chips (esp-idf-hal defines `Calibration::Curve` only for S3/C3/C6).
+    println!("cargo:rustc-check-cfg=cfg(esp32c2)");
+    println!("cargo:rustc-check-cfg=cfg(esp32s2)");
     // Emitted by esp-idf-sys and relayed by `sysenv::output()` on chips with
     // deep-sleep GPIO wakeup (ESP32-C2/C3/C6); gates `esp_sleep_get_gpio_wakeup_status`.
     println!("cargo:rustc-check-cfg=cfg(esp_idf_soc_gpio_support_deepsleep_wakeup)");

@@ -1,0 +1,33 @@
+# Divider-ratio calibration for `BatteryConfig::heltec_v3`: the ratio is
+# `metered_cell_mV / raw` from a meter reading at the pack terminals (calibrated
+# 2026-11-09: 4140 mV / 820 raw -> 5.05, pack connected and charging; confirmed the same
+# evening at 4180 mV with hal 4191 mV / IDF 4176 mV printed). Read the meter while the
+# `Calib:` lines scroll, with the pack connected; the pre-connection polarity check reads
+# the open-circuit voltage and pairs with nothing (it gave a 2 % low 4.98).
+# The `calib` variant prints `Calib: comp=<compensated mV> raw=<raw mV>` every 1-2 s in
+# every power state; `raw` is the monitor's averaged pin reading (`read_raw_mv()`).
+# Unattended, the scenario only proves the sense path is alive (three non-zero raws).
+# Attended, the operator reads the meter during a 60 s watch and then answers whether it
+# agrees with `comp`; both tiers are asked against the same meter, which also bounds
+# their agreement with each other (the logs keep every `Calib:` line for a closer look).
+# Meter the pack's polarity BEFORE connecting it (docs/project-lore.md -> Hardware).
+examples = ["hal_s3_battery+calib", "idf_esp32s3_battery+calib"]
+
+[[step]]
+say = "Waiting for three Calib: lines (pack connected)"
+expect = ['Calib: comp=\d+ raw=[1-9]\d*', 'Calib: comp=\d+ raw=[1-9]\d*', 'Calib: comp=(?P<comp>\d+) raw=(?P<raw>[1-9]\d*)']
+reject = 'ADC read failed|PANIC|panicked|Guru Meditation|raw=0\b'
+timeout = 15
+arm = false
+
+[[step]]
+say = "When convenient, please read the meter at the pack terminals; the Calib: lines keep scrolling meanwhile (Enter ends the wait early)"
+duration = 60
+reject = 'ADC read failed|PANIC|panicked|Guru Meditation|raw=0\b'
+attended = true
+arm = false
+
+[[step]]
+say = "Thank you. Compare your meter reading with the comp value of the latest Calib: line above"
+# 1 % of a 4 V cell; a wrong calibration scheme or ratio shows up as 70 mV or more.
+confirm = "Is the meter within about 40 mV (1 %) of comp?"

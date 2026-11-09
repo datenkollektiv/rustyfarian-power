@@ -6,7 +6,6 @@
 
 use esp_idf_hal::adc::attenuation::DB_12;
 use esp_idf_hal::adc::oneshot::config::AdcChannelConfig;
-#[cfg(esp32)]
 use esp_idf_hal::adc::oneshot::config::Calibration;
 use esp_idf_hal::adc::oneshot::{AdcChannelDriver, AdcDriver};
 use esp_idf_hal::adc::{AdcChannel, ADC1, ADCU1};
@@ -42,11 +41,15 @@ where
     /// The effective ceiling is chip-specific: 2450 mV on original ESP32, 3100 mV on ESP32-S3.
     /// Both ceilings comfortably cover the 2100 mV maximum raw signal.
     ///
-    /// On original ESP32, `Calibration::Line` is used to correct the ADC's significant
-    /// non-linearity at 12 dB attenuation.
-    /// Without line-fitting calibration, uncalibrated readings can be hundreds of mV low,
+    /// On the ESP32, ESP32-S2 and ESP32-C2, `Calibration::Line` is used to correct the
+    /// ADC's significant non-linearity at 12 dB attenuation.
+    /// Without calibration, uncalibrated readings can be hundreds of mV low,
     /// causing a healthy battery to be misclassified as `PowerSource::Unknown`.
-    /// On other chips, the default `Calibration::None` is used.
+    /// On every other chip (ESP32-S3/C3/C6), `Calibration::Curve` (eFuse curve fitting) is
+    /// used so both this tier and the esp-hal tier read the same external voltage to the
+    /// same millivolts — one physical `divider_ratio` can then serve both
+    /// (`BatteryConfig::heltec_v3`). esp-idf-hal defines each variant only for its chips,
+    /// so the `cfg` split mirrors that support matrix.
     pub fn new(
         adc1: ADC1<'a>,
         battery_pin: GPIO,
@@ -54,15 +57,16 @@ where
     ) -> Result<Self, esp_idf_hal::sys::EspError> {
         let adc = AdcDriver::new(adc1)?;
 
-        #[cfg(esp32)]
+        #[cfg(any(esp32, esp32c2, esp32s2))]
         let channel_config = AdcChannelConfig {
             attenuation: DB_12,
             calibration: Calibration::Line,
             ..Default::default()
         };
-        #[cfg(not(esp32))]
+        #[cfg(not(any(esp32, esp32c2, esp32s2)))]
         let channel_config = AdcChannelConfig {
             attenuation: DB_12,
+            calibration: Calibration::Curve,
             ..Default::default()
         };
         let channel = AdcChannelDriver::new(adc, battery_pin, &channel_config)?;
@@ -77,8 +81,18 @@ where
         Ok(Self { channel, config })
     }
 
-    /// Read averaged ADC voltage in millivolts (before divider compensation).
-    fn read_averaged_mv(&mut self) -> u16 {
+    /// The configuration this monitor evaluates readings with.
+    pub fn config(&self) -> &BatteryConfig {
+        &self.config
+    }
+
+    /// Averaged, calibrated pin millivolts before divider compensation.
+    ///
+    /// Takes `samples` conversions (at least one) and averages the valid ones; 0 if every
+    /// conversion failed. This is the `raw_pin_mV` of the divider-ratio calibration in
+    /// [`BatteryConfig::heltec_v3`]; pair it with a meter reading taken at the same moment.
+    /// [`BatteryMonitor::read`] is `config().evaluate_reading(read_raw_mv())`.
+    pub fn read_raw_mv(&mut self) -> u16 {
         let num_samples = self.config.samples.max(1) as usize;
         let mut valid_count = 0;
 
@@ -118,7 +132,7 @@ where
     /// Takes multiple ADC samples, averages them, and delegates to
     /// [`BatteryConfig::evaluate_reading()`] for conversion.
     fn read(&mut self) -> BatteryStatus {
-        let raw_mv = self.read_averaged_mv();
+        let raw_mv = self.read_raw_mv();
         let status = self.config.evaluate_reading(raw_mv);
         log::debug!("Battery: {}", status);
         status

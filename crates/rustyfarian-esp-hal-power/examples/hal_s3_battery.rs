@@ -8,7 +8,7 @@
 //! - **Board:** Heltec WiFi LoRa 32 V3.
 //! - **Pin:** GPIO1 (ADC1_CH0) behind the always-on onboard divider (no GPIO37 handling needed); `BatteryConfig::heltec_v3()` carries the divider ratio.
 //!
-//! With USB connected and no battery the always-on divider reads the charger rail, so a false ~80 % can appear; see `docs/key-insights.md`.
+//! With USB connected and no battery the always-on divider reads the charger rail, so the no-cell reading is ambiguous (observed as false ~80 % or `No battery`, by board/run); see `docs/project-lore.md`.
 //!
 //! ## Run
 //!
@@ -31,6 +31,33 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
+const fn bytes_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+/// `BENCH_VARIANT` at build time (`just bench-build NAME+VARIANT`): `calib` adds a
+/// `Calib:` line printing the compensated and averaged raw pin mV in every power state, for
+/// divider-ratio calibration (see `bench/heltec/battery-calib.toml`). Unknown values fail the build.
+const fn parse_calib(value: Option<&str>) -> bool {
+    match value {
+        Some(v) if bytes_eq(v.as_bytes(), b"calib") => true,
+        None => false,
+        _ => panic!("BENCH_VARIANT must be unset or one of: calib"),
+    }
+}
+
+const CALIB: bool = parse_calib(option_env!("BENCH_VARIANT"));
+
 #[esp_hal::main]
 fn main() -> ! {
     let peripherals = esp_hal::init(esp_hal::Config::default());
@@ -43,7 +70,15 @@ fn main() -> ! {
     );
 
     loop {
-        println!("Battery: {}", battery.read());
+        let status = if CALIB {
+            let raw_mv = battery.read_raw_mv();
+            let status = battery.config().evaluate_reading(raw_mv);
+            println!("Calib: comp={} raw={}", status.voltage_mv, raw_mv);
+            status
+        } else {
+            battery.read()
+        };
+        println!("Battery: {}", status);
         delay.delay_millis(1_000);
     }
 }

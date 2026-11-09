@@ -1,11 +1,12 @@
-# Battery monitor on GPIO1 (always-on divider, ratio 5.55), both tiers; prints `Battery: <status>` every 1-2 s.
-# Without a battery on USB the charger rail reads a false ~80 % (docs/key-insights.md); judge with a battery fitted.
-# Check the pack's polarity with a meter before connecting it (docs/project-lore.md -> Hardware).
+# Battery monitor on GPIO1 (always-on divider), both tiers; prints `Battery: <status>` every 1-2 s.
+# The attended step needs a printed mV: `USB/Ext` and `No battery` carry no voltage, so a run
+# printing either has nothing to compare — recalibrate first (`battery-calib`), do not confirm.
+# Meter the pack's polarity BEFORE connecting it (docs/project-lore.md -> Hardware).
 examples = ["hal_s3_battery", "idf_esp32s3_battery"]
 
 [[step]]
-say = "Wait for three battery readings"
-expect = ['Battery: ', 'Battery: ', 'Battery: ']
+say = "Wait for three voltage readings (mV)"
+expect = ['Battery: \d+mV', 'Battery: \d+mV', 'Battery: \d+mV']
 reject = 'ADC read failed|PANIC|panicked|Guru Meditation'
 timeout = 15
 

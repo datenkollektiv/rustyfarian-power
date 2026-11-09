@@ -58,8 +58,8 @@ let status = battery.read();
 - `EspChargingMonitor::new()` requires the `STAT` pin to satisfy
   `InputPin + OutputPin`; an input-only GPIO (e.g. Feather V2 GPIO34) cannot be
   used for STAT.
-- `BatteryConfig::heltec_v3()` carries an empirical, per-unit `divider_ratio`
-  (5.55) — verify the reported voltage against a multimeter and adjust.
+- `BatteryConfig::heltec_v3()` carries a per-unit `divider_ratio` metered on
+  hardware (5.05) — verify the reported voltage against a multimeter and adjust.
 - **docs.rs:** this crate is unlikely to build on docs.rs — `esp-idf-sys`
   requires network access and the ESP-IDF C toolchain. This README is the
   primary documentation; the canonical build target is `xtensa-esp32s3-espidf`.

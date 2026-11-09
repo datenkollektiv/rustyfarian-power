@@ -47,13 +47,17 @@ This presents to the board as "No battery" / 0 mV. Don't mistake a tripped pack 
 **On the Heltec V3.1, GPIO37 (ADC_CTRL) does NOT gate the battery divider — it is always-on.**
 Toggling GPIO37 HIGH vs LOW left the GPIO1 reading unchanged (706 vs 707 mV), so the community/ropg "drive GPIO37 LOW to enable" procedure did not apply to this **V3.1** unit (it may still apply to V3.0/V3.2 — revisions differ; always confirm against the board in hand).
 Read GPIO1 directly — no ADC_CTRL handling needed, which matches the repo's existing approach; only the ratio was wrong.
-Separately, the ~80 kΩ divider source impedance loads the ESP-IDF oneshot ADC so it reads ~11 % low: the effective `divider_ratio` (metered VBAT ÷ ADC mV, ~5.5) runs higher than the textbook (390+100)/100 = 4.9. Calibrate the ratio against a meter, never compute it from the resistor values alone.
-Take the calibration pair at a **settled** voltage (USB unplugged, ~10 s): a charging cell reads inflated (≈4.0–4.2 V toward the charge ceiling) and isn't representative of its resting state-of-charge, which skews the ratio.
+Calibrate the ratio against a meter, never compute it from the resistor values alone.
+Corrected 2026-11-09: the old "the ~80 kΩ source impedance loads the ESP-IDF oneshot ADC, so it reads ~11 % low and the ratio is ~5.5" explanation is superseded — the esp-hal tier reads the same always-on divider accurately (810 mV raw ≈ 3970/4.9), so impedance is not the cause. The 5.55 ratio had folded in the uncalibrated transfer curve of the ESP-IDF oneshot path (`Calibration::None` on S3); with `Calibration::Curve` both tiers read the same net within 7 mV (hal 810 / IDF 817) and the physical ratio applies: `divider_ratio` = 5.05 (4140 mV metered at the pack ÷ 820 raw, this V3.1 unit, pack connected and charging).
+Take the calibration pair **at the same moment and with the pack connected**: read the meter at the pack terminals while the `Calib:` lines stream.
+A meter read before plugging the pack in (the polarity check) is its open-circuit voltage; paired with a later ADC read of the charging net it gave a 2 % low ratio (4.98 instead of 5.05) on 2026-11-09.
+Charging does not skew the ratio itself; only a non-simultaneous pair does.
 
-**On the Heltec V3.1, a missing battery reads as a ~80 % battery whenever USB is connected — and it cannot be detected in software.**
-With USB power and no cell, the always-on divider sees the charger/BMS rail, so GPIO1 reads ~711–735 mV (×5.55 → ~3946–4079 mV) → reported as `Battery ~80 %`, not `No battery`.
+**No battery fitted still cannot be detected on the Heltec V3.1 — and its no-battery reading is NOT stable across boards or runs: false ~80 % or `No battery`, both on USB power.**
+Observed 2026-06-19: USB power and no cell → the always-on divider sees the charger/BMS rail, GPIO1 reads ~711–735 mV (×5.55 → ~3946–4079 mV) → `Battery ~80 %`, unstable (~130–180 mV jumps).
+Observed 2026-11-09 (bench run, both tiers): same setup → `Battery: No battery` every 2 s, stable — the rail sat below the 3000 mV classification floor (raw < ~540 mV, before the 2026-11-09 `Calibration::Curve` switch; note the June false-~80 % observation itself was later identified as the uncalibrated IDF curve, see the ratio entry above).
+The 2026-06-19 and 2026-11-09 rails agree that USB alone is ambiguous, but the rail value differs, so re-verify with the raw mV when a no-battery reading surprises you rather than assuming the false-full masquerade.
 The charge controller is a **TP4054** whose open-drain CHRG status drives only the orange LED — schematic-confirmed (V3.0 and V3.1) not wired to any GPIO — and there is no USB/VBUS-detect pin, so no software presence signal exists (every pin map — ropg, arduino-esp32, ESPHome, Meshtastic — reads only the GPIO1 voltage; Meshtastic's >4.2 V inference is a known source of wrong USB/charge indicators).
-The only (weak) tell is instability: a real LiPo holds within a few mV per sample, the no-cell rail jumps ~130–180 mV.
 Fix: don't trust a battery reading taken on USB power; for real detection, hand-wire CHRG (or a VBUS divider) to a free GPIO (GPIO2/4/5/6/7/19/20/47/48).
 
 ---
