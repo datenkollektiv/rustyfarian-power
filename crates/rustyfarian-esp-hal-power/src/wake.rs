@@ -48,7 +48,7 @@ impl EspHalWakeCauseSource {
         let cause = if reason.is_empty() {
             WakeCause::PowerOn
         } else if reason_has_ext1(&reason) {
-            WakeCause::Ext1(fired_mask())
+            WakeCause::Ext1(ext1_fired_from_status(fired_mask().0))
         } else if reason_has_ext0(&reason) {
             WakeCause::Ext0
         } else if reason.contains(WakeupSource::Gpio) {
@@ -66,6 +66,24 @@ impl EspHalWakeCauseSource {
 #[cfg(any(feature = "esp32", feature = "esp32s3", feature = "esp32c6"))]
 fn reason_has_ext1(reason: &WakeupReason) -> bool {
     reason.contains(WakeupSource::Ext1)
+}
+
+// The EXT1 status to report, with the armed `AnyLow` record as the ESP32 fallback.
+//
+// On the ESP32 a low-level (`AnyLow`) EXT1 wake can read an empty status in the app; the
+// record of the armed configuration then names the single low pin through the shared
+// `stoker::ext1_fired_mask`, the same flow the ESP-IDF tier runs (`armed_ext1`; see
+// `docs/project-lore.md` → "ESP-IDF tier — ESP32 EXT1 wake status").
+// Other chips report the status as read.
+#[cfg(feature = "esp32")]
+fn ext1_fired_from_status(status: u64) -> GpioWakeMask {
+    let (armed_mask, armed_low) = crate::armed_ext1::take().unwrap_or((0, false));
+    stoker::ext1_fired_mask(status, armed_mask, armed_low)
+}
+
+#[cfg(not(feature = "esp32"))]
+fn ext1_fired_from_status(status: u64) -> GpioWakeMask {
+    GpioWakeMask(status)
 }
 
 #[cfg(feature = "esp32c3")]

@@ -627,6 +627,27 @@ pub fn wake_pins_all_low(levels: u64, pin_mask: u64) -> bool {
     pin_mask != 0 && levels & pin_mask == 0
 }
 
+/// Fired-pin mask of an EXT1 wake, with the armed configuration as a fallback.
+///
+/// Pure function: `status` is the EXT1 wake status as the tier read it, `armed_mask` and
+/// `armed_low` describe the EXT1 configuration armed before the sleep (`armed_mask` 0 when
+/// none is known).
+/// A non-empty `status` always wins.
+/// An empty status is resolved to `armed_mask` only for a single armed pin with a low wake
+/// level, the one case where the armed configuration names the pin without guessing: on the
+/// original ESP32 a low-level EXT1 wake reads an empty status from `app_main`, and multi-pin
+/// `AnyLow` is refused there. Everything else stays empty.
+#[must_use]
+pub fn ext1_fired_mask(status: u64, armed_mask: u64, armed_low: bool) -> GpioWakeMask {
+    if status != 0 {
+        GpioWakeMask(status)
+    } else if armed_low && armed_mask.count_ones() == 1 {
+        GpioWakeMask(armed_mask)
+    } else {
+        GpioWakeMask(0)
+    }
+}
+
 /// Controls entry into a low-power sleep mode.
 ///
 /// # Does not return on real hardware
@@ -1470,5 +1491,39 @@ mod tests {
         assert!(!wake_pins_all_low(mask, mask));
         assert!(!wake_pins_all_low(0, 0));
         assert!(!wake_pins_all_low(u64::MAX, 0));
+    }
+
+    #[test]
+    fn ext1_fired_mask_status_wins() {
+        let status = 1 << 4;
+        assert_eq!(ext1_fired_mask(status, 1 << 25, true), GpioWakeMask(status));
+        assert_eq!(ext1_fired_mask(status, 0, false), GpioWakeMask(status));
+    }
+
+    #[test]
+    fn ext1_fired_mask_empty_status_single_low_pin_names_it() {
+        assert_eq!(ext1_fired_mask(0, 1 << 25, true), GpioWakeMask(1 << 25));
+    }
+
+    #[test]
+    fn ext1_fired_mask_empty_status_without_a_unique_low_pin_stays_empty() {
+        // AnyHigh: the status is reliable there, so an empty one is not second-guessed.
+        assert_eq!(ext1_fired_mask(0, 1 << 25, false), GpioWakeMask(0));
+        // Several low pins: the armed mask does not say which one fired.
+        assert_eq!(
+            ext1_fired_mask(0, (1 << 25) | (1 << 26), true),
+            GpioWakeMask(0)
+        );
+        // No record.
+        assert_eq!(ext1_fired_mask(0, 0, true), GpioWakeMask(0));
+        assert_eq!(ext1_fired_mask(0, 0, false), GpioWakeMask(0));
+    }
+
+    #[test]
+    fn ext1_fired_mask_status_wins_over_any_record() {
+        // Several armed pins, and a status outside the armed mask: the register is reported as read.
+        let armed = (1 << 25) | (1 << 26);
+        assert_eq!(ext1_fired_mask(1 << 26, armed, true), GpioWakeMask(1 << 26));
+        assert_eq!(ext1_fired_mask(1 << 4, 1 << 25, true), GpioWakeMask(1 << 4));
     }
 }

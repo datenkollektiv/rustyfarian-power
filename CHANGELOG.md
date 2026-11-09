@@ -100,7 +100,7 @@ manager.try_sleep(&sources)?;
 - CI links the C6 examples (`just ci-c6`), and `just ci-hal` links the new ESP32 and C6 hal examples.
 - CI links the C3 and S3 examples on both tiers (`just ci-c3`, `ci-s3`, new `hal.yml` with `ci-hal`) and compiles the ESP-IDF ESP32 tier (`just ci-esp32`, compile-only); `just verify` and `just ci` also lint and test `stoker`'s `bench-conformance` feature.
 - `stoker` drops `anyhow` for `critical-section`, the IDF tier ships an ISR-safe `critical-section` provider behind the opt-in `critical-section-impl` feature, and the hal tier gates `sleep`/`reset`/`retain` on `unstable` outside `default-members`.
-- `try_sleep` on the original ESP32 pre-reads the EXT1 wake pins before sleep entry and returns `Rejected` (code `ESP_ERR_INVALID_STATE`) when one is already at its wake level; before, a held pin slept and woke at once (bench pending).
+- `try_sleep` on the original ESP32 pre-reads the EXT1 wake pins before sleep entry and returns `Rejected` (code `ESP_ERR_INVALID_STATE`) when one is already at its wake level; before, a held pin slept and woke at once (bench 2026-11-09, `esp32 anylow` held step).
 - `try_sleep` on esp-hal C3 pre-reads the bound wake pins in software and returns `Rejected` when one is already at its wake level, instead of relying on the hardware (bench pending).
 - `try_sleep` reports the same error kinds on both tiers; when a request has several invalid fields, the reported one may differ.
 - The ESP-IDF ESP32-C6 build checks wake-pin masks against the C6 range (GPIO0-7, `ChipPolicy::Esp32C6`) instead of the ESP32-S3 range it applied by accident.
@@ -108,6 +108,8 @@ manager.try_sleep(&sources)?;
 - ESP-IDF arming goes through the shared `stoker::arm_transactionally` (hidden `WakeArmOps` port): validation touches no hardware, and a failed SDK call rolls back by attempting every undo step, each C2/C3 pin independently; the original error is returned.
 
 ### Fixed
+- `rustyfarian-esp-idf-power`: on the ESP32, `EspWakeCauseSource` reports the fired pin of a low-level (`AnyLow`) EXT1 wake armed through `EspSleepManager`; it read `Ext1(0x0)` because ESP-IDF's boot code empties that status before `app_main`. The armed configuration is kept in RTC slow memory, resolved by the new `stoker::ext1_fired_mask`.
+- `rustyfarian-esp-hal-power`: on the ESP32, `EspHalWakeCauseSource` reports the fired pin of a low-level (`AnyLow`) EXT1 wake from an armed record in `.rtc_fast.persistent`, mirroring the IDF tier through the shared `stoker::ext1_fired_mask`; the hal tier's read of the EXT1 status register is not reliable there (bench 2026-11-09, Feather V2).
 - `rustyfarian-esp-hal-power`: on the ESP32, deep sleep now keeps RTC fast memory powered, so `RtcRetainedCell` records and `EspHalRtcClock` survive a timer wake; esp-hal 1.2.2's default deep-sleep config lost them (`load=err:Magic`, clock back at 0).
 - `try_sleep` no longer hangs on the ESP32/ESP32-S3 when the global digital-pad hold (`gpio_deep_sleep_hold_en`) is effective and a wake pin is already asserted: both tiers return `Rejected` from a pre-entry read instead (`stoker::digital_hold_effective`, `wake_pins_asserted`, `wake_pins_all_low`).
 - `GpioWakeMask::contains_pin` returns `false` for `pin >= 64` instead of overflowing, and `EspSleepManager` validates every mask before the first ESP-IDF call.

@@ -446,6 +446,9 @@ impl BoundSleep<'_, '_, '_, '_> {
     /// untouched), then pins, then the deadline, then the post-arm margin check. Any failure
     /// after the first mutation releases everything it armed.
     fn arm(&mut self, plan: Plan) -> Result<(), SleepError> {
+        // Every arm starts here, timer-only included, so no later wake reads a stale record.
+        #[cfg(feature = "esp32")]
+        crate::armed_ext1::invalidate();
         self.check_foreign_wake_pins()?;
         #[cfg(feature = "bench")]
         let drain_start = bench::now_us();
@@ -456,6 +459,13 @@ impl BoundSleep<'_, '_, '_, '_> {
         if let Err(e) = self.arm_pins(plan.pin_mask, plan.event) {
             self.disarm();
             return Err(e);
+        }
+
+        // Multi-pin `AnyLow` was refused in validation, so a low record names one pin
+        // (`stoker::ext1_fired_mask` needs exactly that); a timer-only arm stores nothing.
+        #[cfg(feature = "esp32")]
+        if plan.pin_mask != 0 {
+            crate::armed_ext1::store(plan.pin_mask, plan.event == Event::LowLevel);
         }
 
         let Some(timer) = plan.timer else {
@@ -536,6 +546,9 @@ impl BoundSleep<'_, '_, '_, '_> {
     /// Releases every bound pin and clears the standing deadline. Used after a rejection and
     /// after any arming failure, so the firmware's retry loop starts from a clean state.
     fn disarm(&mut self) {
+        // Everything is disarmed here, so no record may claim an armed state that is gone.
+        #[cfg(feature = "esp32")]
+        crate::armed_ext1::invalidate();
         for pin in self.pins.iter_mut() {
             Self::release_pin(pin);
         }

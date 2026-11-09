@@ -141,6 +141,95 @@ use stoker::{
     SleepAttemptPort, SleepPlan, WakeArmOps,
 };
 
+/// EXT1 configuration armed before the last deep sleep, kept in RTC slow memory (ESP32 only).
+///
+/// ESP-IDF's boot code clears the EXT1 pin selection before `app_main`
+/// (`cpu_start.c` → `esp_deep_sleep_wakeup_io_reset`), and in the ESP32's low-level (`ALL_LOW`)
+/// mode `esp_sleep_get_ext1_wakeup_status()` then reads an empty mask (bench 2026-11-09).
+/// [`EspWakeCauseSource`] falls back to this record through [`stoker::ext1_fired_mask`].
+/// `.rtc_noinit` stays powered in deep sleep because IDF's AUTO rule keeps RTC slow memory on
+/// while it holds data; the initialiser never runs there, so the words are garbage until the
+/// check word validates them. Atomics give interior mutability, so the compiler cannot assume
+/// their initial value; one writer before sleep, one reader at boot, no read-modify-write.
+#[cfg(esp32)]
+mod armed_ext1 {
+    use core::sync::atomic::{AtomicU32, Ordering};
+
+    /// Mixed into the check word, so zeroed or random memory does not validate.
+    const MAGIC: u32 = 0x4558_3141;
+
+    /// Mask low word, mask high word, low-level flag, check word.
+    ///
+    /// ESP-IDF's ESP32 linker script places `.rtc_noinit` as NOLOAD in RTC slow memory
+    /// (`esp_system/ld/esp32/sections.ld.in`); without that section the record would be lost.
+    #[link_section = ".rtc_noinit"]
+    static RECORD: [AtomicU32; 4] = [const { AtomicU32::new(0) }; 4];
+
+    /// This boot's answer, in normal RAM (zero at boot): taken flag, mask low, mask high,
+    /// bit 1 = record valid, bit 0 = low level.
+    static TAKEN: [AtomicU32; 4] = [const { AtomicU32::new(0) }; 4];
+
+    fn check(lo: u32, hi: u32, low: u32) -> u32 {
+        MAGIC ^ lo ^ hi.rotate_left(8) ^ low.rotate_left(16)
+    }
+
+    /// Records the armed EXT1 mask and whether it wakes on a low level; the check word last.
+    pub(super) fn store(mask: u64, low: bool) {
+        // The mask is split into its low and high words on purpose.
+        #[allow(clippy::cast_possible_truncation)]
+        let (lo, hi) = (mask as u32, (mask >> 32) as u32);
+        let low_flag = u32::from(low);
+        RECORD[0].store(lo, Ordering::Relaxed);
+        RECORD[1].store(hi, Ordering::Relaxed);
+        RECORD[2].store(low_flag, Ordering::Relaxed);
+        RECORD[3].store(check(lo, hi, low_flag), Ordering::Release);
+    }
+
+    /// Invalidates the record: all zero, and `check(0, 0, 0)` is `MAGIC`, not zero.
+    pub(super) fn invalidate() {
+        for word in &RECORD {
+            word.store(0, Ordering::Relaxed);
+        }
+    }
+
+    /// The armed mask and low-level flag, if the record validates.
+    fn load() -> Option<(u64, bool)> {
+        let stored = RECORD[3].load(Ordering::Acquire);
+        let lo = RECORD[0].load(Ordering::Relaxed);
+        let hi = RECORD[1].load(Ordering::Relaxed);
+        let low = RECORD[2].load(Ordering::Relaxed);
+        (stored == check(lo, hi, low) && low <= 1)
+            .then(|| (u64::from(lo) | (u64::from(hi) << 32), low == 1))
+    }
+
+    /// The record of the sleep that ended this boot: the first call loads it and invalidates it
+    /// in RTC memory, so a later sleep armed outside [`EspSleepManager`](super::EspSleepManager)
+    /// cannot inherit it; later calls in the same boot return the same answer.
+    pub(super) fn take() -> Option<(u64, bool)> {
+        if TAKEN[0].load(Ordering::Acquire) == 0 {
+            let flags = match load() {
+                Some((mask, low)) => {
+                    #[allow(clippy::cast_possible_truncation)]
+                    let (lo, hi) = (mask as u32, (mask >> 32) as u32);
+                    TAKEN[1].store(lo, Ordering::Relaxed);
+                    TAKEN[2].store(hi, Ordering::Relaxed);
+                    0b10 | u32::from(low)
+                }
+                None => 0,
+            };
+            TAKEN[3].store(flags, Ordering::Relaxed);
+            invalidate();
+            TAKEN[0].store(1, Ordering::Release);
+        }
+        let flags = TAKEN[3].load(Ordering::Relaxed);
+        (flags & 0b10 != 0).then(|| {
+            let mask = u64::from(TAKEN[1].load(Ordering::Relaxed))
+                | (u64::from(TAKEN[2].load(Ordering::Relaxed)) << 32);
+            (mask, flags & 1 != 0)
+        })
+    }
+}
+
 /// Error returned by [`EspSleepManager`].
 ///
 /// Implements [`stoker::sleep::Error`], so generic code branches on
@@ -280,6 +369,10 @@ impl WakeArmOps for IdfWakeArmOps<'_> {
     type Error = EspSleepError;
 
     fn clear(&mut self, keep_pins: u64) -> Result<(), EspSleepError> {
+        // Every arm starts here, timer-only included, so no later wake reads an old record.
+        #[cfg(esp32)]
+        armed_ext1::invalidate();
+
         // Clear any wake sources left over from a previous sleep cycle so the
         // caller gets deterministic behaviour regardless of prior state.
         //
@@ -390,6 +483,8 @@ impl WakeArmOps for IdfWakeArmOps<'_> {
         // and before deep sleep entry.
         let ret = unsafe { sys::esp_sleep_enable_ext1_wakeup_io(pin_mask, mode) };
         check(ret, "configuring GPIO EXT1 wakeup")?;
+        #[cfg(esp32)]
+        armed_ext1::store(pin_mask, level == GpioWakeLevel::AnyLow);
         log::info!(
             "Sleep: EXT1 GPIO wake configured (mask: 0x{:x}, level: {:?})",
             pin_mask,
@@ -412,6 +507,10 @@ impl WakeArmOps for IdfWakeArmOps<'_> {
     }
 
     fn undo_sources(&mut self) -> Result<(), EspSleepError> {
+        // A rolled-back arm must not leave a record behind.
+        #[cfg(esp32)]
+        armed_ext1::invalidate();
+
         // SAFETY: as in `clear`; disabling every wake source is safe at any time
         // before deep sleep entry.
         let ret = unsafe {
@@ -936,6 +1035,19 @@ impl SleepAttemptPort for IdfSleepPort<'_> {
 /// sleep entry, so calling it later usually works — but reading it early is
 /// the safest approach and the one documented by Espressif.
 ///
+/// # Low-level EXT1 wakes on the ESP32
+///
+/// On the original ESP32, ESP-IDF's boot code clears the EXT1 pin selection before
+/// `app_main`, and after a low-level (`AnyLow`) wake the status then reads empty.
+/// For a sleep armed through [`EspSleepManager`] this source falls back to the armed
+/// configuration, kept in RTC slow memory: the ESP32 refuses multi-pin `AnyLow`, so a
+/// low-level wake there always means the one armed pin.
+/// The first call in a boot consumes the record, so a later sleep armed by raw ESP-IDF calls
+/// does not inherit it and reports `Ext1` with an empty mask; repeated calls in one boot agree.
+/// Keep RTC slow memory powered in deep sleep (do not force `ESP_PD_DOMAIN_RTC_SLOW_MEM` off),
+/// or the record is lost; a reset that powers RTC memory down (power-on, brownout) is not an
+/// EXT1 wake, so it never consults the record.
+///
 /// # Cold boot behaviour
 ///
 /// `esp_sleep_get_wakeup_cause()` returns `ESP_SLEEP_WAKEUP_UNDEFINED` on
@@ -962,10 +1074,18 @@ impl WakeCauseSource for EspWakeCauseSource {
                 // fired-pin bitmask written by hardware before wake.
                 // Valid only when the wakeup cause is EXT1; reads a register only
                 // and does not modify any hardware state.
-                // Recommended to call early in main() before peripheral init,
-                // though the EXT1 register is preserved until the next sleep entry.
-                let mask = unsafe { sys::esp_sleep_get_ext1_wakeup_status() };
-                WakeCause::Ext1(GpioWakeMask(mask))
+                // Recommended to call early in main() before peripheral init.
+                let status = unsafe { sys::esp_sleep_get_ext1_wakeup_status() };
+                // On the ESP32 a low-level wake reads an empty status here; the record of
+                // the armed configuration names the single pin (see `armed_ext1`).
+                #[cfg(esp32)]
+                let mask = {
+                    let (armed_mask, armed_low) = armed_ext1::take().unwrap_or((0, false));
+                    stoker::ext1_fired_mask(status, armed_mask, armed_low)
+                };
+                #[cfg(not(esp32))]
+                let mask = GpioWakeMask(status);
+                WakeCause::Ext1(mask)
             }
             sys::esp_sleep_source_t_ESP_SLEEP_WAKEUP_EXT0 => {
                 // EXT0 uses a single RTC GPIO; the EXT1 status register is not

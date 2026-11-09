@@ -68,10 +68,10 @@ pub use sleep::attempt::{
     SleepAttemptMachine, SleepAttemptPort, SleepPlan,
 };
 pub use sleep::{
-    digital_hold_effective, wake_pins_all_low, wake_pins_asserted, Error, GpioWakeLevel,
-    GpioWakeMask, NoopSleepManager, SleepError, SleepErrorKind, SleepManager, WakeCause,
-    WakeCauseSource, WakeSource, DIG_ISO_DG_PAD_AUTOHOLD_EN, DIG_ISO_DG_PAD_FORCE_UNHOLD,
-    MAX_TIMER_MS,
+    digital_hold_effective, ext1_fired_mask, wake_pins_all_low, wake_pins_asserted, Error,
+    GpioWakeLevel, GpioWakeMask, NoopSleepManager, SleepError, SleepErrorKind, SleepManager,
+    WakeCause, WakeCauseSource, WakeSource, DIG_ISO_DG_PAD_AUTOHOLD_EN,
+    DIG_ISO_DG_PAD_FORCE_UNHOLD, MAX_TIMER_MS,
 };
 
 /// Averages ADC samples in millivolts, skipping failed reads.

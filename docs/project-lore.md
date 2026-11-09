@@ -94,6 +94,17 @@ Fix: `EspSleepManager::try_sleep` on C2/C3 reads the wake pins right before slee
 The read needs the pin configured as an input (`FUN_IE`; arming does not set it) and an external bias, and a pin that changes after the read still wakes the chip at once.
 
 
+## ESP-IDF tier — ESP32 EXT1 wake status (IDF v5.3.3)
+
+**On the ESP32, an `AnyLow` (EXT1 `ALL_LOW`) wake reports `Ext1(0x0)` from `app_main`, although the wake works and `AnyHigh` reports the right bit.**
+ESP-IDF's boot code runs `esp_deep_sleep_wakeup_io_reset()` on a deep-sleep reset (`esp_system/port/cpu_start.c:752`), which clears `RTC_CNTL_EXT_WAKEUP1_SEL` before releasing the pad holds (`esp_hw_support/sleep_gpio.c:156-163`); `esp_sleep_get_ext1_wakeup_status()` then reads an empty status in low-level mode.
+esp-hal reads the register in the app through `caused_wakeup()`, and a solid held-wire wake got the bit 3 of 3 boots at 01:01; the same firmware then read `0x0` on 5 of 5 later boots the same day, including a 3 s hold with the pin Low at boot, so the register read is not reliable on this tier (bench hal `anylow`, Feather V2, 2026-11-09).
+Fix: mirror the IDF tier — `armed_ext1` (`crates/rustyfarian-esp-hal-power/src/armed_ext1.rs`) keeps the armed mask and level in `.rtc_fast.persistent`, `EspHalSleepManager` stores it on any non-timer-only arm and invalidates on arm start and on disarm, and `EspHalWakeCauseSource` resolves the empty status through the shared `stoker::ext1_fired_mask`; the rerun passed 4/4 on both tiers with the bit reported on every touch wake, register empty or not (bench `anylow`, Feather V2, 2026-11-09).
+On this tier only `.rtc_fast.persistent` survives deep sleep — `RtcSleepConfig::deep()` powers down the RTC slow memories and the repo's `deep_sleep_config()` rescues fast memory; a `.rtc_slow` static is lost every sleep.
+That the low-level status is SEL-gated is inferred, not confirmed at register level; no surviving register names the pin before `app_main`.
+Fix: `EspSleepManager` records the armed EXT1 mask and level in `.rtc_noinit` (RTC slow memory, kept powered by IDF's AUTO rule while it holds data), and `EspWakeCauseSource` resolves an empty status to the single armed low pin (`stoker::ext1_fired_mask`); exact because the ESP32 refuses multi-pin `AnyLow`.
+Do not force `ESP_PD_DOMAIN_RTC_SLOW_MEM` off, or the record is lost.
+
 ## ESP-IDF tier — ESP32-S3 deep sleep (IDF v5.3.3)
 
 **On the ESP32-S3, `esp_deep_sleep_try_to_start` does reject a deep sleep whose EXT1 wake pin is already at its wake level, unlike the C3's GPIO wake.**
@@ -246,3 +257,9 @@ Fix: R1 requires `reset=DeepSleep` and `cause=Timer` on every judged boot beside
 **Opening the CP210x port of the ESP32-C3-DevKitM-1 resets the chip through EN even with DTR and RTS driven low, and ESP-IDF and esp-hal both report it as a power-on reset.**
 Every `just serial-capture` therefore starts with `reset=PowerOn` and a fresh retention session, which is indistinguishable from a USB replug in the log.
 Fix: start the capture before the sequence under test and read the power-on boot at the top as the port open, not as evidence.
+
+## Bench tooling — ESP32 bench hal builds
+
+**The `hal_esp32_*` bench apps boot through a stale `ESP-IDF v6.1-beta1` second-stage bootloader left in flash by an earlier IDF app.**
+`espflash` writes the app image without erasing the bootloader sector, so the hal logs carry IDF boot banners and the `ESP-IDF v` line does not say which tier the firmware is.
+The bootloader is the same across every bench log and was ruled out as a factor; read the app's own `Reset reason:` line (and the `kind=` text) to identify the tier, not the boot banners.

@@ -68,6 +68,9 @@ pub mod reset;
 #[cfg(all(target_os = "none", feature = "unstable"))]
 pub use reset::EspHalResetReasonSource;
 
+#[cfg(all(target_os = "none", feature = "esp32", feature = "unstable"))]
+mod armed_ext1;
+
 #[cfg(all(target_os = "none", feature = "unstable"))]
 pub mod wake;
 #[cfg(all(target_os = "none", feature = "unstable"))]
