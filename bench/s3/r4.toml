@@ -1,0 +1,19 @@
+# Non-wake pads and user holds after a rejection on the CrowPanel 1.28" (ESP32-S3), both tiers (bench case R4-S3).
+# On top of the `r2` stimulus the firmware configures three digital-only probe pads (GPIO38 held, GPIO39,
+# GPIO47; believed unwired on this board) and snapshots their IO_MUX, out-sel, enable and input state right
+# before the forced `try_sleep` and right after its `Rejected`; the two must match and the holds must stick.
+# A per-boot self-test must detect a deliberate difference (`detect=1`).
+examples = ["hal_s3_deep_sleep_gpio+r4", "idf_s3_deep_sleep_gpio+r4"]
+
+[[step]]
+say = "Wait for the boot line"
+expect = 'S3BENCH tier=\w+ cycle=\d+ reset=\w+ cause=\w+ mask=0x[0-9a-f]+'
+timeout = 15
+optional = true
+arm = false
+
+[[step]]
+say = "Hands off: self-test detects, then the hardware-path rejection leaves every probe pad and hold unchanged"
+expect = ['NONWAKE selftest tier=\w+ detect=1 hold38=1', 'FORCED tier=\w+ int_before=L autohold=0', 'NONWAKE tier=\w+ path=hw same=1 holdok=1 diff=-']
+reject = 'NONWAKE tier=\w+ path=hw same=0|holdok=0|try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST'
+timeout = 60

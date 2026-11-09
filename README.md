@@ -134,7 +134,7 @@ just run idf_c3_deep_sleep_gpio
 ```
 
 **Elecrow CrowPanel 1.28" HMI** (ESP32-S3) — deep-sleeps until the CST816S touch INT on GPIO5 or a 60 s timer wakes it, on both tiers.
-Bench runbook: [docs/bench/s3-crowpanel-touch-sleep-bench-steps-v1.md](docs/bench/s3-crowpanel-touch-sleep-bench-steps-v1.md)
+Bench: [bench/s3/](bench/s3/) (`just bench s3`)
 
 ```shell
 just run idf_s3_deep_sleep_gpio

@@ -18,7 +18,7 @@
 //!
 //! The console is the S3's native USB-Serial-JTAG, which drops off the bus during deep sleep.
 //! The example stays awake 3 s after each boot so the host can reopen the re-enumerated port.
-//! Bench results: `docs/bench/s3-crowpanel-touch-sleep-bench-steps-v1.md`.
+//! Bench: `bench/s3/` (`sleep`, `touch-wake`, `r2`, `r3`, `r4`, `r4-guard`).
 //!
 //! ## Bench case R2 (build-time switches)
 //!
@@ -127,28 +127,41 @@ const AWAKE_MS: u32 = 3_000;
 /// It is an RTC pad (0-21), so the mask validates; it is unused by the CrowPanel peripherals.
 const MASKRETRY_PIN: u8 = 0;
 
-/// Bench case R2 (`S3_R2=1` at build time).
-const R2: bool = match option_env!("S3_R2") {
-    Some(s) => s.len() == 1 && s.as_bytes()[0] == b'1',
-    None => false,
-};
+/// Bench variant (`just bench-build NAME+VARIANT`, `bench/s3/`): `r2` is the R2 flow, `r3` keeps
+/// the global pad hold on (the guard path), `r4` adds the non-wake pad probes, `r4-guard` is R4
+/// with the hold kept on. Each uses the 5 s wake timer; the `S3_*` variables below still work.
+const VARIANT: Option<usize> = variant_index(
+    option_env!("BENCH_VARIANT"),
+    &["r2", "r3", "r4", "r4-guard"],
+);
 
-/// Bench case R3 (`S3_KEEP_AUTOHOLD=1` at build time, only meaningful with `S3_R2=1`).
-const KEEP_AUTOHOLD: bool = match option_env!("S3_KEEP_AUTOHOLD") {
-    Some(s) => s.len() == 1 && s.as_bytes()[0] == b'1',
-    None => false,
-};
-
-/// Bench case R4 (`S3_R4=1` at build time); only active together with R2.
-const R4: bool = R2
-    && match option_env!("S3_R4") {
+/// Bench case R2 (`S3_R2=1` at build time, or any bench variant).
+const R2: bool = VARIANT.is_some()
+    || match option_env!("S3_R2") {
         Some(s) => s.len() == 1 && s.as_bytes()[0] == b'1',
         None => false,
     };
 
-/// Wake timer in ms: `S3_SLEEP_TIMER_MS` at build time, else 60 s.
+/// Bench case R3 (`S3_KEEP_AUTOHOLD=1` at build time, or the `r3` / `r4-guard` variants; only
+/// meaningful with R2).
+const KEEP_AUTOHOLD: bool = matches!(VARIANT, Some(1 | 3))
+    || match option_env!("S3_KEEP_AUTOHOLD") {
+        Some(s) => s.len() == 1 && s.as_bytes()[0] == b'1',
+        None => false,
+    };
+
+/// Bench case R4 (`S3_R4=1` at build time, or the `r4` / `r4-guard` variants); only active together with R2.
+const R4: bool = R2
+    && (matches!(VARIANT, Some(2 | 3))
+        || match option_env!("S3_R4") {
+            Some(s) => s.len() == 1 && s.as_bytes()[0] == b'1',
+            None => false,
+        });
+
+/// Wake timer in ms: `S3_SLEEP_TIMER_MS` at build time, else 5 s for a bench variant and 60 s otherwise.
 const TIMER_MS: u64 = match option_env!("S3_SLEEP_TIMER_MS") {
     Some(s) => parse_u64(s),
+    None if VARIANT.is_some() => 5_000,
     None => 60_000,
 };
 
@@ -219,7 +232,7 @@ fn rtc_ms() -> u32 {
     (EspRtcClock::now_us() / 1000) as u32
 }
 
-use stoker::bench::parse_u64;
+use stoker::bench::{parse_u64, variant_index};
 
 /// Milliseconds since boot.
 fn now_ms() -> u64 {

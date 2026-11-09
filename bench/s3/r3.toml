@@ -1,0 +1,25 @@
+# `try_sleep` hold guard on the CrowPanel 1.28" (ESP32-S3), both tiers (bench case R3-S3): the forced cycles
+# keep the global digital-pad hold on, so a hardware rejection would hang the chip (docs/project-lore.md);
+# the library guard must answer `Rejected` from its pre-entry pin read instead. Same stimulus as `r2`.
+# esp-hal boots after a guarded rejection print nothing the capture receives, so only the plain-cycle
+# recount is required here; the forced recount is covered by `r2`.
+examples = ["hal_s3_deep_sleep_gpio+r3", "idf_s3_deep_sleep_gpio+r3"]
+
+[[step]]
+say = "Wait for the boot line"
+expect = 'S3BENCH tier=\w+ cycle=\d+ reset=\w+ cause=\w+ mask=0x[0-9a-f]+'
+timeout = 15
+optional = true
+arm = false
+
+[[step]]
+say = "Hands off: forced rejection with the pad hold kept on; the guard rejects, no hang, then the L->H edge"
+expect = ['FORCED tier=\w+ int_before=L autohold=1', 'PINREAD start tier=\w+ pin=5 level=L', 'PINREAD edge tier=\w+ pin=5 L->H']
+reject = 'Deep sleep request is rejected|rst:0x8|try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST'
+timeout = 60
+
+[[step]]
+say = "Hands off: the board keeps cycling; a plain cycle's recount reads the 5 s timer"
+expect = 'SLEPT tier=\w+ ms=5[0-6]\d\d forced=0'
+reject = 'rst:0x8|try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST'
+timeout = 90

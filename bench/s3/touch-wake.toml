@@ -1,0 +1,37 @@
+# Touch wake on the CrowPanel 1.28" (ESP32-S3), both tiers, attended: the CST816S pulls INT (GPIO5)
+# low on a tap, which wakes the chip through EXT1 with bit 5 set (mask 0x20).
+# A resting finger makes INT pulse, so the board wakes again and again without a rejection; once the
+# finger lifts it sleeps through to the 60 s timer. Nothing to wire.
+examples = ["hal_s3_deep_sleep_gpio", "idf_s3_deep_sleep_gpio"]
+
+[[step]]
+say = "Wait for the boot line; the board sleeps a few seconds later"
+expect = 'S3BENCH tier=\w+ cycle=\d+ reset=\w+ cause=\w+ mask=0x[0-9a-f]+'
+timeout = 15
+optional = true
+attended = true   # part of the touch flow: shows the boot so the next instruction stays on screen
+arm = false
+
+[[step]]
+say = "Now: tap the screen once, briefly (wait a few seconds after the boot line first)"
+expect = 'S3BENCH tier=\w+ cycle=\d+ reset=DeepSleep cause=Ext1 mask=0x20'
+reject = 'try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST'
+timeout = 60
+attended = true
+arm = false
+
+[[step]]
+say = "Now: rest a finger on the screen for about 10 s, then lift it: the board re-wakes on each pulse, with no rejection"
+duration = 15
+# A second attempt in one boot means a rejected sleep; a resting finger must not cause one.
+reject = 'ATTEMPT tier=\w+ n=(?:[2-9]|\d\d+) |try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST'
+attended = true
+arm = false
+
+[[step]]
+say = "Hands off: with the finger lifted the board sleeps through to the 60 s timer"
+expect = 'S3BENCH tier=\w+ cycle=\d+ reset=DeepSleep cause=Timer mask=0x0'
+reject = 'try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST'
+timeout = 90
+attended = true
+arm = false

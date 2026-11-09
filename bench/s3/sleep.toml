@@ -1,0 +1,25 @@
+# Timer deep sleep on the CrowPanel 1.28" (ESP32-S3), both tiers: touch INT (GPIO5, EXT1 wake) + 60 s timer.
+# The console is the S3's native USB-Serial-JTAG: the port drops in deep sleep and comes back after
+# the wake; the runner reopens it. Each boot prints its `S3BENCH` line twice (the second copy after the
+# 3 s awake time), so a new wake is told apart by its cycle number, not by counting lines.
+# Nothing touches the screen, so every wake must be the timer.
+examples = ["hal_s3_deep_sleep_gpio", "idf_s3_deep_sleep_gpio"]
+
+[[step]]
+say = "Wait for the boot line"
+expect = 'S3BENCH tier=\w+ cycle=\d+ reset=\w+ cause=\w+ mask=0x[0-9a-f]+'
+timeout = 15
+optional = true   # can be printed before the port reopens after reset
+arm = false       # must read the backlog from the reset
+
+[[step]]
+say = "Hands off the screen: the first 60 s timer wake, no touch wake"
+expect = 'S3BENCH tier=\w+ cycle=(?P<cycle>\d+) reset=DeepSleep cause=Timer mask=0x0'
+reject = 'cause=Ext1|try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST'
+timeout = 90
+
+[[step]]
+say = "Hands off: a second timer wake with a new cycle number"
+expect = 'S3BENCH tier=\w+ cycle=(?!(?P=cycle)\b)\d+ reset=DeepSleep cause=Timer mask=0x0'
+reject = 'cause=Ext1|try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST'
+timeout = 90

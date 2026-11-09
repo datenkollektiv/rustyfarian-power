@@ -34,7 +34,7 @@ Request origin: `rustyfarian-knob` esp-hal parity quest (milestone M9), https://
 - [x] Design approved and shape decided
 - [x] Core implementation found in esp-hal 1.2.2 (`Output::set_pad_hold`, unstable)
 - [x] `hal_s3_deep_sleep_gpio` example converted to use `Output::set_pad_hold()`
-- [x] Bench validation: CrowPanel touch wake with GPIO1/13 held (knob run, 2026-10-28, `docs/bench/s3-crowpanel-touch-sleep-bench-steps-v1.md`)
+- [x] Bench validation: CrowPanel touch wake with GPIO1/13 held (knob run, 2026-10-28, recorded in `docs/bench/s3-crowpanel-touch-sleep-bench-steps-v1.md`, removed 2026-11-09; see git history)
 
 ## Session Log
 

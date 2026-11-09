@@ -15,8 +15,15 @@ checks = ["retention"]   # first; needs no wiring
 [boards.heltec]
 chip = "esp32s3"
 name = "Heltec WiFi LoRa 32 V3 (ESP32-S3, CP2102 bridge)"
+mac = "64:e8:33:69:d7:38"   # the CrowPanel is an ESP32-S3 too; the MAC picks this board
 checks = ["retention"]   # first; needs no battery
 
 [boards.esp32]
 chip = "esp32"
 name = "Adafruit ESP32 Feather V2"
+
+[boards.s3]
+chip = "esp32s3"
+name = "CrowPanel 1.28\" HMI (ESP32-S3, USB-Serial-JTAG), CST816S touch INT on GPIO5"
+mac = "40:4c:ca:47:97:28"   # the Heltec V3 is an ESP32-S3 too; the MAC picks this board
+checks = ["sleep"]   # first; needs no hands

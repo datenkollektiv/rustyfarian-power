@@ -272,7 +272,7 @@ Reject mask includes RTC_EXT0_TRIG_EN and RTC_EXT1_TRIG_EN.
 Unlike the C3, the S3 hardware does reject a held EXT1 level; bench case H1-level (2026-10-14, CrowPanel 1.28" HMI) shows 675 consecutive `Rejected` in 34 s at the 50 ms retry, no boot loop.
 No pre-sleep level check is needed on the S3; the hal tier re-arms on each attempt and the hardware rejection prevents a boot loop.
 
-**Bench results (2026-10-14, firmware uncommitted on top of `ea40d22`, bench builds with extra logging; record in `docs/bench/s3-crowpanel-touch-sleep-bench-steps-v1.md`):**
+**Bench results (2026-10-14, firmware uncommitted on top of `ea40d22`, bench builds with extra logging; record was `docs/bench/s3-crowpanel-touch-sleep-bench-steps-v1.md`, removed 2026-11-09 in favour of `bench/s3/`; see git history):**
 
 | Tier | Event                | Outcome                                          |
 |:-----|:---------------------|:-------------------------------------------------|
