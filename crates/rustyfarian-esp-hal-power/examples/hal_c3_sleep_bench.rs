@@ -215,22 +215,7 @@ const CASE: Case = match option_env!("BENCH_CASE") {
     None => panic!("BENCH_CASE is not set; use one of W1 W2 W3 H1 H2 H3 H4 H5 H6 H7 H8 R1"),
 };
 
-/// Decimal parser usable in a const context; fails the build on anything but digits.
-const fn parse_u64(s: &str) -> u64 {
-    let b = s.as_bytes();
-    assert!(!b.is_empty(), "BENCH_TIMER_MS must not be empty");
-    let mut i = 0;
-    let mut v: u64 = 0;
-    while i < b.len() {
-        assert!(
-            b[i].is_ascii_digit(),
-            "BENCH_TIMER_MS must be decimal digits"
-        );
-        v = v * 10 + (b[i] - b'0') as u64;
-        i += 1;
-    }
-    v
-}
+use stoker::bench::parse_u64;
 
 /// `0` or `1`; anything else fails the build.
 const fn parse_flag(s: &str) -> bool {
@@ -363,26 +348,7 @@ fn err_name(e: &SleepError) -> &'static str {
     }
 }
 
-/// Short name of the reset reason for the BENCH line.
-fn reset_name(reason: Option<SocResetReason>) -> &'static str {
-    match reason {
-        Some(SocResetReason::ChipPowerOn) => "PowerOn",
-        Some(SocResetReason::CoreSw | SocResetReason::Cpu0Sw) => "Software",
-        Some(SocResetReason::CoreDeepSleep) => "DeepSleep",
-        Some(SocResetReason::SysBrownOut) => "Brownout",
-        Some(
-            SocResetReason::CoreMwdt0
-            | SocResetReason::CoreMwdt1
-            | SocResetReason::CoreRtcWdt
-            | SocResetReason::Cpu0Mwdt0
-            | SocResetReason::Cpu0Mwdt1
-            | SocResetReason::Cpu0RtcWdt
-            | SocResetReason::SysRtcWdt
-            | SocResetReason::SysSuperWdt,
-        ) => "Watchdog",
-        _ => "Other",
-    }
-}
+use rustyfarian_esp_hal_power::{EspHalResetReasonSource, ResetReasonSource};
 
 fn cause_name(cause: WakeCause) -> (&'static str, u64) {
     match cause {
@@ -654,7 +620,7 @@ fn main() -> ! {
     let counter = next_cycle(reset == Some(SocResetReason::CoreDeepSleep));
     let (cause, mask) = cause_name(wake);
     let ctx = Ctx {
-        reset: reset_name(reset),
+        reset: EspHalResetReasonSource.last_reset_reason().name(),
         cause,
         mask,
         cycle: if CASE.counts_cycles() { counter } else { 0 },

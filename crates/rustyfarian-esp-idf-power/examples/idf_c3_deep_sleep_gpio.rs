@@ -188,22 +188,7 @@ const PROBE_PERIOD_MS: u64 = 100;
 /// Off by default: while the PIR is held the retry loop would print 20 lines per second.
 const BENCH_LOG: bool = option_env!("C3_BENCH_LOG").is_some();
 
-/// Decimal parser usable in a const context; fails the build on anything but digits.
-const fn parse_u64(s: &str) -> u64 {
-    let b = s.as_bytes();
-    assert!(!b.is_empty(), "build-time ms variable must not be empty");
-    let mut i = 0;
-    let mut v: u64 = 0;
-    while i < b.len() {
-        assert!(
-            b[i].is_ascii_digit(),
-            "build-time ms variable must be decimal digits"
-        );
-        v = v * 10 + (b[i] - b'0') as u64;
-        i += 1;
-    }
-    v
-}
+use stoker::bench::parse_u64;
 
 /// `up` or `down`; fails the build on anything else.
 const fn parse_pull_up(s: &str) -> bool {

@@ -84,6 +84,23 @@ pub enum ResetReason {
     Other,
 }
 
+impl ResetReason {
+    /// The variant's name, for machine-read log lines (`reset=DeepSleep`).
+    ///
+    /// Same spelling as the `Debug` output, available in a `const` context and without `core::fmt`.
+    pub const fn name(self) -> &'static str {
+        match self {
+            ResetReason::PowerOn => "PowerOn",
+            ResetReason::Brownout => "Brownout",
+            ResetReason::DeepSleep => "DeepSleep",
+            ResetReason::Software => "Software",
+            ResetReason::Panic => "Panic",
+            ResetReason::Watchdog => "Watchdog",
+            ResetReason::Other => "Other",
+        }
+    }
+}
+
 /// ESP-IDF v5.3.3 `esp_reset_reason_t` values, in `esp_system.h` order.
 ///
 /// [`from_esp_idf_code`] maps them; the ESP-IDF tier pins its generated

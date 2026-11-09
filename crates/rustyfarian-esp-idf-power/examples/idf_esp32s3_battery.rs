@@ -87,32 +87,12 @@ impl log::Log for RomLogger {
 
 static LOGGER: RomLogger = RomLogger;
 
-const fn bytes_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut i = 0;
-    while i < a.len() {
-        if a[i] != b[i] {
-            return false;
-        }
-        i += 1;
-    }
-    true
-}
+use stoker::bench::variant_index;
 
 /// `BENCH_VARIANT` at build time (`just bench-build NAME+VARIANT`): `calib` adds a
 /// `Calib:` line printing the compensated and averaged raw pin mV in every power state, for
 /// divider-ratio calibration (see `bench/heltec/battery-calib.toml`). Unknown values fail the build.
-const fn parse_calib(value: Option<&str>) -> bool {
-    match value {
-        Some(v) if bytes_eq(v.as_bytes(), b"calib") => true,
-        None => false,
-        _ => panic!("BENCH_VARIANT must be unset or one of: calib"),
-    }
-}
-
-const CALIB: bool = parse_calib(option_env!("BENCH_VARIANT"));
+const CALIB: bool = variant_index(option_env!("BENCH_VARIANT"), &["calib"]).is_some();
 
 fn main() -> anyhow::Result<()> {
     // SAFETY: link_patches must run before any ESP-IDF API call.

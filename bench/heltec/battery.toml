@@ -1,6 +1,9 @@
 # Battery monitor on GPIO1 (always-on divider), both tiers; prints `Battery: <status>` every 1-2 s.
-# The attended step needs a printed mV: `USB/Ext` and `No battery` carry no voltage, so a run
-# printing either has nothing to compare — recalibrate first (`battery-calib`), do not confirm.
+# Unattended only: the meter comparison lives in `battery-calib`, which runs the same monitors
+# with the raw value printed and a 1 % tolerance (passed attended 2026-11-09: meter 4.18 V,
+# hal 4.19 V, IDF 4.18 V), so this check does not ask for the meter a second time.
+# A run printing `USB/Ext` or `No battery` has no voltage to match — recalibrate with
+# `battery-calib` first.
 # Meter the pack's polarity BEFORE connecting it (docs/project-lore.md -> Hardware).
 examples = ["hal_s3_battery", "idf_esp32s3_battery"]
 
@@ -9,7 +12,3 @@ say = "Wait for three voltage readings (mV)"
 expect = ['Battery: \d+mV', 'Battery: \d+mV', 'Battery: \d+mV']
 reject = 'ADC read failed|PANIC|panicked|Guru Meditation'
 timeout = 15
-
-[[step]]
-say = "Compare the printed voltage with a meter across the battery"
-confirm = "Printed mV within about 100 mV of the meter?"

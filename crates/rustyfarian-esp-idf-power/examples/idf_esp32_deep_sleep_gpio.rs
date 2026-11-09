@@ -96,39 +96,16 @@ enum Variant {
 }
 
 /// Byte-string equality usable in a const context.
-const fn bytes_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut i = 0;
-    while i < a.len() {
-        if a[i] != b[i] {
-            return false;
-        }
-        i += 1;
-    }
-    true
-}
+use stoker::bench::{parse_u64, variant_index};
 
-/// Parse `BENCH_VARIANT`; an unknown value fails the build.
-const fn parse_variant(value: Option<&str>) -> Variant {
-    let Some(v) = value else {
-        return Variant::High;
+/// The build's wake configuration: `BENCH_VARIANT` at build time (`anylow`, `anylow-multi`),
+/// else the high-level wake; an unknown value fails the build.
+const VARIANT: Variant =
+    match variant_index(option_env!("BENCH_VARIANT"), &["anylow", "anylow-multi"]) {
+        None => Variant::High,
+        Some(0) => Variant::Low,
+        _ => Variant::LowMulti,
     };
-    let b = v.as_bytes();
-    if b.is_empty() {
-        Variant::High
-    } else if bytes_eq(b, b"anylow") {
-        Variant::Low
-    } else if bytes_eq(b, b"anylow-multi") {
-        Variant::LowMulti
-    } else {
-        panic!("BENCH_VARIANT must be unset or one of: anylow, anylow-multi")
-    }
-}
-
-/// The build's wake configuration.
-const VARIANT: Variant = parse_variant(option_env!("BENCH_VARIANT"));
 /// Wake on a low level (pull-up) instead of a high one (pull-down).
 const WAKE_LOW: bool = !matches!(VARIANT, Variant::High);
 /// Arm GPIO26 as a second wake pin.
@@ -161,23 +138,6 @@ const _: () = assert!(
     TIMER_MS >= 1 && TIMER_MS <= MAX_TIMER_MS,
     "ESP32_SLEEP_TIMER_MS must be between 1 and MAX_TIMER_MS"
 );
-
-/// Decimal parser usable in a const context; fails the build on anything but digits.
-const fn parse_u64(s: &str) -> u64 {
-    let b = s.as_bytes();
-    assert!(!b.is_empty(), "ESP32_SLEEP_TIMER_MS must not be empty");
-    let mut i = 0;
-    let mut v: u64 = 0;
-    while i < b.len() {
-        assert!(
-            b[i].is_ascii_digit(),
-            "ESP32_SLEEP_TIMER_MS must be decimal digits"
-        );
-        v = v * 10 + (b[i] - b'0') as u64;
-        i += 1;
-    }
-    v
-}
 
 fn main() -> anyhow::Result<()> {
     // SAFETY: link_patches satisfies ESP-IDF's requirement that ROM function

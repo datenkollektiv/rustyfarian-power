@@ -133,43 +133,20 @@ enum Action {
 }
 
 /// Byte-string equality usable in a const context.
-const fn bytes_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut i = 0;
-    while i < a.len() {
-        if a[i] != b[i] {
-            return false;
-        }
-        i += 1;
-    }
-    true
-}
+use stoker::bench::{parse_u64, variant_index};
 
-/// Parse `C3_RET_ACTION`; an unknown value fails the build.
-const fn parse_action(value: Option<&str>) -> Action {
-    let Some(s) = value else {
-        return Action::Sleep;
-    };
-    let b = s.as_bytes();
-    if bytes_eq(b, b"sleep") {
-        Action::Sleep
-    } else if bytes_eq(b, b"restart") {
-        Action::Restart
-    } else if bytes_eq(b, b"panic") {
-        Action::Panic
-    } else if bytes_eq(b, b"wdt") {
-        Action::Wdt
-    } else if bytes_eq(b, b"cycle") {
-        Action::Cycle
-    } else {
-        panic!("C3_RET_ACTION must be one of: sleep, restart, panic, wdt, cycle")
-    }
-}
-
-/// Action at the end of each boot: `C3_RET_ACTION` at build time, else `sleep`.
-const ACTION: Action = parse_action(option_env!("C3_RET_ACTION"));
+/// Action at the end of each boot: `C3_RET_ACTION` at build time (`sleep`, `restart`, `panic`, `wdt`,
+/// `cycle`), else `sleep`; an unknown value fails the build.
+const ACTION: Action = match variant_index(
+    option_env!("C3_RET_ACTION"),
+    &["sleep", "restart", "panic", "wdt", "cycle"],
+) {
+    None | Some(0) => Action::Sleep,
+    Some(1) => Action::Restart,
+    Some(2) => Action::Panic,
+    Some(3) => Action::Wdt,
+    _ => Action::Cycle,
+};
 
 /// Timer wake in ms: `C3_SLEEP_TIMER_MS` at build time, else 5 s.
 const TIMER_MS: u64 = match option_env!("C3_SLEEP_TIMER_MS") {
@@ -182,23 +159,6 @@ const _: () = assert!(
     TIMER_MS >= 1 && TIMER_MS <= MAX_TIMER_MS,
     "C3_SLEEP_TIMER_MS must be between 1 and MAX_TIMER_MS"
 );
-
-/// Decimal parser usable in a const context; fails the build on anything but digits.
-const fn parse_u64(s: &str) -> u64 {
-    let b = s.as_bytes();
-    assert!(!b.is_empty(), "C3_SLEEP_TIMER_MS must not be empty");
-    let mut i = 0;
-    let mut v: u64 = 0;
-    while i < b.len() {
-        assert!(
-            b[i].is_ascii_digit(),
-            "C3_SLEEP_TIMER_MS must be decimal digits"
-        );
-        v = v * 10 + (b[i] - b'0') as u64;
-        i += 1;
-    }
-    v
-}
 
 /// Resolve `Cycle` to the concrete action for this boot.
 fn resolve(action: Action, boots: u32) -> Action {

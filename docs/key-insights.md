@@ -124,6 +124,7 @@ Remove or update entries that are superseded.
   Even though `esp-idf-sys` emits `cargo:rustc-cfg=esp32`, that flag is not visible to either workspace crate.
   Both `stoker` and `rustyfarian-esp-idf-power` therefore carry a `build.rs` that reads `TARGET` and emits `cargo:rustc-cfg=esp32` / `cargo:rustc-cfg=esp32s3` directly, plus `cargo:rustc-check-cfg` to silence the `unexpected_cfgs` lint. `stoker` keeps its copy only because the legacy `sleep.rs::validate_gpio_level_source` still uses `#[cfg(esp32)]`; the IDF tier's own `cfg` wake-mask pair is gone, since the mask is `ChipPolicy::wake_pin_mask()` — the crate-split does **not** let it inherit the cfg from the ESP-IDF crate's build script. `stoker`'s `build.rs` does the cfg emission only (no `embuild` linker step).
 - **GPIO isolation:** Call `esp_sleep_config_gpio_isolate()` and `esp_sleep_isolate_digital_gpio()` before deep sleep to prevent floating digital GPIO pins from leaking current.
+  Isolation also releases output pads that must keep driving a load switch through sleep: on the Heltec V3.1 it floated `Vext_Ctrl` (GPIO36) and the Vext rail came back ON in deep sleep (3.29 V on `Ve`, 2026-11-09). Exclude such a pad with `gpio_sleep_sel_dis(pin)` after configuring it (done in `heltec_v3_vext`); `esp_sleep_config_gpio_isolate()` does not re-enable sleep-select, `esp_sleep_enable_gpio_switch(true)` would.
   This is one of the most commonly missed optimizations on real boards.
 - **Deep sleep wake stub:** A minimal function marked `RTC_IRAM_ATTR` can execute immediately on wake before the full boot, useful for deciding whether to fully boot or return to sleep.
   Set via `esp_set_deep_sleep_wake_stub()`.
@@ -131,7 +132,7 @@ Remove or update entries that are superseded.
   Light sleep preserves RAM and peripheral state but consumes ~800 µA–2 mA (too high for months-long battery life).
   Deep sleep with timer wakeup achieves the lowest average current.
 - **Heltec V3 power rails (verified 2026-10-24 against the Zephyr board DTS `heltec_wifi_lora32_v3_procpu.dts`):** the SX1262 sits on the always-on 3V3 rail and has no GPIO power control.
-  Only Vext is switchable, through a P-MOSFET driven by GPIO36 (`Vext_Ctrl`, active-low, pulled up); it feeds the OLED and the Ve header pins, so a rail gate on this board saves the OLED/sensor load, never the radio.
+  Only Vext is switchable, through a P-MOSFET driven by GPIO36 (`Vext_Ctrl`, active-low; a released pad turns the rail ON, so no pull-up can be relied on — measured 2026-11-09); it feeds the OLED and the Ve header pins, so a rail gate on this board saves the OLED/sensor load, never the radio.
   The SX1262 has its own sleep mode (~400 nA) via the SPI command `SetSleep(0x00)`; that belongs to the network radio driver, not to the power gate (`docs/features/power-rail-gate-v1.md`).
   For deep sleep of the ESP32, the SPI bus must be fully idle and the radio must be put to sleep first.
 

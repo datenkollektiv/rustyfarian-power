@@ -104,39 +104,16 @@ enum Variant {
 }
 
 /// Byte-string equality usable in a const context.
-const fn bytes_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut i = 0;
-    while i < a.len() {
-        if a[i] != b[i] {
-            return false;
-        }
-        i += 1;
-    }
-    true
-}
+use stoker::bench::variant_index;
 
-/// Parse `BENCH_VARIANT`; an unknown value fails the build.
-const fn parse_variant(value: Option<&str>) -> Variant {
-    let Some(v) = value else {
-        return Variant::High;
+/// The build's wake configuration: `BENCH_VARIANT` at build time (`anylow`, `anylow-multi`),
+/// else the high-level wake; an unknown value fails the build.
+const VARIANT: Variant =
+    match variant_index(option_env!("BENCH_VARIANT"), &["anylow", "anylow-multi"]) {
+        None => Variant::High,
+        Some(0) => Variant::Low,
+        _ => Variant::LowMulti,
     };
-    let b = v.as_bytes();
-    if b.is_empty() {
-        Variant::High
-    } else if bytes_eq(b, b"anylow") {
-        Variant::Low
-    } else if bytes_eq(b, b"anylow-multi") {
-        Variant::LowMulti
-    } else {
-        panic!("BENCH_VARIANT must be unset or one of: anylow, anylow-multi")
-    }
-}
-
-/// The build's wake configuration.
-const VARIANT: Variant = parse_variant(option_env!("BENCH_VARIANT"));
 /// Wake on a low level (pull-up) instead of a high one (pull-down).
 const WAKE_LOW: bool = !matches!(VARIANT, Variant::High);
 /// Arm GPIO26 as a second wake pin.

@@ -90,7 +90,7 @@ esp_bootloader_esp_idf::esp_app_desc!();
 use esp_hal::{
     delay::Delay,
     gpio::{Input, InputConfig, Level, Pull},
-    rtc_cntl::{reset_reason, SocResetReason},
+    rtc_cntl::reset_reason,
     system::{software_reset, Cpu},
     time::Instant,
 };
@@ -150,22 +150,7 @@ const PINREAD_PERIOD_MS: u32 = 10;
 /// Off by default: while the PIR is held the retry loop would print 20 lines per second.
 const BENCH_LOG: bool = option_env!("C3_BENCH_LOG").is_some();
 
-/// Decimal parser usable in a const context; fails the build on anything but digits.
-const fn parse_u64(s: &str) -> u64 {
-    let b = s.as_bytes();
-    assert!(!b.is_empty(), "C3_SLEEP_TIMER_MS must not be empty");
-    let mut i = 0;
-    let mut v: u64 = 0;
-    while i < b.len() {
-        assert!(
-            b[i].is_ascii_digit(),
-            "C3_SLEEP_TIMER_MS must be decimal digits"
-        );
-        v = v * 10 + (b[i] - b'0') as u64;
-        i += 1;
-    }
-    v
-}
+use stoker::bench::parse_u64;
 
 /// Milliseconds since boot.
 fn now_ms() -> u64 {
@@ -200,26 +185,7 @@ fn pin_read_window(pir: &Input<'_>, delay: &Delay, start_level: Level, start_ms:
     println!("{}", line.as_str());
 }
 
-/// Short name of the reset reason for the BENCH line.
-fn reset_name(reason: Option<SocResetReason>) -> &'static str {
-    match reason {
-        Some(SocResetReason::ChipPowerOn) => "PowerOn",
-        Some(SocResetReason::CoreSw | SocResetReason::Cpu0Sw) => "Software",
-        Some(SocResetReason::CoreDeepSleep) => "DeepSleep",
-        Some(SocResetReason::SysBrownOut) => "Brownout",
-        Some(
-            SocResetReason::CoreMwdt0
-            | SocResetReason::CoreMwdt1
-            | SocResetReason::CoreRtcWdt
-            | SocResetReason::Cpu0Mwdt0
-            | SocResetReason::Cpu0Mwdt1
-            | SocResetReason::Cpu0RtcWdt
-            | SocResetReason::SysRtcWdt
-            | SocResetReason::SysSuperWdt,
-        ) => "Watchdog",
-        _ => "Other",
-    }
-}
+use rustyfarian_esp_hal_power::{EspHalResetReasonSource, ResetReasonSource};
 
 fn cause_name(cause: WakeCause) -> (&'static str, u64) {
     match cause {
@@ -257,7 +223,7 @@ fn main() -> ! {
     // overwrites the per-pin wake record.
     let wake_cause = EspHalWakeCauseSource::capture(&[&pir]).last_wake_cause();
     let reset = reset_reason(Cpu::ProCpu);
-    let reset_str = reset_name(reset);
+    let reset_str = EspHalResetReasonSource.last_reset_reason().name();
     let (cause_str, mask) = cause_name(wake_cause);
 
     println!("Reset reason: {:?} ({})", reset, reset_str);

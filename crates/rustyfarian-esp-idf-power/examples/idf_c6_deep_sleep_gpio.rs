@@ -105,22 +105,7 @@ const _: () = assert!(
     "C6_SLEEP_TIMER_MS must be between 1 and MAX_TIMER_MS"
 );
 
-/// Decimal parser usable in a const context; fails the build on anything but digits.
-const fn parse_u64(s: &str) -> u64 {
-    let b = s.as_bytes();
-    assert!(!b.is_empty(), "C6_SLEEP_TIMER_MS must not be empty");
-    let mut i = 0;
-    let mut v: u64 = 0;
-    while i < b.len() {
-        assert!(
-            b[i].is_ascii_digit(),
-            "C6_SLEEP_TIMER_MS must be decimal digits"
-        );
-        v = v * 10 + (b[i] - b'0') as u64;
-        i += 1;
-    }
-    v
-}
+use stoker::bench::parse_u64;
 
 /// Variant name of a wake cause, without the fired-pin mask.
 fn cause_name(cause: WakeCause) -> (&'static str, u64) {

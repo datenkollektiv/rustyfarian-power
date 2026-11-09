@@ -24,9 +24,13 @@ pub trait HeltecV3Vext: Sized {
 
     /// Heltec WiFi LoRa 32 V3 `Vext` rail on GPIO36 (`Vext_Ctrl`), active LOW.
     ///
-    /// `Vext_Ctrl` is pulled up and gates a P-MOSFET, so LOW switches the rail on.
+    /// `Vext_Ctrl` gates a P-MOSFET, so LOW switches the rail on.
     /// The rail feeds the OLED and the `Ve` header pins.
     /// The SX1262 sits on the always-on 3V3 rail and cannot be gated.
+    ///
+    /// The pad is excluded from ESP-IDF's sleep-time GPIO isolation (`gpio_sleep_sel_dis`):
+    /// a released `Vext_Ctrl` turns the rail ON (measured 3.29 V on `Ve` in deep sleep), so the
+    /// pad keeps driving its latched level through sleep. Do not re-enable sleep-select on it.
     ///
     /// Takes the typed `Gpio36` pad, so another pin does not compile; ESP32-S3 only
     /// (GPIO36 is input-only on the original ESP32).
@@ -53,6 +57,16 @@ impl<'d> HeltecV3Vext for GpioRailGate<PinDriver<'d, Output>> {
         }
         let driver =
             PinDriver::output(pin).map_err(|e| GpioRailGateError::Pin(GpioError::other(e)))?;
+        // Keep the pad driven through sleep. ESP-IDF enables the per-pad sleep configuration
+        // (SLP_SEL) for every GPIO at boot and `EspSleepManager` re-applies
+        // `esp_sleep_config_gpio_isolate()` at sleep entry: output disabled, pulls floating. A
+        // floating `Vext_Ctrl` turns the rail ON (Ve read 3.29 V in deep sleep, Heltec V3.1
+        // bench 2026-11-09), so the latched OFF level must survive sleep, as it does on esp-hal.
+        // SAFETY: gpio_sleep_sel_dis only clears the SLP_SEL bit of a valid pad; the typed
+        // `Gpio36` proves ownership and the driver above holds the pad.
+        let ret = unsafe { esp_idf_hal::sys::gpio_sleep_sel_dis(i32::from(HELTEC_V3_VEXT_GPIO)) };
+        esp_idf_hal::sys::EspError::convert(ret)
+            .map_err(|e| GpioRailGateError::Pin(GpioError::other(e)))?;
         Self::new(driver, Polarity::ActiveLow)
     }
 }

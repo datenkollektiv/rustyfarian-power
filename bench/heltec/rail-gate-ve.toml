@@ -1,0 +1,50 @@
+# Meter walk-through for the Vext gate on the `Ve` header pin, both tiers, attended only.
+# Uses the `meter` build variant: the rail stays on for 90 s after boot and the board then
+# sleeps for 120 s with the rail off, so each state gives a 60 s countdown to read the meter.
+# One state, one measurement, one question at a time; `rail-gate` is the unattended gate.
+# A missed window cannot be retried in place (the retry only re-asks): answer no, decline the
+# retry, and run the scenario again; the first step restarts the board at the awake phase.
+# Meter: `Ve` header pin to GND. No other wiring.
+examples = ["hal_s3_power_rail_gate+meter", "idf_s3_power_rail_gate+meter"]
+
+# Armed: the awake window only starts when the operator is ready, and the reset puts the
+# board at the start of its 90 s awake phase whatever state it is in.
+[[step]]
+say = "the board restarts and comes up awake with the Ve rail on. Please have the meter on Ve and GND before you press"
+expect = 'BENCH case=rail tier=\w+ (event=boot reset=\w+ powered=true|phase=on cycle=0 powered=true)'
+reject = 'failed|PANIC|panicked|Guru Meditation'
+timeout = 30
+attended = true
+reset = true
+
+[[step]]
+say = "The board is awake and the Ve rail is on. Please measure Ve to GND now; about 3.3 V is expected (Enter ends the wait early)"
+duration = 60
+# The rail must stay on for the whole window.
+reject = 'event=sleep|phase=off|phase=sleep|PANIC|panicked|Guru Meditation'
+attended = true
+arm = false
+
+[[step]]
+say = "Thank you. One question about the awake reading"
+confirm = "Did Ve read about 3.3 V while the board was awake?"
+
+[[step]]
+say = "Waiting for the board to switch the rail off and go to sleep"
+expect = 'BENCH case=rail tier=\w+ (event=sleep powered=false|phase=sleep)'
+reject = 'PANIC|panicked|Guru Meditation'
+timeout = 120
+attended = true
+arm = false
+
+[[step]]
+say = "The board is asleep and the Ve rail is off. Please measure Ve to GND now; about 0 V is expected (Enter ends the wait early)"
+duration = 60
+# A wake during the window means the sleep was shorter than promised.
+reject = 'event=boot|phase=boot|PANIC|panicked|Guru Meditation'
+attended = true
+arm = false
+
+[[step]]
+say = "Thank you. One question about the sleep reading"
+confirm = "Did Ve read about 0 V while the board was asleep?"

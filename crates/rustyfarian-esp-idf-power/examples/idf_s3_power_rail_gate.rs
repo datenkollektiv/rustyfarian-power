@@ -2,6 +2,7 @@
 //!
 //! Switches the `Vext` rail on GPIO36 ON for 10 s and OFF for 10 s, twice,
 //! then deep-sleeps with the rail gated off for 30 s (timer wake) through `GatedSleep`.
+//! Built as `idf_s3_power_rail_gate+meter` (bench variant) it runs one cycle of 90 s on and 5 s off, then sleeps for 120 s, so a meter can be read in each state.
 //! After the wake the example logs the wake cause and powers the rail back on before the loop.
 //!
 //! ## Board
@@ -58,14 +59,25 @@ use rustyfarian_esp_idf_power::{
     SleepManager, WakeCause, WakeCauseSource, WakeSource,
 };
 
-/// Time the rail stays in each state during the demo loop.
-const HOLD_MS: u32 = 10_000;
+use stoker::bench::variant_index;
+
+/// `BENCH_VARIANT` at build time (`just bench-build NAME+VARIANT`): `meter` stretches the
+/// phases so an operator can read a meter on `Ve` in each state (90 s awake with the rail
+/// on, 120 s asleep with the rail off; see `bench/heltec/rail-gate-ve.toml`). Unknown values fail the build.
+const METER: bool = variant_index(option_env!("BENCH_VARIANT"), &["meter"]).is_some();
+
+/// Time the rail stays on during the demo loop.
+const HOLD_MS: u32 = if METER { 90_000 } else { 10_000 };
+
+/// Time the rail stays off (awake) during the demo loop; short in the meter variant so the
+/// sleep measurement follows the awake one without a long gap.
+const OFF_MS: u32 = if METER { 5_000 } else { 10_000 };
 
 /// Number of ON/OFF cycles before sleeping.
-const CYCLES: u32 = 2;
+const CYCLES: u32 = if METER { 1 } else { 2 };
 
 /// Timer wake after the gated deep sleep.
-const SLEEP_MS: u64 = 30_000;
+const SLEEP_MS: u64 = if METER { 120_000 } else { 30_000 };
 
 /// Print a line via `esp_rom_printf`; Rust `println!` does not reach the S3 console.
 fn say(msg: &str) {
@@ -113,7 +125,7 @@ fn main() -> anyhow::Result<()> {
             "BENCH case=rail tier=idf phase=off cycle={cycle} powered={}",
             gate.is_powered()
         ));
-        FreeRtos::delay_ms(HOLD_MS);
+        FreeRtos::delay_ms(OFF_MS);
     }
 
     say(&format!(

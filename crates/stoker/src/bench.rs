@@ -16,6 +16,7 @@
 //! | `PINREAD end tier=<t> pin=<p> edges=<n> high=<0\|1> low=<0\|1> t_ms=<n>` | [`write_pinread_end`] |
 //! | `NONWAKE tier=<t> path=<hw\|guard> same=<0\|1> holdok=<0\|1> diff=<text>` | [`write_nonwake`] |
 //!
+//! [`variant_index`] and [`parse_u64`] read the examples' build-time switches (`option_env!`).
 //! Only compiled with the off-by-default `bench-conformance` feature (and in host tests).
 //! `no_std`, no allocation.
 //!
@@ -306,6 +307,78 @@ impl<const N: usize> Write for LineBuf<N> {
     }
 }
 
+/// Byte-wise `&str` equality usable in a `const` context.
+const fn bytes_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+/// Index of a build-time switch value in `names`, for `option_env!` reads in the examples.
+///
+/// `None` for an unset or empty variable; any other value must be one of `names`, otherwise
+/// this panics, which in a `const` context fails the build at the line that read the variable.
+///
+/// ```
+/// use stoker::bench::variant_index;
+///
+/// const NAMES: &[&str] = &["calib", "meter"];
+/// assert_eq!(variant_index(None, NAMES), None);
+/// assert_eq!(variant_index(Some(""), NAMES), None);
+/// assert_eq!(variant_index(Some("meter"), NAMES), Some(1));
+/// ```
+pub const fn variant_index(value: Option<&str>, names: &[&str]) -> Option<usize> {
+    let Some(v) = value else {
+        return None;
+    };
+    let b = v.as_bytes();
+    if b.is_empty() {
+        return None;
+    }
+    let mut i = 0;
+    while i < names.len() {
+        if bytes_eq(b, names[i].as_bytes()) {
+            return Some(i);
+        }
+        i += 1;
+    }
+    panic!("build-time variable is not one of the names this example accepts (see its docs)")
+}
+
+/// Decimal parser for build-time variables, usable in a `const` context.
+///
+/// Panics on an empty string or any non-digit, which in a `const` context fails the build at
+/// the line that read the variable.
+///
+/// ```
+/// use stoker::bench::parse_u64;
+///
+/// assert_eq!(parse_u64("30000"), 30_000);
+/// ```
+pub const fn parse_u64(s: &str) -> u64 {
+    let b = s.as_bytes();
+    assert!(!b.is_empty(), "build-time variable must not be empty");
+    let mut i = 0;
+    let mut v: u64 = 0;
+    while i < b.len() {
+        assert!(
+            b[i].is_ascii_digit(),
+            "build-time variable must be decimal digits"
+        );
+        v = v * 10 + (b[i] - b'0') as u64;
+        i += 1;
+    }
+    v
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -432,5 +505,32 @@ mod tests {
         b.write_str("a\u{e9}\u{e9}").unwrap();
         assert_eq!(b.as_str(), "a\u{e9}");
         assert_eq!(b.as_c_bytes(), "a\u{e9}\0".as_bytes());
+    }
+
+    #[test]
+    fn variant_index_unset_empty_and_known() {
+        const NAMES: &[&str] = &["sleep", "restart"];
+        assert_eq!(variant_index(None, NAMES), None);
+        assert_eq!(variant_index(Some(""), NAMES), None);
+        assert_eq!(variant_index(Some("sleep"), NAMES), Some(0));
+        assert_eq!(variant_index(Some("restart"), NAMES), Some(1));
+    }
+
+    #[test]
+    #[should_panic(expected = "not one of the names")]
+    fn variant_index_unknown_panics() {
+        let _ = variant_index(Some("bogus"), &["sleep"]);
+    }
+
+    #[test]
+    fn parse_u64_digits() {
+        assert_eq!(parse_u64("0"), 0);
+        assert_eq!(parse_u64("30000"), 30_000);
+    }
+
+    #[test]
+    #[should_panic(expected = "decimal digits")]
+    fn parse_u64_rejects_non_digits() {
+        let _ = parse_u64("3s");
     }
 }

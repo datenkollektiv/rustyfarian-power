@@ -219,22 +219,7 @@ fn rtc_ms() -> u32 {
     (EspRtcClock::now_us() / 1000) as u32
 }
 
-/// Decimal parser usable in a const context; fails the build on anything but digits.
-const fn parse_u64(s: &str) -> u64 {
-    let b = s.as_bytes();
-    assert!(!b.is_empty(), "S3_* build variables must not be empty");
-    let mut i = 0;
-    let mut v: u64 = 0;
-    while i < b.len() {
-        assert!(
-            b[i].is_ascii_digit(),
-            "S3_* build variables must be decimal digits"
-        );
-        v = v * 10 + (b[i] - b'0') as u64;
-        i += 1;
-    }
-    v
-}
+use stoker::bench::parse_u64;
 
 /// Milliseconds since boot.
 fn now_ms() -> u64 {
