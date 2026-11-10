@@ -870,23 +870,30 @@ def make_machine(opts: Options, cycles: int) -> CaseMachine:
 
 
 class Clock(Protocol):
-    def now(self) -> float: ...
+    def now(self) -> float:
+        """Return the current time in seconds."""
 
 
 class DutPort(Protocol):
-    def read(self, timeout: float) -> Optional[Tuple[float, str]]: ...
+    def read(self, timeout: float) -> Optional[Tuple[float, str]]:
+        """Return the next (timestamp, line) from the DUT, or None on timeout."""
 
-    def reset(self) -> None: ...
+    def reset(self) -> None:
+        """Reset the DUT."""
 
-    def close(self) -> None: ...
+    def close(self) -> None:
+        """Release the DUT port."""
 
 
 class StimPort(Protocol):
-    def command(self, cmd: str) -> str: ...
+    def command(self, cmd: str) -> str:
+        """Send a command to the stimulus board and return its reply."""
 
-    def poll(self) -> List[str]: ...
+    def poll(self) -> List[str]:
+        """Return the DONE lines received since the last poll."""
 
-    def close(self) -> None: ...
+    def close(self) -> None:
+        """Release the stimulus port."""
 
 
 class MonotonicClock:
@@ -994,6 +1001,7 @@ class SerialStim:
                 if self.command("PING").startswith("PONG"):
                     return
             except InfraError:
+                # A missed PONG is retried; the raise below reports the final failure.
                 pass
         self.close()
         raise InfraError(f"stimulus board on {port} does not answer PING; flash it with `just flash-hal-esp32 hal_esp32_bench_stimulus`")
@@ -1900,6 +1908,7 @@ def self_test() -> int:
         resolve_stim_port("/dev/cu.usbserial-210", "/dev/cu.usbserial-210")
         failures.append("equal --port/--stim-port accepted")
     except InfraError:
+        # Expected: equal ports must be rejected.
         pass
 
     print(f"self-test: parser ok, {logs_checked} real log(s) checked, {len(sim_runs)} simulated runs")
