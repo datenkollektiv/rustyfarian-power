@@ -384,7 +384,6 @@ ci: fmt-check deny check clippy test test-bench
 # show the staged release flow at a glance (full detail in release-plan.md)
 release-help:
     @echo "Staged release flow (see release-plan.md for detail):"
-    @echo "  0. Phase 0 prerequisites merged: crate split + per-crate README/LICENSE + metadata"
     @echo "  1. just release-publish-validate   # preflight gate (no upload)"
     @echo "  2. just release-publish-stoker     # Stage 1: publish pure crate, then wait ~2-5 min to index"
     @echo "  3. just release-dry-run-idf        # Stage 2: resolves stoker ^X.Y from crates.io"

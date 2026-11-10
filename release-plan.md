@@ -70,7 +70,8 @@ Keep notes short — the three crates + any breaking changes. Don't paste the wh
 
 ## 5. Post-publication
 
-- Confirm all three crates are live and not yanked (crates.io pages / `curl .../api/v1/crates/<name>`).
+- Confirm all three crates are live and not yanked (crates.io pages / `curl -A '<name>' https://crates.io/api/v1/crates/<crate>/X.Y.Z`).
+- The crates.io API rejects requests without a User-Agent; pass a neutral one with `-A`, never personal data.
 - docs.rs: `stoker` builds; **`rustyfarian-esp-idf-power` is expected to fail** (esp-idf-sys needs the ESP-IDF C toolchain + network, absent in the docs.rs sandbox) — not a regression; the README is the primary docs.
 - docs.rs: `rustyfarian-esp-hal-power` is expected to build (`riscv32imc-unknown-none-elf`, feature `esp32c3`, from its `[package.metadata.docs.rs]`); a failure there needs a look.
 - Write `release/<date>-vX.Y.Z-record.md` (timeline, issues, verification).
