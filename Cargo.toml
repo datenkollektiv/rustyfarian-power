@@ -7,7 +7,7 @@ members = ["crates/*"]
 default-members = ["crates/stoker", "crates/rustyfarian-esp-idf-power"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 authors = ["datenkollektiv"]
 edition = "2021"
 rust-version = "1.88"
@@ -16,7 +16,7 @@ repository = "https://github.com/datenkollektiv/rustyfarian-power"
 
 [workspace.dependencies]
 # Workspace-internal
-stoker = { path = "crates/stoker", version = "0.2" }
+stoker = { path = "crates/stoker", version = "0.3" }
 
 # External dependencies
 anyhow = "1"

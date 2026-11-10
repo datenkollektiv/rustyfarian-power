@@ -9,11 +9,16 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-10
+
+`rustyfarian-esp-hal-power` is published as the bare-metal tier, `stoker` goes `no_std` with one sleep-attempt machine both tiers drive, on the C3, C6, ESP32 and S3.
+
 ### Migration
 - **Breaking:** `stoker` is `#![no_std]`, its validators return `stoker::SleepError` instead of `anyhow`, and `SleepManager` gains `type Error: stoker::sleep::Error` plus a required `try_sleep`; implementors wrap `anyhow::Error` in a newtype with `kind()` or use `stoker::SleepError` (ADR-001).
 - **Breaking:** `EspSleepManager::Error` is `EspSleepError`, `sleep(&[])` returns `NoWakeSource`, timers above `MAX_TIMER_MS` return `TimerTooLong`, isolation plus `GpioLevel` returns `IsolationConflict`, and `WakeCause::Gpio` carries a `GpioWakeMask`; the new error types are re-exported from `rustyfarian-esp-idf-power`.
 - Firmware that uses `RetainedCell` on the IDF tier enables `critical-section-impl` or links another interrupt- and multicore-safe provider; pre-release git pins that relied on the earlier default must opt in.
 - **Breaking:** `heltec_v3_vext` moves from an inherent method to the `HeltecV3Vext` extension trait on both tiers, so callers import the trait; the call shape is unchanged (ADR-004).
+- ESP-IDF S3/C3/C6 battery readings change with eFuse curve fitting; re-check a custom `divider_ratio` against a meter (see Fixed).
 
 Before:
 
@@ -70,7 +75,6 @@ manager.try_sleep(&sources)?;
 - RTC clocks for slept time: `EspRtcClock::now_us()` on the IDF tier and `EspHalRtcClock::now_us()` on esp-hal C3/S3, whose error scales with the read interval (`stoker::rtc_clock`).
 - Power rail gate: `stoker::gate` (`PowerRailGate`, `GatedSleep`, `NoopPowerRailGate`) and `GpioRailGate` with a Heltec V3 Vext preset on both tiers (ADR-002).
 - Examples and bench tooling: C3/S3 deep-sleep, retention and rail-gate examples on both tiers, `just serial-capture`, `just console`, `just bench-c3`, and records in `docs/bench/`.
-
 - `stoker::bench` (feature `bench-conformance`, off by default): `PinWindow`, the bench line formatters and `LineBuf`, shared by the C3 and S3 deep-sleep bench examples on both tiers.
 - Compile-time conformance modules in both tier crates instantiate every `stoker` trait with the concrete adapters (ADR-003 point 4).
 - `stoker::sleep::attempt`: `SleepAttemptMachine`, a sans-IO state machine with `SleepPlan` and the `ChipPolicy` guard table, which both tiers drive for `try_sleep` (ADR-004).
@@ -81,7 +85,6 @@ manager.try_sleep(&sources)?;
 - `ChipPolicy::wake_pin_mask()` in `stoker` is the single per-chip wake-pin mask table; `SleepAttemptMachine::new` rejects out-of-range `GpioLevel` masks with `GpioMaskOutOfRange`.
 - `stoker` depends on `embedded-hal` 1.0 with default features; it stays `#![no_std]` and alloc-free.
 - esp-hal tier: `EspHalChargingMonitor` (an alias for `GpioChargingMonitor` over two `Input` pins) is available on every chip.
-
 - ESP-IDF tier builds for ESP32-C6 (`riscv32imac-esp-espidf`): EXT1 deep-sleep wake, RTC retention, and the `idf_c6_deep_sleep_gpio` and `idf_c6_rtc_retention` examples.
 - `just check-c6`, `just ci-c6` and the CI job `check-c6` (pinned to `ubuntu-24.04`) for the ESP-IDF C6 tier.
 - esp-hal `EspHalAdcBatteryMonitor` (ADC1 only, 11 dB, per-chip calibration, averaged reads) on ESP32, ESP32-C3, ESP32-C6 and ESP32-S3.
