@@ -1,7 +1,6 @@
 # Battery monitor on GPIO1 (always-on divider), both tiers; prints `Battery: <status>` every 1-2 s.
 # Unattended only: the meter comparison lives in `battery-calib`, which runs the same monitors
-# with the raw value printed and a 1 % tolerance (passed attended 2026-11-09: meter 4.18 V,
-# hal 4.19 V, IDF 4.18 V), so this check does not ask for the meter a second time.
+# with the raw value printed and a 1 % tolerance, so this check does not ask for the meter a second time.
 # A run printing `USB/Ext` or `No battery` has no voltage to match — recalibrate with
 # `battery-calib` first.
 # Meter the pack's polarity BEFORE connecting it (docs/project-lore.md -> Hardware).

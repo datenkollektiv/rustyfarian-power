@@ -2,7 +2,6 @@
 
 ## Status
 Accepted (2026-11-07).
-Amended 2026-11-08: bench variants (`NAME+VARIANT` → `BENCH_VARIANT`, decision 7) let switch-dependent cases run through the runner.
 Follows `rustyfarian-peripherals`, `rustyfarian-ws2812` and `rustyfarian-knob` (knob ADR 016), which run their checks through the same runner.
 
 ## Context
@@ -22,13 +21,13 @@ Follows `rustyfarian-peripherals`, `rustyfarian-ws2812` and `rustyfarian-knob` (
 4. Run logs and `results.jsonl` stay git-ignored, because results record board MACs and this repository is public; `bench.toml` pins no MAC.
 5. The first pass covers boards whose console survives deep sleep (UART bridge): C3 retention and PIR wake, Heltec V3 retention, rail gate and battery, Feather V2 battery.
 6. `just bench-c3` and the `serial-capture` R-cases stay; they need build-time switches or a stimulus board that the runner cannot drive.
-7. Build-time cases run as bench variants: a scenario names `NAME+VARIANT`, `bench-build` and `bench-flash` export `BENCH_VARIANT=VARIANT` for both steps (so the flash step's rebuild uses the same variant), and the example maps the value to its configuration, failing the build on an unknown one (added 2026-11-08).
+7. Build-time cases run as bench variants: a scenario names `NAME+VARIANT`, `bench-build` and `bench-flash` export `BENCH_VARIANT=VARIANT` for both steps (so the flash step's rebuild uses the same variant), and the example maps the value to its configuration, failing the build on an unknown one.
+   This lets switch-dependent cases run through the runner.
 
 ## Consequences
 - Hardware validation of the default builds becomes rerunnable and comparable across tiers, with an automatic verdict where serial output proves it and an explicit operator answer where it cannot (battery voltage against a meter).
 - Bench runs depend on `uv` and network access to GitHub on first use (then the uv cache); builds, `just verify` and CI are unaffected.
 - Build-time switches (`C3_SLEEP_TIMER_MS`, `C3_RET_ACTION`, `S3_R2`, …) reach the runner only through decision 7; until an example maps a switch to a variant, its cases keep their existing tools.
-- The CrowPanel touch-sleep check is open: its default build prints `Wake cause` once, before the native USB port re-enumerates, so the runner can miss it.
 - Scenario regexes couple to example log lines; changing an example's log text means updating its scenario.
 
 ## Alternatives Considered

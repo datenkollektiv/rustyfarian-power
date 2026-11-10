@@ -23,13 +23,14 @@ Use `BatteryConfig::heltec_v3()` for this board.
 The battery voltage path on Heltec V3:
 
 ```
-Battery (+) ──┬─── 1 MΩ ───┬─── GPIO1 (ADC1_CH0)
-              │             │
-              └─── 1 MΩ ───┴─── GND
+Battery (+) ──┬─── 390 kΩ ───┬─── GPIO1 (ADC1_CH0)
+              │              │
+              └─── 100 kΩ ───┴─── GND
 ```
 
-A 1 MΩ + 1 MΩ resistor divider halves the battery voltage before it reaches the ADC pin.
-The firmware compensates with `divider_ratio: 2.0` in `BatteryConfig`.
+The on-board divider is always connected on the V3.1; GPIO37 (ADC_CTRL) does not gate it.
+The firmware compensates with `divider_ratio` 5.05 in `BatteryConfig::heltec_v3()`, measured as metered pack voltage over raw pin millivolts, about 3 % above the textbook 4.9.
+Recalibrate per the `heltec_v3()` doc comment when the board revision or ADC setup changes.
 
 ### Why 11 dB Attenuation
 
@@ -42,8 +43,8 @@ The ESP-IDF ADC1 attenuation setting controls the measurable input range:
 | 6 dB        | 0–1750 mV         |
 | 11 dB       | 0–3100 mV         |
 
-The 2:1 divider halves the battery voltage: a full 4200 mV battery produces ~2100 mV at GPIO1.
-11 dB attenuation covers the full 0–2100 mV raw signal with comfortable headroom.
+A full 4200 mV battery produces about 830 mV at GPIO1, well inside every range.
+Both tiers select 11 dB attenuation (ESP-IDF names the same setting `DB_12`), which leaves headroom for the charger rail seen with USB in and no pack.
 Lower attenuation settings would clip readings above ~1750 mV.
 
 ### Deep Sleep Power Budget
@@ -122,14 +123,10 @@ The firmware compensates with `divider_ratio: 2.0` in `BatteryConfig::adafruit_f
 
 ### Charging Monitor Pins
 
-The Feather V2 exposes two pins for charge state detection:
+The stock Feather V2 does not route the charger STAT or VBUS signals to GPIO13 or GPIO34.
+Read the Feather V2 entry in `docs/project-lore.md` before wiring the charging monitor.
 
-| Pin    | Function                   | Notes                                        |
-|:-------|:---------------------------|:---------------------------------------------|
-| GPIO13 | MCP73831 STAT (open-drain) | Board has external 4.7 kΩ pull-up            |
-| GPIO34 | USB VBUS detect            | 100 kΩ + 100 kΩ divider; input-only on ESP32 |
-
-Pass these to `EspChargingMonitor`:
+`EspChargingMonitor::new` takes the STAT and VBUS pins:
 
 ```rust
 let mut charging = EspChargingMonitor::new(

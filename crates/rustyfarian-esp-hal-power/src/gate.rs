@@ -11,7 +11,7 @@
 //!
 //! The gate is a plain GPIO driver and does not hold the pad.
 //! On the Heltec V3 `Vext_Ctrl` is pulled up, so a released pad means the rail is off.
-//! Whether the pad needs a hold to keep the rail off through deep sleep is an open bench question (`docs/features/power-rail-gate-v1.md`).
+//! The output latch keeps the rail off through deep sleep without a pad hold (`bench/heltec/rail-gate-ve`).
 
 pub use stoker::gate::*;
 

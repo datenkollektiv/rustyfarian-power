@@ -1,9 +1,8 @@
 # Divider-ratio calibration for `BatteryConfig::heltec_v3`: the ratio is
-# `metered_cell_mV / raw` from a meter reading at the pack terminals (calibrated
-# 2026-11-09: 4140 mV / 820 raw -> 5.05, pack connected and charging; confirmed the same
-# evening at 4180 mV with hal 4191 mV / IDF 4176 mV printed). Read the meter while the
+# `metered_cell_mV / raw` from a meter reading at the pack terminals. Read the meter while the
 # `Calib:` lines scroll, with the pack connected; the pre-connection polarity check reads
-# the open-circuit voltage and pairs with nothing (it gave a 2 % low 4.98).
+# the open-circuit voltage and pairs with nothing (how the ratio was derived: docs/project-lore.md
+# -> Hardware — Heltec V3 & LiPo batteries).
 # The `calib` variant prints `Calib: comp=<compensated mV> raw=<raw mV>` every 1-2 s in
 # every power state; `raw` is the monitor's averaged pin reading (`read_raw_mv()`).
 # Unattended, the scenario only proves the sense path is alive (three non-zero raws).

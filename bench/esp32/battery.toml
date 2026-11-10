@@ -1,8 +1,8 @@
 # Battery monitor on GPIO35 (200k/200k divider), both tiers.
 # hal prints `Battery: <status>` every second; idf prints one reading per boot, then deep-sleeps 60 s.
-# Without a battery on USB the charger holds BAT at ~4.16 V, a false ~96 % (docs/key-insights.md); judge with a battery fitted.
+# Without a battery on USB the charger holds BAT at ~4.16 V, a false ~96 % (docs/project-lore.md -> Hardware — Adafruit ESP32 Feather V2); judge with a battery fitted.
 # Meter and board must read the same net at the same moment: BAT and GND header pins with USB in.
-# A pack metered unplugged rests lower (3.70 V resting vs 3.85 V on BAT with USB in, 2026-11-10), which is not an ADC error.
+# A pack metered unplugged rests about 150 mV lower than on BAT with USB in, which is not an ADC error.
 # The attended step captures its own `Battery:` line, as captures do not cross the mode split; the question then shows the value.
 examples = ["hal_esp32_battery", "idf_esp32_battery"]
 

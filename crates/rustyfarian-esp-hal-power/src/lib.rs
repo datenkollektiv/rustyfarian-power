@@ -15,8 +15,7 @@
 //! ESP32-C6, ESP32-S3 and ESP32 (`docs/features/esp-hal-sleep-tier-v1.md`). The `reset`, `wake` and `retain` modules
 //! (`EspHalResetReasonSource`, `EspHalWakeCauseSource`, `RtcRetainedCell`) place a `stoker` retention record in RTC fast
 //! memory (`docs/features/rtc-retention-v1.md`). The `clock` module (`EspHalRtcClock`) is a
-//! drift-free microsecond clock across resets and deep sleep
-//! (`docs/features/esp-hal-rtc-clock-v1.md`). The charging monitor (`EspHalChargingMonitor`, the shared
+//! drift-free microsecond clock across resets and deep sleep. The charging monitor (`EspHalChargingMonitor`, the shared
 //! `GpioChargingMonitor` over two `Input` pins) and the ADC battery monitor
 //! (`EspHalAdcBatteryMonitor`, calibrated ADC1 reads averaged by `stoker`) exist for every chip
 //! (`docs/features/esp-hal-parity-v1.md`).

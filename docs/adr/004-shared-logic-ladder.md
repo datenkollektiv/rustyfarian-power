@@ -69,11 +69,12 @@ Platform pins follow ADR-001.
 - `stoker` therefore depends on `embedded-hal` 1.0 (default features), and stays `no_std` and allocation-free.
 - The per-chip wake-pin mask moved into `ChipPolicy::wake_pin_mask()`, the single chip table (point 8).
   - `SleepAttemptMachine::new` range-checks against it, so neither tier keeps a per-chip `cfg` mask.
-- Amended 2026-11-04: the IDF C6 build maps to `ChipPolicy::Esp32C6` (guard `Never`, mask `0xFF`), as a tracked tier-parity work item.
-  - Before that it stayed `Other` (mask check skipped).
+- The IDF C6 build maps to `ChipPolicy::Esp32C6` (guard `Never`, mask `0xFF`).
 - The C6 guard `Never` is provisional: it is assumed to reject on its own and is unproven on hardware.
 - The C6 hardware pass judges both the `try_sleep` result and the next boot's reset and wake cause.
 - The per-chip row is selected by `cfg(esp32c6)` in the IDF tier and by the `CHIP_POLICY` constant in the hal tier.
+- On the original ESP32 the EXT1 `AnyLow` mode is `ALL_LOW` only, so both tiers refuse a multi-pin `AnyLow` request with `AnyLowMultiplePins` (kind `Unsupported`) before arming.
+  - EXT1 `ALL_LOW` therefore only ever carries one pin.
 - No rung-2 instance exists today.
 
 ## Consequences
@@ -92,7 +93,6 @@ Constraints:
 - Rung 2 and 3 machines need phase-transition tests in `stoker`.
 - Moving a flow up a rung is demand-driven: the first change that needs it pays for it.
 - A change to a rung-3 machine re-runs the benches for the flow it drives (for `try_sleep`: R2 to R4 on C3 and S3, both tiers).
-  - The ladder rollout of 2026-11-04 defers them to one final hardware pass before the release.
 
 ## Alternatives Considered
 |                  Alternative | Pros                              | Cons                                                       | Why Rejected                                                               |

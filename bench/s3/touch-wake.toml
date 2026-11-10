@@ -1,9 +1,9 @@
 # Touch wake on the CrowPanel 1.28" (ESP32-S3), both tiers, attended: the CST816S pulls INT (GPIO5)
 # low on a tap, which wakes the chip through EXT1 with bit 5 set (mask 0x20).
 # A finger moving on the screen makes INT pulse on every touch event, so the board wakes again and again
-# without a rejection (a finger already resting when the chip sleeps may produce no new event, seen on the
-# IDF tier 2026-11-10); once the finger lifts it sleeps through to the 60 s timer. Nothing to wire. The finger step waits for Enter so
-# the tap's lines are out of the backlog; the other steps start on their own.
+# without a rejection (a finger already resting when the chip sleeps may produce no new event, so keep
+# it moving); once the finger lifts it sleeps through to the 60 s timer. Nothing to wire.
+# The finger step waits for Enter so the tap's lines are out of the backlog; the other steps start on their own.
 examples = ["hal_s3_deep_sleep_gpio", "idf_s3_deep_sleep_gpio"]
 
 [[step]]

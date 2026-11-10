@@ -209,9 +209,9 @@ Contents of `rustyfarian-esp-idf-power`:
 
 Contents of `rustyfarian-esp-hal-power`:
 - Chip features `esp32c3` / `esp32c6` / `esp32` / `esp32s3`, re-exports `stoker`.
-- The `sleep` module (`EspHalSleepManager`, `EspHalWakeCauseSource`) covers the C3 and S3 per [ADR-001](docs/adr/001-hal-neutral-sleep-contract.md).
+- The `sleep` module (`EspHalSleepManager`, `EspHalWakeCauseSource`) covers all four chips per [ADR-001](docs/adr/001-hal-neutral-sleep-contract.md).
 - `EspHalResetReasonSource` and `RtcRetainedCell` place a `stoker` retention record in RTC fast memory.
-- ADC drivers land per [esp-hal-parity-v1](docs/features/esp-hal-parity-v1.md).
+- `EspHalAdcBatteryMonitor` reads calibrated battery voltage on all four chips, through ADC1 pins only.
 
 > `rustyfarian-esp-idf-power` links to its crate README rather than docs.rs — `esp-idf-sys` cannot build in the docs.rs sandbox.
 

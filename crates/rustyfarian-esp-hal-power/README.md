@@ -6,8 +6,8 @@ It implements the traits of the platform-agnostic [`stoker`](../stoker) crate on
 
 ## Status
 
-The `sleep` module (deep sleep with GPIO and timer wake) exists for ESP32-C3 and ESP32-S3, see [esp-hal-sleep-tier-v1](../../docs/features/esp-hal-sleep-tier-v1.md).
-ADC battery monitoring and charging detection are pending, see [esp-hal-parity-v1](../../docs/features/esp-hal-parity-v1.md).
+The `sleep` module (deep sleep with GPIO and timer wake) exists for ESP32-C3, ESP32-C6, ESP32-S3 and ESP32.
+`EspHalAdcBatteryMonitor` (calibrated, ADC1 pins only) and `EspHalChargingMonitor` exist for every chip.
 
 ## Sleep
 

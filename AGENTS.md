@@ -41,23 +41,24 @@ Every hardware concern is behind a trait, and every trait ships a `Noop*` mock f
 
 ## Development Workflow
 
-Requires the Espressif `esp` Rust toolchain (installed via `espup`, then `source ~/export-esp.sh`); ESP-IDF is pinned to v5.3.3. The workspace defaults to the `xtensa-esp32s3-espidf` target via `.cargo/config.toml`, so host recipes pass `--target` explicitly and scope to `-p stoker`. Use `just` for all operations:
+Requires the Espressif `esp` Rust toolchain (installed via `espup`, then `source ~/export-esp.sh`); ESP-IDF is pinned to v5.3.3. The workspace defaults to the `xtensa-esp32s3-espidf` target via `.cargo/config.toml`, so host recipes pass `--target` explicitly and scope to `-p stoker`. Use `just` for all operations.
+The main recipes are:
 
-```shell
-just check          # check the pure stoker crate on the host — no ESP toolchain
-just test           # host-side unit tests — no ESP toolchain
-just check-all      # check everything incl. ESP-IDF crate (requires espup)
-just check-esp32    # check the ESP-IDF crate for the ESP32 / Feather V2 target
-just check-c3       # check the ESP-IDF crate and its C3 example for the ESP32-C3
-just check-hal      # check the esp-hal crate for all four chips
-just clippy-hal     # clippy the esp-hal crate for all four chips
-just verify         # non-modifying gate: fmt-check, deny, check, clippy, test
-just pre-commit     # fmt, check, clippy, test (modifies files — local only)
-just build-example <name>   # chip inferred from the idf_{chip}_{name} prefix
-just run <name>             # build, flash, and open the serial monitor
-just run-hal-s3 <name>      # build and flash an esp-hal S3 example
-just bench <board> [check]  # guided on-device check via rustyfarian-bench v0.3.0 (bench/README.md)
-```
+| Recipe | Purpose |
+|:-------|:--------|
+| `just check` | Check the pure `stoker` crate on the host, no ESP toolchain |
+| `just test` | Host-side unit tests, no ESP toolchain |
+| `just check-all` | Check everything including the ESP-IDF crate (needs espup) |
+| `just check-esp32` | Check the ESP-IDF crate for the ESP32 / Feather V2 target |
+| `just check-c3` | Check the ESP-IDF crate and its C3 example for ESP32-C3 |
+| `just check-hal` | Check the esp-hal crate for all four chips |
+| `just clippy-hal` | Clippy the esp-hal crate for all four chips |
+| `just verify` | Non-modifying gate: fmt-check, deny, check, clippy, test |
+| `just pre-commit` | Fmt, check, clippy, test (modifies files, local only) |
+| `just build-example <name>` | Build an example; chip inferred from the `idf_{chip}_{name}` prefix |
+| `just run <name>` | Build, flash, and open the serial monitor |
+| `just run-hal-s3 <name>` | Build and flash an esp-hal S3 example |
+| `just bench <board> [check]` | Guided on-device check via rustyfarian-bench v0.5.0 (see `bench/README.md`) |
 
 Run `just` with no arguments to list all recipes. Building the ESP32 (Feather V2) target additionally requires the `MCU=esp32` env var (esp-idf-sys reads it). ESP-IDF and esp-hal builds are isolated under `target/idf` and `target/hal`; an optional macOS RAM disk at `/Volumes/RustBuilds` speeds incremental builds.
 
@@ -89,8 +90,7 @@ Run `just` with no arguments to list all recipes. Building the ESP32 (Feather V2
 
 - `crates/stoker/src/lib.rs` — public API, trait definitions, Noop mocks, usage examples in doc comments
 - `crates/stoker/src/config.rs` — board presets and voltage conversion logic
-- `docs/key-insights.md` — non-obvious hardware behaviour, build quirks, resolved gotchas; read before any non-trivial task
-- `docs/project-lore.md` — hard-won debugging facts; entries are point-in-time, verify against current code before acting
+- `docs/project-lore.md` — hardware quirks, build gotchas, SDK behaviour that caused failures; one bullet per fact; read before any non-trivial task
 - `docs/hardware-setup.md` — GPIO wiring tables and power budgets for Heltec V3 and Feather V2
 - `crates/rustyfarian-esp-idf-power/examples/idf_esp32_battery.rs` — complete Feather V2 example: wake-cause detection, ADC read, charging state, deep sleep
 - `release-plan.md` — staged two-crate publish sequence (`stoker` first, then the ESP-IDF crate)

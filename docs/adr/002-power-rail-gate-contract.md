@@ -1,10 +1,10 @@
 # ADR-002: Power rail gate contract for the ESP-IDF and esp-hal tiers
 
 ## Status
-Accepted (2026-10-24); the `stoker` dependency and per-tier gate decisions are superseded by ADR-004 (2026-11-04).
+Accepted (2026-10-24); point 4 reflects ADR-004 rung 1.
 
 Pinned to ESP-IDF v5.3.3 and esp-hal `=1.2.2`, as in ADR-001.
-The Heltec V3 pin facts were verified against the Zephyr board devicetree `heltec_wifi_lora32_v3_procpu.dts` on 2026-10-24.
+The Heltec V3 pin facts come from the Zephyr board devicetree `heltec_wifi_lora32_v3_procpu.dts`.
 
 ## Context
 `rustyfarian-network` needs to switch a power domain off between uplinks to save current.
@@ -17,7 +17,7 @@ The gate therefore switches a rail, not a radio.
 Putting the SX1262 sleep command (`SetSleep` over SPI) into the gate would make `stoker` depend on radio behaviour.
 The power crates must not import network types, so that command stays in the network radio driver.
 
-The contract has to be HAL-neutral, like ADR-001, and `stoker` must stay `#![no_std]` with `critical-section` as its only dependency.
+The contract has to be HAL-neutral, like ADR-001, and `stoker` must stay `#![no_std]` and allocation-free.
 
 ## Decision
 
@@ -82,17 +82,14 @@ It implements `SleepManager` with `type Error = GatedSleepError<G::Error, S::Err
 
 ### 4. Where the generic GPIO gate lives
 
-`GpioRailGate<P: embedded_hal::digital::OutputPin>` is defined once per tier, not in `stoker`.
+`GpioRailGate<P: embedded_hal::digital::OutputPin>` lives once in `stoker::gate` (ADR-004 rung 1).
+`stoker` depends on `embedded-hal` 1.0, and each tier keeps only its `HeltecV3Vext` constructor.
 
 - `GpioRailGate` holds `pin`, `polarity` and a cached `powered` flag.
 - `Polarity` is `ActiveHigh` or `ActiveLow`.
 - `GpioRailGate::new(pin, polarity)` drives the rail off immediately, so `is_powered` starts `false` and matches the pin.
 - The Heltec V3 preset `heltec_v3_vext(pin)` fixes `Polarity::ActiveLow`.
 - `HELTEC_V3_VEXT_GPIO: u8 = 36` is exported next to the preset.
-- Each tier depends on `embedded-hal = "1"`, declared in `[workspace.dependencies]` and referenced with `workspace = true`.
-- `stoker` gets no `embedded-hal` dependency.
-  Superseded (2026-11-04, ADR-004 rung 1): `stoker` depends on `embedded-hal` 1.0 and owns the one generic `GpioRailGate`; each tier keeps only its `HeltecV3Vext` constructor.
-  An optional feature was rejected because it would pull a HAL trait into a crate that only needs `critical-section`.
 - `PinDriver<_, Output>` on ESP-IDF and `gpio::Output` on esp-hal both implement `OutputPin`.
 
 ### 5. What `rustyfarian-network` may rely on
@@ -108,15 +105,14 @@ It implements `SleepManager` with `type Error = GatedSleepError<G::Error, S::Err
 Positive:
 - One gate contract compiles against both tiers, and consumers host-test with `NoopPowerRailGate`.
 - Sequencing (off before sleep, restore on error or reject) is host-tested in `stoker`, without hardware.
-- `stoker` keeps `critical-section` as its only dependency.
+- The one generic `GpioRailGate` lives in `stoker`; each tier adds only its Heltec V3 constructor.
 - The name `RadioPowerGate` is retired before any consumer depends on it.
 
 Negative:
-- The GPIO gate code exists twice, once per tier, as a short generic wrapper.
 - Consumers must call `power_on` at every boot, because the rail is off after a wake.
 - The Heltec V3 gate does not save radio current; the bench measures the Vext load (OLED, Ve header) only.
-- Whether the GPIO36 pull-up keeps Vext off through deep sleep on IDF and esp-hal is open and needs the bench.
-- Both tiers gain a direct `embedded-hal` 1.0 dependency.
+- On IDF, sleep isolation floats GPIO36 and leaves Vext on; the tier clears the pad's sleep selection (`gpio_sleep_sel_dis`) so the rail stays off asleep, with no pad hold.
+- `stoker` gains an `embedded-hal` 1.0 dependency, and stays `no_std` and allocation-free.
 
 ## Alternatives Considered
 |                              Alternative | Pros                                | Cons                                              | Why Rejected                                                   |
@@ -124,6 +120,5 @@ Negative:
 |           Keep the `RadioPowerGate` name | Matches README and VISION wording   | The V3 radio cannot be switched, so the name lies | The trait switches a rail; docs follow the contract            |
 |             Infallible `()` return types | Simpler call sites                  | A rail that refuses to switch goes unnoticed      | Refusal is an operational failure; `kind()` carries it         |
 | `EspSleepManager` takes an optional gate | One object for consumers            | Puts gate logic into the IDF sleep path only      | Coordinator in `stoker` is host-testable and tier-neutral      |
-|      Optional `embedded-hal` in `stoker` | One generic gate for both tiers     | Adds a HAL dependency to a `no_std` core crate    | `stoker` stays `critical-section`-only; wrapper is short       |
 |            `StatefulOutputPin` read-back | `is_powered` reflects the pin       | Not implemented by every HAL's output pin         | Cached state from the last successful call is enough           |
 |       Off, Powering, Ready state machine | Models the settle delay in the type | Settle time is load-dependent and hard to fix     | The consumer delays after `power_on`; no settle state in trait |

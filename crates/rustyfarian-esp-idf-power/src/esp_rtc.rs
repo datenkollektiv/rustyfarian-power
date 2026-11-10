@@ -9,7 +9,7 @@
 //!
 //! The value is microseconds since the RTC timer last started, which is the last
 //! power-on or brownout; it continues through deep sleep, `esp_restart()`, a panic
-//! and the watchdogs (bench 2026-10-16, `docs/bench/c3-idf-rtc-retention-bench-v1.md`).
+//! and the watchdogs (`docs/project-lore.md`, ESP-IDF tier — RTC retention and clock).
 //! It is not wall-clock time; ESP-IDF scales the counter by the slow-clock calibration
 //! it measured at boot.
 //!

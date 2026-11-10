@@ -13,7 +13,7 @@
 //!
 //! The pin mask is validated before any ESP-IDF call.
 //! Implementation notes against ESP-IDF v5.3.3 are in
-//! `docs/features/archive/c3-gpio-deep-sleep-wake-v1.md`.
+//! `docs/project-lore.md` (ESP-IDF tier — ESP32-C3 deep sleep).
 //!
 //! # GPIO isolation
 //!

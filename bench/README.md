@@ -3,14 +3,17 @@
 Guided, rerunnable hardware checks for both power tiers ([ADR-005](../docs/adr/005-adopt-rustyfarian-bench.md)).
 The runner is [`rustyfarian-bench`](https://github.com/datenkollektiv/rustyfarian-bench) (Python + uv).
 It needs `uv`, `espflash` and the ESP-RS toolchain (`espup`); `bench-build` and `bench-flash` put the Xtensa linker on `PATH` themselves, so no `source ~/export-esp.sh` is needed.
+The per-board READMEs are the record of what is tested on hardware: one row per scenario, with what a pass proves.
 
-| Board                          | Directory          | State       |
-|:-------------------------------|:-------------------|:------------|
-| ESP32-C3-MINI-1 / DevKitM-1    | [c3/](c3/)         | passed 2026-11-08 (DevKitM-1) |
-| Heltec WiFi LoRa 32 V3 (S3)    | [heltec/](heltec/) | passed 2026-11-10 (retention, `battery-calib` with meter 4.18 V vs 4.19/4.18 V printed, `battery`, `rail-gate`; `rail-gate-ve` with the meter on Ve: about 3.3 V awake, about 0 V asleep on both tiers after the GPIO36 isolation fix) |
-| Adafruit ESP32 Feather V2      | [esp32/](esp32/)   | passed 2026-11-10 (Feather V2); `battery` meter-confirmed at 3.85 V on BAT with USB in vs hal 3898 mV / IDF 3900 mV |
-| CrowPanel 1.28" HMI (S3)       | [s3/](s3/)         | passed 2026-11-10 on both tiers, unattended (`sleep`, `r2`, `r3`, `r4`, `r4-guard`) and attended (`touch-wake`), rustyfarian-bench v0.5.0 |
-| ESP32-C6-DevKitC-1             | `c6/`              | open        |
+| Board                          | Directory          | Last full pass |
+|:-------------------------------|:-------------------|:---------------|
+| ESP32-C3-MINI-1 / DevKitM-1    | [c3/](c3/)         | 2026-11-08     |
+| Heltec WiFi LoRa 32 V3 (S3)    | [heltec/](heltec/) | 2026-11-10     |
+| Adafruit ESP32 Feather V2      | [esp32/](esp32/)   | 2026-11-10     |
+| CrowPanel 1.28" HMI (S3)       | [s3/](s3/)         | 2026-11-10     |
+| ESP32-C6-DevKitC-1             | `c6/`              | open           |
+
+A full pass is every scenario of the board in both modes, on both tiers where a twin exists.
 
 ## Running a check
 
@@ -56,14 +59,13 @@ Detection probes every candidate port with espflash, which resets whatever is on
 The commands call `just bench-build NAME` and `just bench-flash NAME PORT`, which dispatch on the name: `idf_*` through `build-example` / `flash`, `hal_<chip>_*` through `build-example-hal-<chip>` / `flash-hal-<chip>`.
 Scenarios use the default build of each example, or a **bench variant**: `NAME+VARIANT` in a scenario's `examples` makes `bench-build` and `bench-flash` build and flash NAME with `BENCH_VARIANT=VARIANT`.
 Examples that support variants read it at build time and fail the build on an unknown value; results and logs keep the full `NAME+VARIANT`.
-Variants so far: `anylow`, `anylow-multi` on `{hal,idf}_esp32_deep_sleep_gpio`.
-The older per-example switches (`C3_SLEEP_TIMER_MS`, `S3_R2`, …) do not reach the runner until an example maps them to a variant.
+The older per-example switches (`C3_SLEEP_TIMER_MS`, `C3_RET_ACTION`, …) do not reach the runner until an example maps them to a variant.
 
 ## Relation to the other bench tools
 
-- `just bench-c3` (`scripts/c3-bench.py`) stays the driver for the two-board C3 sleep cases with the WROOM stimulus (`docs/bench/c3-devkitm1-sleep-bench-plan-v1.md`).
-- `just serial-capture` stays the tool for the unattended R-cases that need build-time switches (`docs/bench/`).
-- This bench covers the default builds: one guided check per facet, rerunnable and comparable across tiers.
+- `just bench-c3` (`scripts/c3-bench.py`) drives the two-board C3 sleep cases with the WROOM stimulus; its operating guide is [c3-devkitm1-sleep-bench-plan-v1](../docs/bench/c3-devkitm1-sleep-bench-plan-v1.md).
+- `just serial-capture PORT SECONDS` records a timestamped serial log without touching DTR/RTS, for a hand-run example that no scenario covers.
+- This bench covers the default builds and the bench variants: one guided check per facet, rerunnable and comparable across tiers.
 
 ## Recording a result
 

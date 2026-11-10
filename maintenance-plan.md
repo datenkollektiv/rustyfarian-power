@@ -1,13 +1,13 @@
 # Maintenance Plan
 
-Regular maintenance workbook for `rustyfarian-power`, a Cargo workspace with two crates.
+Regular maintenance workbook for `rustyfarian-power`, a Cargo workspace with three crates.
 `stoker` is the pure, host-buildable core.
-`rustyfarian-esp-idf-power` is the ESP-IDF (std) hardware tier for ESP32-S3 (Heltec V3) and ESP32 (Feather V2).
+`rustyfarian-esp-idf-power` is the ESP-IDF (std) hardware tier for the C3, C6, ESP32 and S3.
+`rustyfarian-esp-hal-power` is the bare-metal (esp-hal) tier for the same four chips.
 
 Covers: build verification, dependency updates, security scanning, CI/CD status, device-target compile validation, hardware validation, and toolchain freshness.
 
-This repo has no bare-metal (`esp-hal`) tier.
-An esp-hal wave in the siblings affects it only through the ESP-IDF crates that ship alongside it, the shared MSRV policy, and the CI action versions.
+An esp-hal wave in the siblings affects both tiers here: the esp-hal pin (`=1.2.2`), the ESP-IDF crates, the shared MSRV policy, and the CI action versions.
 The sibling `rustyfarian-ws2812`, `rustyfarian-peripherals` and `rustyfarian-network` run the same protocol.
 When a wave lands there first, their `maintenance-plan.md`, `CHANGELOG.md` and `docs/project-lore.md` are the reference.
 
@@ -38,16 +38,18 @@ The run passes when:
 - the serial output shows no panic, watchdog reset or backtrace
 - the run is stable for 60 s and reproducible after a re-flash
 
-Before connecting any LiPo, meter its polarity first (see `docs/key-insights.md` § Hardware).
+Before connecting any LiPo, meter its polarity first (see `docs/project-lore.md` § Hardware).
 With USB connected and no battery, both boards report a phantom charge; this is expected.
 Record "compile-verified only" honestly when no board is attached.
 
-| Board                         | Chip     | Examples                                           | Last bench                  |
-|:------------------------------|:---------|:---------------------------------------------------|:----------------------------|
-| Heltec WiFi LoRa 32 V3.1      | ESP32-S3 | `idf_esp32s3_battery`                              | see `docs/project-lore.md`  |
-| Adafruit ESP32 Feather V2     | ESP32    | `idf_esp32_battery`, `idf_esp32_chargeprobe`       | see `docs/project-lore.md`  |
-| ESP32-C3-DevKitM-1 + HC-SR501 | ESP32-C3 | `idf_c3_deep_sleep_gpio`                           | 2026-10-13, bench runbook   |
-| Elecrow CrowPanel 1.28" HMI   | ESP32-S3 | `idf_s3_deep_sleep_gpio`, `hal_s3_deep_sleep_gpio` | 2026-10-14, bench record    |
+| Board                         | Chip     | Bench scenarios     |
+|:------------------------------|:---------|:--------------------|
+| Heltec WiFi LoRa 32 V3.1      | ESP32-S3 | `bench/heltec/`     |
+| Adafruit ESP32 Feather V2     | ESP32    | `bench/esp32/`      |
+| ESP32-C3-DevKitM-1 + HC-SR501 | ESP32-C3 | `bench/c3/`         |
+| Elecrow CrowPanel 1.28" HMI   | ESP32-S3 | `bench/s3/`         |
+
+The last full pass per board is recorded in `bench/README.md`; run `just bench <board> --unattended` and then `--attended` to refresh it.
 
 The CrowPanel console is native USB-Serial-JTAG, which drops off the bus in deep sleep; flash a sleeping board from download mode (hold BOOT while plugging in).
 
@@ -97,7 +99,7 @@ Review during quarterly cycles:
 - `docs/ROADMAP.md` still reflects priorities and current dependency versions.
 - `CHANGELOG.md` `## [Unreleased]` matches the branch state.
 - `AGENTS.md` and `README.md` cover MSRV, the crate table and feature flags.
-- `docs/key-insights.md` and `docs/project-lore.md` cover CI action versions, MSRV and build conventions; re-date re-confirmed entries.
+- `docs/project-lore.md` covers CI action versions, MSRV and build conventions; re-date re-confirmed entries.
 
 ## Scheduled Maintenance Cadence
 

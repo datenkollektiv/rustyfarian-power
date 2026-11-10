@@ -8,7 +8,7 @@
 //! - **Board:** Adafruit ESP32 Feather V2.
 //! - **Pin:** GPIO35 (ADC1_CH7) behind the onboard 200 kΩ + 200 kΩ divider; `BatteryConfig::adafruit_feather_v2()` carries the divider ratio.
 //!
-//! With USB connected and no battery the charger holds the BAT net at about 4.16 V, so a false ~96 % can appear; see `docs/key-insights.md`.
+//! With USB connected and no battery the charger holds the BAT net at about 4.16 V, so a false ~96 % can appear; see `docs/project-lore.md` (Hardware — Adafruit ESP32 Feather V2).
 //!
 //! ## Run
 //!
