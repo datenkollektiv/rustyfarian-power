@@ -167,6 +167,15 @@ pyserial lowers DTR before RTS, so the line state passes through RTS=1 with DTR=
 The reset re-enumerates the port, the reader reopens it and resets the chip again, about every 0.8 s, and every boot reports `PowerOn` instead of the deep-sleep wake.
 Fix: leave DTR and RTS at their asserted open-time defaults.
 
+**A bench firmware on a USB-Serial-JTAG board must print its machine-read lines in the middle of its awake window, in every build.**
+Two things hide output from the host.
+The port re-enumerates on every wake and the host needs about 2.5 s to see and open it, so a line printed at boot goes to nobody.
+A line printed right before sleep entry is not drained either: on esp-hal the `ATTEMPT` line written just before `try_sleep` never arrived in any of three reader variants (the bench driver's open sequence, a plain pyserial open, DTR kept high), and the ESP-IDF path delivers such a line with a margin of about 50 ms.
+Seen 2026-11-10 on the CrowPanel 1.28" with `{hal,idf}_s3_deep_sleep_gpio` while writing `bench/s3/`: the driver's serial log stopped at `Wake cause: PowerOn` on both tiers although a port-presence monitor showed the board cycling 60 s asleep / 6 s awake exactly.
+The main cause was in the examples, not in the transport: the `S3BENCH` boot line was printed only in R2 builds, so the default build used by `sleep` and `touch-wake` had nothing to say after `Wake cause`, and the hand-run W1/W2 cases had matched a `BENCH case=demo` line that no longer existed.
+Fix: print the boot line and record the sleep entry in every build; keep 6 s awake after each boot and print the boot lines at 3 s and again at 5 s, then wait 1 s before the first sleep attempt (`AWAKE_MS`, `DRAIN_MS`); scenarios tell a new wake apart by its cycle number, since every boot now prints the line three times.
+Before suspecting the serial driver, read the firmware's actual output with `just serial-capture` and check that the expected line exists in that build at all.
+
 ---
 
 ## esp-hal tier (esp-hal 1.2.2)

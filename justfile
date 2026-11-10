@@ -37,7 +37,7 @@ hal_dir := if path_exists(ramdisk + "/targets/hal") == "true" { ramdisk + "/targ
 # Guided bench runner: a local rustyfarian-bench checkout if RUSTYFARIAN_BENCH points at one,
 # otherwise the pinned release from GitHub.
 bench_dir := env("RUSTYFARIAN_BENCH", "")
-bench := if bench_dir != "" { 'uv run --project "' + bench_dir + '" rustyfarian-bench' } else { "uvx --from git+https://github.com/datenkollektiv/rustyfarian-bench@v0.4.0 rustyfarian-bench" }
+bench := if bench_dir != "" { 'uv run --project "' + bench_dir + '" rustyfarian-bench' } else { "uvx --from git+https://github.com/datenkollektiv/rustyfarian-bench@v0.5.0 rustyfarian-bench" }
 
 # list available recipes (default)
 _default:

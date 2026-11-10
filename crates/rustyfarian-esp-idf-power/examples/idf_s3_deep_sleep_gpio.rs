@@ -13,14 +13,17 @@
 //!   Both pins are held HIGH through deep sleep so the controller keeps watching for touches.
 //!
 //! On the S3 the wake goes through EXT1, so a touch reports `WakeCause::Ext1` with bit 5 set.
-//! A finger resting on the screen pulses INT, so it wakes the board again and again.
+//! A finger moving on the screen pulses INT on every touch event, so it wakes the board again and again; a finger already resting when the chip sleeps may give no new event (seen on ESP-IDF, bench 2026-11-10).
 //! A level already LOW at sleep entry is rejected by the hardware; the example retries.
 //!
 //! The console is the S3's native USB-Serial-JTAG, which drops off the bus during deep sleep.
-//! The example stays awake 3 s after each boot so the host can reopen the re-enumerated port.
+//! The example stays awake 6 s after each boot and repeats its boot lines at 3 s and 5 s, so the host can reopen the re-enumerated port in time and the output drains before sleep.
 //! Bench: `bench/s3/` (`sleep`, `touch-wake`, `r2`, `r3`, `r4`, `r4-guard`).
 //!
 //! ## Bench case R2 (build-time switches)
+//!
+//! The `S3BENCH` boot line, and `SLEPT` after a timer wake, are printed in every build (the
+//! `bench/s3/sleep` and `touch-wake` scenarios match on them); the other lines below need R2.
 //!
 //! `S3_R2=1` enables the R2 flow for the `try_sleep` post-rejection postcondition; unset, the example behaves as above.
 //! `S3_SLEEP_TIMER_MS=<ms>` sets the wake timer (default 60000; the bench uses 5000).
@@ -40,7 +43,7 @@
 //!
 //! Lines, all through `esp_rom_printf`; `t_ms` is ms since boot:
 //!
-//! - `S3BENCH tier=idf cycle=<n> reset=<r> cause=<c> mask=0x<m>` once per boot; the boot lines repeat after the 3 s awake time, because the host reopens the port too late for the first copy.
+//! - `S3BENCH tier=idf cycle=<n> reset=<r> cause=<c> mask=0x<m>` once per boot; the boot lines repeat at 3 s and 5 s of the awake time, because the host reopens the port too late for the first copy and output written right before sleep is lost.
 //! - `LASTSTAGE tier=idf stage=<n>`: the last forced-cycle stage the previous boot reached (0 = none), kept in RTC memory so a hang leaves a trace.
 //! - `FORCED tier=idf int_before=<H|L> autohold=<0|1>`: INT right before the forced attempt, and whether the global digital-pad hold is effective.
 //! - `SLEPT tier=idf ms=<n> forced=<0|1>` on a `Timer` wake: RTC-clock ms from the last sleep entry to this boot, and whether the cycle that slept was forced.
@@ -119,8 +122,13 @@ const LCD_RAIL_PIN: i32 = 1;
 /// CST816S reset, active low.
 const TOUCH_RST_PIN: i32 = 13;
 
-/// Time awake after each boot; the USB-Serial-JTAG port needs ~0.5-2 s to re-enumerate.
-const AWAKE_MS: u32 = 3_000;
+/// Time awake after each boot: the USB-Serial-JTAG port needs ~2.5 s to re-enumerate and be
+/// opened by the host; the boot lines are repeated at the middle and near the end of this time.
+const AWAKE_MS: u32 = 6_000;
+
+/// Quiet time after the last print of the awake window, so the USB-Serial-JTAG output drains
+/// before a sleep attempt can cut it off.
+const DRAIN_MS: u32 = 1_000;
 
 /// Second wake pin of the changed-mask retry: GPIO0 (BOOT button, pulled up on the board).
 ///
@@ -668,12 +676,13 @@ fn main() -> anyhow::Result<()> {
     let wake_cause = EspWakeCauseSource.last_wake_cause();
     say(&format!("Wake cause: {wake_cause:?}"));
 
-    // Bench R2: load or reset the retained record, then report the boot and the last sleep.
-    let mut forced = false;
-    // Boot lines, printed again after the awake delay: the host reopens the
+    // Boot lines, printed again during the awake window: the host reopens the
     // re-enumerated USB-Serial-JTAG port too late to see the first copy.
     let mut boot_lines: Vec<String> = Vec::new();
-    if R2 {
+    // Load or reset the retained record, then report the boot and the last sleep.
+    // Every build: the retained cycle counter and the `S3BENCH` boot line (plus `SLEPT` after a
+    // timer wake) are what the bench scenarios match on; only the forced cycles need R2.
+    let forced = {
         let reset = EspResetReasonSource.last_reset_reason();
         let record = &R2_RECORD;
         if record.magic.load(Ordering::Relaxed) == R2_MAGIC {
@@ -702,8 +711,8 @@ fn main() -> anyhow::Result<()> {
         boot_lines.iter().for_each(|line| say(line));
         record.stage.store(0, Ordering::Relaxed);
         record.entry_valid.store(0, Ordering::Relaxed);
-        forced = cycle % 2 == 1 || cause_str == "Ext1";
-    }
+        R2 && (cycle % 2 == 1 || cause_str == "Ext1")
+    };
 
     let peripherals = Peripherals::take()?;
 
@@ -751,8 +760,14 @@ fn main() -> anyhow::Result<()> {
         },
     ];
 
-    FreeRtos::delay_ms(AWAKE_MS);
+    // Repeat the boot lines twice inside the awake window: the host opens the re-enumerated
+    // USB-Serial-JTAG port 2-3 s after boot, and output written right before sleep entry may
+    // not drain (bench 2026-11-10), so neither edge of the window is a safe moment.
+    FreeRtos::delay_ms(AWAKE_MS / 2);
     boot_lines.iter().for_each(|line| say(line));
+    FreeRtos::delay_ms(AWAKE_MS / 2 - DRAIN_MS);
+    boot_lines.iter().for_each(|line| say(line));
+    FreeRtos::delay_ms(DRAIN_MS);
     // R4: configure the probe pads once per boot, before the forced attempt.
     let mut probes = if R4 {
         Some(r4_setup(
@@ -806,9 +821,8 @@ fn main() -> anyhow::Result<()> {
     let mut attempt: u32 = 0;
     loop {
         attempt += 1;
-        if R2 {
-            mark_attempt(attempt, forced);
-        }
+        // Every build: the entry record feeds the `SLEPT` recount on the next timer boot.
+        mark_attempt(attempt, forced);
         if window_pending {
             stage(3);
         }

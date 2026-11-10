@@ -1,7 +1,9 @@
 # Touch wake on the CrowPanel 1.28" (ESP32-S3), both tiers, attended: the CST816S pulls INT (GPIO5)
 # low on a tap, which wakes the chip through EXT1 with bit 5 set (mask 0x20).
-# A resting finger makes INT pulse, so the board wakes again and again without a rejection; once the
-# finger lifts it sleeps through to the 60 s timer. Nothing to wire.
+# A finger moving on the screen makes INT pulse on every touch event, so the board wakes again and again
+# without a rejection (a finger already resting when the chip sleeps may produce no new event, seen on the
+# IDF tier 2026-11-10); once the finger lifts it sleeps through to the 60 s timer. Nothing to wire. The finger step waits for Enter so
+# the tap's lines are out of the backlog; the other steps start on their own.
 examples = ["hal_s3_deep_sleep_gpio", "idf_s3_deep_sleep_gpio"]
 
 [[step]]
@@ -20,16 +22,27 @@ timeout = 60
 attended = true
 arm = false
 
+# Armed on purpose: Enter drops the tap's lines from the backlog, so the wakes below are the finger's.
+# Not a `duration` step: every re-wake is a deep sleep that drops the USB-Serial-JTAG port, and a
+# duration step needs the link to stay up.
 [[step]]
-say = "Now: rest a finger on the screen for about 10 s, then lift it: the board re-wakes on each pulse, with no rejection"
-duration = 15
+say = "put a finger on the screen and keep it moving slightly until the next instruction: each touch event wakes the board again"
+expect = 'S3BENCH tier=\w+ cycle=(?P<rest>\d+) reset=DeepSleep cause=Ext1 mask=0x20'
 # A second attempt in one boot means a rejected sleep; a resting finger must not cause one.
 reject = 'ATTEMPT tier=\w+ n=(?:[2-9]|\d\d+) |try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST'
+timeout = 60
+attended = true
+
+[[step]]
+say = "Keep the finger moving on the screen: the board must wake once more, with a new cycle number"
+expect = 'S3BENCH tier=\w+ cycle=(?!(?P=rest)\b)\d+ reset=DeepSleep cause=Ext1 mask=0x20'
+reject = 'ATTEMPT tier=\w+ n=(?:[2-9]|\d\d+) |try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST'
+timeout = 60
 attended = true
 arm = false
 
 [[step]]
-say = "Hands off: with the finger lifted the board sleeps through to the 60 s timer"
+say = "Now: lift the finger and keep hands off: the board sleeps through to the 60 s timer"
 expect = 'S3BENCH tier=\w+ cycle=\d+ reset=DeepSleep cause=Timer mask=0x0'
 reject = 'try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST'
 timeout = 90

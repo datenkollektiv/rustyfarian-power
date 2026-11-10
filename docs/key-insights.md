@@ -353,5 +353,7 @@ Remove or update entries that are superseded.
   `.cargo/config.toml` forces `target = "xtensa-esp32s3-espidf"` for all builds, so `cargo test` without `--target` tries to link with `ldproxy` and fails.
   Always run host tests as: `cargo test -p stoker --target aarch64-apple-darwin` (adjust the triple for non-Apple hosts). The `just` host recipes do this for you.
 - **`esp_sleep_config_gpio_isolate()` returns `void` in ESP-IDF v5.x**, not `esp_err_t`.
+- **CrowPanel 1.28" touch wake: a moving finger re-wakes the S3 on every CST816S INT pulse; a finger already resting when the chip sleeps may produce no new event (IDF tier, 2026-11-10), while a tap or a moving finger always does.** Both tiers wake through EXT1 with mask `0x20`; `bench/s3/touch-wake` asks for a moving finger for that reason.
+- **USB-Serial-JTAG bench output must be printed mid-window, in every build.** The host opens the re-enumerated port ~2.5 s after a wake boot, and output written right before deep sleep is not drained (esp-println loses it, ESP-IDF barely makes it); print bench lines at 3 s and 5 s of a 6 s awake window, keep 1 s quiet before sleeping, and never gate the lines a scenario matches on behind a bench-case switch (`docs/project-lore.md` → Bench tooling — USB-Serial-JTAG boards).
   Do not wrap it in an error check; call it directly and document the `SAFETY` comment.
   (The key-insights entry about calling this function before sleep is still correct — just no error check needed.)

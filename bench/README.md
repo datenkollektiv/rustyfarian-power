@@ -9,12 +9,12 @@ It needs `uv`, `espflash` and the ESP-RS toolchain (`espup`); `bench-build` and 
 | ESP32-C3-MINI-1 / DevKitM-1    | [c3/](c3/)         | passed 2026-11-08 (DevKitM-1) |
 | Heltec WiFi LoRa 32 V3 (S3)    | [heltec/](heltec/) | passed 2026-11-09 (retention, `battery-calib` with meter 4.18 V vs 4.19/4.18 V printed, `battery`, `rail-gate`); `rail-gate-ve` (meter on Ve): hal passed, IDF failed at 3.29 V asleep before the GPIO36 isolation fix; re-measure deferred past the release |
 | Adafruit ESP32 Feather V2      | [esp32/](esp32/)   | passed 2026-11-09 (Feather V2); battery meter-confirm still to run attended |
-| CrowPanel 1.28" HMI (S3)       | [s3/](s3/)         | scenarios added 2026-11-09 (`sleep`, `touch-wake`, `r2`, `r3`, `r4`, `r4-guard`); runs pending |
+| CrowPanel 1.28" HMI (S3)       | [s3/](s3/)         | passed 2026-11-10 on both tiers, unattended (`sleep`, `r2`, `r3`, `r4`, `r4-guard`) and attended (`touch-wake`), rustyfarian-bench v0.5.0 |
 | ESP32-C6-DevKitC-1             | `c6/`              | open        |
 
 ## Running a check
 
-From this repo's root; `just bench` runs `rustyfarian-bench` v0.4.0 from GitHub, or from a local checkout if `RUSTYFARIAN_BENCH` points at one:
+From this repo's root; `just bench` runs `rustyfarian-bench` v0.5.0 from GitHub, or from a local checkout if `RUSTYFARIAN_BENCH` points at one:
 
 ```shell
 just bench c3 retention
