@@ -1,6 +1,9 @@
 # Battery monitor on GPIO35 (200k/200k divider), both tiers.
 # hal prints `Battery: <status>` every second; idf prints one reading per boot, then deep-sleeps 60 s.
 # Without a battery on USB the charger holds BAT at ~4.16 V, a false ~96 % (docs/key-insights.md); judge with a battery fitted.
+# Meter and board must read the same net at the same moment: BAT and GND header pins with USB in.
+# A pack metered unplugged rests lower (3.70 V resting vs 3.85 V on BAT with USB in, 2026-11-10), which is not an ADC error.
+# The attended step captures its own `Battery:` line, as captures do not cross the mode split; the question then shows the value.
 examples = ["hal_esp32_battery", "idf_esp32_battery"]
 
 [[step]]
@@ -11,5 +14,13 @@ timeout = 15
 arm = false       # idf prints its only reading right after the reset
 
 [[step]]
-say = "Compare the printed voltage with a meter across the battery"
-confirm = "Printed mV within about 100 mV of the meter?"
+say = "Now: hold the meter on the BAT and GND header pins (USB stays in); waiting for a Battery: line"
+expect = 'Battery: (?P<mv>\d+)mV'
+reject = 'ADC read failed|PANIC|panicked|Guru Meditation'
+timeout = 15      # sees the boot reading too, so idf's single line counts
+attended = true
+arm = false
+
+[[step]]
+say = "The board printed {mv} mV"
+confirm = "Does the meter on BAT and GND read within about 100 mV of {mv} mV?"

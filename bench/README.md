@@ -7,8 +7,8 @@ It needs `uv`, `espflash` and the ESP-RS toolchain (`espup`); `bench-build` and 
 | Board                          | Directory          | State       |
 |:-------------------------------|:-------------------|:------------|
 | ESP32-C3-MINI-1 / DevKitM-1    | [c3/](c3/)         | passed 2026-11-08 (DevKitM-1) |
-| Heltec WiFi LoRa 32 V3 (S3)    | [heltec/](heltec/) | passed 2026-11-09 (retention, `battery-calib` with meter 4.18 V vs 4.19/4.18 V printed, `battery`, `rail-gate`); `rail-gate-ve` (meter on Ve): hal passed, IDF failed at 3.29 V asleep before the GPIO36 isolation fix; re-measure deferred past the release |
-| Adafruit ESP32 Feather V2      | [esp32/](esp32/)   | passed 2026-11-09 (Feather V2); battery meter-confirm still to run attended |
+| Heltec WiFi LoRa 32 V3 (S3)    | [heltec/](heltec/) | passed 2026-11-10 (retention, `battery-calib` with meter 4.18 V vs 4.19/4.18 V printed, `battery`, `rail-gate`; `rail-gate-ve` with the meter on Ve: about 3.3 V awake, about 0 V asleep on both tiers after the GPIO36 isolation fix) |
+| Adafruit ESP32 Feather V2      | [esp32/](esp32/)   | passed 2026-11-10 (Feather V2); `battery` meter-confirmed at 3.85 V on BAT with USB in vs hal 3898 mV / IDF 3900 mV |
 | CrowPanel 1.28" HMI (S3)       | [s3/](s3/)         | passed 2026-11-10 on both tiers, unattended (`sleep`, `r2`, `r3`, `r4`, `r4-guard`) and attended (`touch-wake`), rustyfarian-bench v0.5.0 |
 | ESP32-C6-DevKitC-1             | `c6/`              | open        |
 

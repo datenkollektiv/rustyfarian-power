@@ -10,7 +10,7 @@ No wiring for `retention` and `rail-gate`; `battery` needs a LiPo on the JST-1.2
 |:----------------|:----------------------------------------------------------------------|:------------------------------------------------------------|
 | `retention`     | `idf_s3_rtc_retention`                                                | two `RET reset=DeepSleep wake=Timer load=ok` lines          |
 | `rail-gate`     | `hal_s3_power_rail_gate`, `idf_s3_power_rail_gate`                    | rail cycles, sleeps with the rail off, timer wake           |
-| `rail-gate-ve`  | `hal_s3_power_rail_gate+meter`, `idf_s3_power_rail_gate+meter`        | attended: meter on `Ve` reads about 3.3 V awake, about 0 V asleep |
+| `rail-gate-ve`  | `hal_s3_power_rail_gate+meter`, `idf_s3_power_rail_gate+meter`        | attended: meter on `Ve` reads about 3.3 V awake, about 0 V asleep (both tiers 2026-11-10) |
 | `battery`       | `hal_s3_battery`, `idf_esp32s3_battery`                              | three `Battery: <mV>` lines (the meter comparison is `battery-calib`) |
 | `battery-calib` | `hal_s3_battery+calib`, `idf_esp32s3_battery+calib`                   | three non-zero `Calib:` lines; attended: meter within 1 % of `comp` on both tiers |
 

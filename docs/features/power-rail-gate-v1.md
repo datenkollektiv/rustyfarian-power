@@ -33,13 +33,13 @@ Verified 2026-10-24 (Zephyr board DTS): on the Heltec V3 the SX1262 has no power
 ## Constraints
 - `stoker` stays `#![no_std]` and alloc-free; it depends on `critical-section` and `embedded-hal` 1.0.
 - Both tiers implement the gate over an `embedded_hal::digital::OutputPin` with configurable polarity.
-- `Vext_Ctrl` must stay driven: a released (isolated, floating) pad turns the rail ON, measured 3.29 V on `Ve` during IDF deep sleep on 2026-11-09. The IDF preset excludes GPIO36 from the sleep-time GPIO isolation (`gpio_sleep_sel_dis`); esp-hal keeps the output latch without it.
+- `Vext_Ctrl` must stay driven: a released (isolated, floating) pad turns the rail ON, measured 3.29 V on `Ve` during IDF deep sleep on 2026-11-09. The IDF preset excludes GPIO36 from the sleep-time GPIO isolation (`gpio_sleep_sel_dis`), meter-confirmed about 0 V asleep on 2026-11-10; esp-hal keeps the output latch without it.
 - The Heltec V3 cannot gate the SX1262; the bench measures the Vext load (OLED, Ve header), not the radio.
 - Dependencies flow application → network → power; the gate carries no network types.
 - The network-side acceptance of the trait (B4) is out of scope for this repo.
 
 ## Open Questions
-- [x] Does the GPIO36 pull-up keep Vext off through deep sleep on IDF and esp-hal, or does the pad need hold or isolation? Answered 2026-11-09 on the bench: no pull-up keeps it off. esp-hal: 0 V asleep (latch kept). IDF: 3.29 V asleep (rail ON). Fix applied in `heltec_v3_vext` (`gpio_sleep_sel_dis` on GPIO36); its meter confirmation is deferred past the release, so whether a pad hold is also needed is still open.
+- [x] Does the GPIO36 pull-up keep Vext off through deep sleep on IDF and esp-hal, or does the pad need hold or isolation? Answered 2026-11-09 on the bench: no pull-up keeps it off. esp-hal: 0 V asleep (latch kept). IDF: 3.29 V asleep (rail ON). Fix applied in `heltec_v3_vext` (`gpio_sleep_sel_dis` on GPIO36) and meter-confirmed 2026-11-10: IDF about 3.3 V awake, about 0 V asleep; no pad hold is needed.
   - Answered in the final hardware pass on the V3.
 - [ ] How much does Vext off save on the V3 with the OLED idle versus `displayOff`?
   - Decides whether the bench number is meaningful.
@@ -53,7 +53,7 @@ Verified 2026-10-24 (Zephyr board DTS): on the Heltec V3 the SX1262 has no power
 - [x] `stoker`: trait, error type, `NoopPowerRailGate`, coordinator, host tests (double on, off while off, power-on failure, sleep sequencing)
 - [x] IDF tier: `GpioRailGate`, Heltec V3 Vext preset, example
 - [x] esp-hal tier: `GpioRailGate`, Heltec V3 Vext preset, example
-- Hardware validation: a single final pass follows the tier-parity changes, before the release; it is not a gate for this feature (Heltec V3 Vext current off vs on, rail off through deep sleep). Bench `heltec/rail-gate` passed unattended on both tiers 2026-11-09 (rail cycles, sleeps with the rail off, 30 s timer wake, hal `reset=DeepSleep`). `heltec/rail-gate-ve` (meter on Ve): hal passed; IDF failed with 3.29 V asleep before the isolation fix, and the re-measure after the fix is deferred past the release. Current figures still open.
+- Hardware validation: a single final pass follows the tier-parity changes, before the release; it is not a gate for this feature (Heltec V3 Vext current off vs on, rail off through deep sleep). Bench `heltec/rail-gate` passed unattended on both tiers 2026-11-09 (rail cycles, sleeps with the rail off, 30 s timer wake, hal `reset=DeepSleep`). `heltec/rail-gate-ve` (meter on Ve): hal passed; IDF failed with 3.29 V asleep before the isolation fix and passed the re-measure on 2026-11-10 (about 3.3 V awake, about 0 V asleep). Current figures still open.
 - [x] Tests passing (`just verify`, `just check-all`, `just check-hal`, both S3 example builds, 2026-10-24)
 - [x] Documentation: CHANGELOG, README family diagram (planned → wired), VISION wording, key-insights
 
@@ -63,3 +63,4 @@ Verified 2026-10-24 (Zephyr board DTS): on the Heltec V3 the SX1262 has no power
 - 2026-10-24 — Implemented: stoker gate module, both tiers, ADR-002, docs; bench pending
 - 2026-11-09 — Bench: `heltec/rail-gate` unattended pass on both tiers (first run); the hal example's boot line now prints a plain-word reset reason so `reset=\w+` matches
 - 2026-11-09 — Bench `heltec/rail-gate-ve` (meter on Ve): hal 3.3 V awake / 0 V asleep; IDF 3.3 V awake / 3.29 V asleep — the SDK's sleep GPIO isolation floats GPIO36 and the rail turns on. Fix: `gpio_sleep_sel_dis(36)` in the IDF preset; re-measure pending
+- 2026-11-10 — Bench `heltec/rail-gate-ve` re-run after the fix: IDF about 3.3 V awake, about 0 V asleep, 6/6 steps on both tiers; the GPIO36 isolation fix is confirmed and no pad hold is needed
