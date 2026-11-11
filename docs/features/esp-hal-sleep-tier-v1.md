@@ -16,7 +16,7 @@ Bench results per board are in `bench/<board>/README.md`; the two-board C3 drive
 | Rejectable sleep over `sleep_deep_with_rejection` | Same `try_sleep` contract as the IDF tier | `sleep_deep` only, panics on a held pin |
 | Wake pins borrowed as `&mut Input` per attempt via `bind_wake_pins` | Compiles on esp-hal 1.2.2; the firmware keeps polling the pin | Manager-owned pins |
 | `EspHalWakeCauseSource::capture(&[&Input])` at boot, before any `try_sleep` | `caused_wakeup()` is per pin and a rejected sleep rewrites the record | Read the cause lazily |
-| File the three esp-hal 1.2.2 findings as esp-rs issues | Upstream decides; the links become external dependencies | Record them locally only |
+| File the four esp-hal 1.2.2 findings as esp-rs issues | Upstream decides; the links become external dependencies | Record them locally only |
 
 ## Constraints
 - `esp-hal =1.2.2` exact pin; the sleep API is `#[instability::unstable]`, so every claim is pinned to that version.
@@ -29,4 +29,4 @@ Bench results per board are in `bench/<board>/README.md`; the two-board C3 drive
 
 ## State
 - [ ] ADR-001 acceptance: `short-timer-sweep` sets the timer constants (needs the PPK2); § 4b-4d cases `wake-cause-survives-rejection`, `held-level-custom-handler`, `rejection-retry-loop`, `foreign-wake-pin` (`scripts/c3-bench.py` H2-H8).
-- [ ] File the three esp-rs issues and record their numbers: GPIO wake documented as light-sleep only, `rtc_fastmem_pd_en` unused on the C3, C3 metadata lists `Touch` and `Ulp`.
+- [ ] File the four esp-rs issues and record their numbers: GPIO wake documented as light-sleep only, `rtc_fastmem_pd_en` unused on the C3, C3 metadata lists `Touch` and `Ulp`, ESP32 `RtcSleepConfig::deep()` loses `.rtc_fast.persistent` (drafts: `review-queue/upstream-esp-hal-*-v1.md`).

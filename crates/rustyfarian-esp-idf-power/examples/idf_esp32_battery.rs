@@ -107,16 +107,9 @@ fn main() -> anyhow::Result<()> {
 
     println!("Entering deep sleep for 60 s");
 
-    // NOTE: EspSleepManager (esp_sleep.rs) was written targeting ESP32-S3.
-    // It uses `esp_sleep_ext1_wakeup_mode_t_ESP_EXT1_WAKEUP_ANY_HIGH` and
-    // `esp_sleep_config_gpio_isolate()`, which may not be present on the
-    // original ESP32 target. Rather than risk a compile failure that blocks
-    // the example, we call the ESP-IDF timer sleep API directly here.
-    // If esp_sleep.rs is confirmed to compile for xtensa-esp32-espidf, replace
-    // this block with:
-    //   EspSleepManager::default()
-    //       .sleep(&[WakeSource::Timer { duration_ms: 60_000 }])
-    //       .expect("sleep configuration failed");
+    // NOTE: This example calls the ESP-IDF timer sleep API directly.
+    // EspSleepManager also supports the original ESP32; see
+    // `idf_esp32_deep_sleep_gpio.rs` for the manager-based sleep path.
     const SLEEP_MS: u64 = 60_000;
     const US_PER_MS: u64 = 1_000;
     // SAFETY: esp_sleep_enable_timer_wakeup configures the RTC timer wake source.
