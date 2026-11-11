@@ -138,12 +138,8 @@ let mut charging = EspChargingMonitor::new(
 
 ### Deep Sleep
 
-`EspSleepManager` targets ESP32-S3 and uses APIs that are absent on the original ESP32
-(`esp_sleep_config_gpio_isolate()`, `ESP_EXT1_WAKEUP_ANY_HIGH`).
-The Feather V2 example calls the ESP-IDF timer sleep API directly as a workaround.
-See `examples/idf_esp32_battery.rs` for the current implementation and the inline TODO
-for what to replace it with once `esp_sleep.rs` is verified to compile for
-`xtensa-esp32-espidf`.
+`EspSleepManager` supports the original ESP32; `examples/idf_esp32_deep_sleep_gpio.rs` uses it for timer and EXT1 wake.
+The Feather V2 battery example, `examples/idf_esp32_battery.rs`, calls the ESP-IDF timer sleep API directly.
 
 ---
 

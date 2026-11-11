@@ -38,7 +38,8 @@
 //! - Calling `Rtc::time_since_power_up()` as well is allowed but its values keep the drift.
 //!   On the S3, call it from one core only: both use the `time_update` latch.
 //! - The register paths (`RTC_TIMER` latch, `LPWR` `STORE1`) are esp-hal 1.2.2 internals, not public API.
-//! - The record is a private `#[ram(unstable(rtc_fast, persistent))]` static, so the firmware must not use the same section for anything that conflicts.
+//! - The record is a private `#[ram(unstable(rtc_fast, persistent))]` static.
+//!   Other persistent statics in that section are fine, since the linker places them separately; only aliasing this record (raw writes to its address) is not.
 
 use core::cell::Cell;
 
@@ -124,7 +125,8 @@ pub struct EspHalRtcClock;
 impl EspHalRtcClock {
     /// Microseconds since the first call after the last power-on or brownout, so that first read returns 0; only differences between readings are meaningful.
     ///
-    /// Never decreases.
+    /// Never decreases within a boot or across a kept record.
+    /// It restarts at 0 after `PowerOn`, `Brownout` or a refused record (checksum failure after flashing, a torn write), so take differences with `checked_sub` or `saturating_sub`.
     /// Returns the previous value unchanged while the calibration period is not yet valid.
     /// On the S3, do not mix it with `Rtc::time_since_power_up()` on the other core: both use the `time_update` latch.
     pub fn now_us() -> u64 {
