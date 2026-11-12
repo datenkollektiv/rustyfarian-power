@@ -69,7 +69,7 @@ All shared versions live in the root `[workspace.dependencies]`.
   Lagging the siblings' `esp-idf-hal` minor makes `rustyfarian-power` impossible to combine with them in one app.
   Treat an ESP-IDF wave in the siblings as a trigger for a `rustyfarian-esp-idf-power` minor release.
 - `esp-idf-hal` types appear in the public API (constructors take pins and ADC peripherals), so an `esp-idf-hal` minor bump is a breaking change for this crate.
-- `ESP_IDF_VERSION` (`.cargo/config.toml.dist`, currently `v5.3.3`) is a separate decision from the crate pins.
+- `ESP_IDF_VERSION` (`.cargo/config.toml`, currently `v6.1`) is a separate decision from the crate pins.
   Moving it costs an IDF download and `sdkconfig` re-validation.
 
 ### MSRV policy

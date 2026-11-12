@@ -7,7 +7,7 @@
 //! The record is a `RetainedCell` placed in `.rtc_noinit`, so it survives deep sleep and warm resets.
 //! `EspResetReasonSource` tells `load` when RTC memory cannot be trusted.
 //!
-//! On the S3, ESP-IDF v5.3.3 puts `.rtc_noinit` in RTC **slow** memory (0x50000000),
+//! On the S3, ESP-IDF v6.1 puts `.rtc_noinit` in RTC **slow** memory (0x50000000),
 //! not RTC fast memory as on the C3, so this example checks a different power domain.
 //!
 //! ## Board

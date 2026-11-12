@@ -32,12 +32,16 @@ fn main() {
     // fitting on these two chips (esp-idf-hal defines `Calibration::Curve` only for S3/C3/C6).
     println!("cargo:rustc-check-cfg=cfg(esp32c2)");
     println!("cargo:rustc-check-cfg=cfg(esp32s2)");
-    // Emitted by esp-idf-sys and relayed by `sysenv::output()` on chips with
-    // deep-sleep GPIO wakeup (ESP32-C2/C3/C6); gates `esp_sleep_get_gpio_wakeup_status`.
-    println!("cargo:rustc-check-cfg=cfg(esp_idf_soc_gpio_support_deepsleep_wakeup)");
+    // ESP-IDF v6.1 Kconfig name (v5.3.3: `soc_gpio_support_deepsleep_wakeup`), emitted by
+    // esp-idf-sys and relayed by `sysenv::output()`; gates `esp_sleep_get_gpio_wakeup_status`.
+    // v6.1 also sets it on the ESP32 and ESP32-S3, so it no longer means "deep-sleep GPIO
+    // wake chip" on its own.
+    println!("cargo:rustc-check-cfg=cfg(esp_idf_soc_gpio_support_hp_periph_pd_sleep_wakeup)");
     // Emitted on chips with EXT1 wakeup (ESP32, ESP32-S3, ESP32-C6); together with
-    // the cfg above it selects the C2/C3 deep-sleep GPIO wake path.
+    // the cfg above it (with `not(ext1)`) selects the C2/C3 deep-sleep GPIO wake path.
     println!("cargo:rustc-check-cfg=cfg(esp_idf_soc_pm_support_ext1_wakeup)");
+    // Relayed by `sysenv::output()`; `lib.rs` refuses to build against ESP-IDF older than v6.0.
+    println!("cargo:rustc-check-cfg=cfg(esp_idf_version_at_least_6_0_0)");
     // esp-idf-sys relays CONFIG_FREERTOS_PORTMUX_DEBUG as this cfg; `esp_critical_section.rs`
     // adds the debug fields of `portMUX_TYPE` under it.
     println!("cargo:rustc-check-cfg=cfg(esp_idf_freertos_portmux_debug)");

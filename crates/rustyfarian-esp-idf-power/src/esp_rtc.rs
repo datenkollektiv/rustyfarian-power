@@ -28,7 +28,7 @@
 //! ```
 
 extern "C" {
-    /// `uint64_t esp_rtc_get_time_us(void)` from `soc/<chip>/rtc.h` (ESP-IDF v5.3.3).
+    /// `uint64_t esp_rtc_get_time_us(void)` from `esp_hw_support/include/esp_rtc_time.h` (ESP-IDF v6.1).
     fn esp_rtc_get_time_us() -> u64;
 }
 
@@ -46,7 +46,7 @@ impl EspRtcClock {
     pub fn now_us() -> u64 {
         // SAFETY: esp_rtc_get_time_us() only reads the RTC timer registers and the
         // calibration ESP-IDF stored at boot; it takes no arguments and changes no
-        // hardware state. The declaration matches the ESP-IDF v5.3.3 prototype.
+        // hardware state. The declaration matches the ESP-IDF v6.1 prototype (`esp_rtc_time.h`).
         unsafe { esp_rtc_get_time_us() }
     }
 }

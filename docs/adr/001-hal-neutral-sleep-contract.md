@@ -3,7 +3,7 @@
 ## Status
 Proposed (2026-10-12).
 Decided for the C3 and ESP32-S3; the ESP32 and C6 joined the same contract under [ADR-003](003-tier-parity-contract.md) and [ADR-004](004-shared-logic-ladder.md).
-Pinned to esp-hal `=1.2.2` (unstable sleep API) and ESP-IDF v5.3.3; re-verify every esp-hal claim before the next esp-hal wave.
+Pinned to esp-hal `=1.2.2` (unstable sleep API) and ESP-IDF v6.1; re-verify every esp-hal claim before the next esp-hal wave.
 The acceptance benches still open (short-timer sweep for the provisional timer constants, held-level custom handler, rejection retry loop, foreign wake pin, wake cause after a rejection) are tracked in `docs/features/esp-hal-sleep-tier-v1.md`.
 
 ## Context
@@ -42,7 +42,7 @@ pub trait SleepManager {
   On device `Ok(())` is unreachable; the method returns `Err` whose `kind()` is `Rejected` when a wake source was already asserted.
 - `Rejected` may come from a software pre-read instead of the hardware: on C2/C3 always (IDF tier), and on ESP32/S3 while the global digital-pad hold is effective, because a hardware rejection then hangs (ADR-003 point 1).
 - `WakeSource` stays HAL-neutral and `Copy`: `Timer { duration_ms }` and `GpioLevel { pin_mask, level }`, one level per source.
-  The IDF tier passes `pin_mask` to `esp_deep_sleep_enable_gpio_wakeup` (C3/C6) or EXT1 (ESP32/S3/C6).
+  The IDF tier passes `pin_mask` to `esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown` (C2/C3) or EXT1 (ESP32/S3/C6).
   The hal tier matches every set bit against the pins bound for the attempt (decision 2), arms exactly those pins, and reports a bit without a bound pin as `SleepError::PinNotBound { pin }`.
 - `WakeCauseSource::last_wake_cause(&self) -> WakeCause` stays a separate trait; `WakeCause::Gpio` becomes `Gpio(GpioWakeMask)`.
 - `EspHalWakeCauseSource::capture(pins: &[&Input<'_>]) -> Self` reads `wakeup_cause()` once at boot: an empty set is `PowerOn`, `Timer` is `Timer`, anything else is `Other`.

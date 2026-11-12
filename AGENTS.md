@@ -41,7 +41,7 @@ Every hardware concern is behind a trait, and every trait ships a `Noop*` mock f
 
 ## Development Workflow
 
-Requires the Espressif `esp` Rust toolchain (installed via `espup`, then `source ~/export-esp.sh`); ESP-IDF is pinned to v5.3.3. The workspace defaults to the `xtensa-esp32s3-espidf` target via `.cargo/config.toml`, so host recipes pass `--target` explicitly and scope to `-p stoker`. Use `just` for all operations.
+Requires the Espressif `esp` Rust toolchain (installed via `espup`, then `source ~/export-esp.sh`); ESP-IDF is pinned to v6.1. The workspace defaults to the `xtensa-esp32s3-espidf` target via `.cargo/config.toml`, so host recipes pass `--target` explicitly and scope to `-p stoker`. Use `just` for all operations.
 The main recipes are:
 
 | Recipe | Purpose |

@@ -21,9 +21,7 @@ env:
   RUSTUP_TOOLCHAIN: esp
 jobs:
   hal:
-    # Pinned to 24.04 like the ESP-IDF jobs in rust.yml, so every job that installs the
-    # Xtensa toolchain runs on one image; this job has no ESP-IDF install of its own.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -42,8 +40,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target/hal"
-      - name: Setup cargo config
-        run: cp .cargo/config.toml.dist .cargo/config.toml
       - name: Setup just
         uses: extractions/setup-just@v4
       - name: Check all chips, link C3 and S3 examples

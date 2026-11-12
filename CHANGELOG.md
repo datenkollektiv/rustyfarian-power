@@ -9,6 +9,18 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 
 ## [Unreleased]
 
+### Migration
+- **Breaking:** `rustyfarian-esp-idf-power` requires ESP-IDF v6.0 or newer (the workspace builds v6.1); a firmware on ESP-IDF v5.x stays on 0.3.x, and an older build now stops with a `compile_error!` naming the requirement.
+
+### Changed
+- The workspace builds its ESP-IDF examples against ESP-IDF v6.1 (was v5.3.3); the C2/C3 GPIO wake path uses the v6 calls `esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown` and `gpio_wakeup_disable_on_hp_periph_powerdown_sleep`.
+- ESP32-C2/C3: every sleep call clears the SDK's GPIO wake mask and trigger modes, so a pin armed earlier in the same boot is no longer held and pulled during later GPIO-wake sleeps, and a pin switched from `AnyHigh` to `AnyLow` no longer keeps its pull-down.
+- `.cargo/config.toml` is tracked instead of `.cargo/config.toml.dist`, and `just setup-cargo-config` is gone; Cargo never reads it for downstream users.
+- The ESP-IDF and hal CI jobs run on `ubuntu-latest` again, because ESP-IDF v6.1's `esp-clang` installs on Ubuntu 26.04.
+
+### Fixed
+- `WakeCause::Gpio` maps ESP-IDF v6's RTC-IO-indexed wake status to GPIO numbers with `esp_sleep_wakeup_io_bit2num`.
+
 ## [0.3.0] - 2026-11-10
 
 `rustyfarian-esp-hal-power` is published as the bare-metal tier, `stoker` goes `no_std` with one sleep-attempt machine both tiers drive, on the C3, C6, ESP32 and S3.

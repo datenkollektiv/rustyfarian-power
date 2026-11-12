@@ -5,7 +5,7 @@ Accepted; implemented 2026-11-04.
 Point 3 is partially superseded by ADR-004.
 
 Aligned with `rustyfarian-network` ADR-022 (tier parity, one async API surface) and ADR-021 (binary-owned providers), and `rustyfarian-ws2812` ADR-010 (interchangeable driver semantics).
-Platform pins follow ADR-001: ESP-IDF v5.3.3 and esp-hal `=1.2.2` in lockstep with the sibling repos.
+Platform pins follow ADR-001: ESP-IDF v6.1 and esp-hal `=1.2.2` in lockstep with the sibling repos.
 
 ## Context
 `stoker` and the two tier crates implement the three-crate shape the whole family uses: a pure, host-testable core and one thin driver crate per HAL (ADR-001).
@@ -35,9 +35,9 @@ Minimum portable postcondition after any `Rejected` attempt:
 - The retry is observably a fresh attempt: the same validation outcomes and error kinds apply, and a `Timer` duration counts from the retry.
 - Every wake pin named in the rejected request's `pin_mask` is usable as a plain digital input once the call has returned (on the esp-hal tier, once the `BoundSleep` borrow ends, which is that tier's release step).
 - Whether wake sources stay armed between a rejection and its retry is adapter-internal, not an observable: the IDF tier leaves them applied and re-runs configuration on retry; the esp-hal tier disarms on rejection and re-arms on retry.
-- Every pad outside the request's `pin_mask` and every pad hold the caller set, RTC or digital, is as the caller left it, because sleep entry changes none of them before the hardware reject decision (source-read of IDF v5.3.3 `esp_sleep_start` and esp-hal 1.2.2 sleep entry; bench R4-S3 checks it on the S3).
+- Every pad outside the request's `pin_mask` and every pad hold the caller set, RTC or digital, is as the caller left it, because sleep entry changes none of them before the hardware reject decision (source-read of IDF v6.1 `esp_sleep_start` and esp-hal 1.2.2 sleep entry; bench R4-S3 checks it on the S3).
 - The exception is the global digital-pad hold: while it is effective on the ESP32, ESP32-S3, ESP32-C2 and ESP32-C3, entry isolates every unheld digital-only pad (S3: GPIO26-48) and nothing restores it.
-- The postcondition excludes the console (UART or USB-Serial-JTAG output may be interrupted), the CPU and APB clock during the attempt, power-domain configuration and deep-sleep hooks of WiFi/BT, the persistent sleep-mode pad configuration that `isolate_gpio` writes (inert while awake), timer-deadline persistence, and the C2/C3 within-boot GPIO-wake residue (the SDK mask has no public clear in IDF v5.3.3).
+- The postcondition excludes the console (UART or USB-Serial-JTAG output may be interrupted), the CPU and APB clock during the attempt, power-domain configuration and deep-sleep hooks of WiFi/BT, the persistent sleep-mode pad configuration that `isolate_gpio` writes (inert while awake), and timer-deadline persistence.
 - esp-hal clears `WIFI_FORCE_ISO` in `RTC_CNTL_DIG_ISO_REG` at sleep entry and a rejection does not restore it (bench R4-S3).
 
 The three IDF rejection paths, and why none needs a weaker postcondition:

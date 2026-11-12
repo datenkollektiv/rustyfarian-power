@@ -8,7 +8,7 @@
 # Bare-metal (esp-hal) builds are isolated to target/hal.
 # An optional macOS RAM disk at /Volumes/RustBuilds accelerates incremental builds.
 #
-# Run `just setup-toolchain` and `just setup-cargo-config` for first-time setup.
+# Run `just setup-toolchain` for first-time setup.
 
 host_target := `scripts/host-target.sh`
 # host-side recipes target only the pure `stoker` crate; the ESP-IDF crate
@@ -302,7 +302,7 @@ doctor:
 ramdisk action:
     @scripts/ramdisk.sh "{{action}}"
 
-# ensure the IDF-built v5.3.3 bootloader is cached for the given chip
+# ensure the IDF-built bootloader is cached for the given chip
 ensure-bootloader chip:
     CARGO_TARGET_DIR="{{ idf_dir }}" scripts/ensure-bootloader.sh "{{chip}}" "{{idf_dir}}"
 
@@ -426,10 +426,6 @@ release-publish-hal:
     cargo publish {{ hal_std }} -p rustyfarian-esp-hal-power --target {{ hal_c3_target }} --target-dir {{ hal_dir }}
 
 # --- Setup ----------------------------------------------------------------
-
-# copy the cargo config template for first-time setup
-setup-cargo-config:
-    cp .cargo/config.toml.dist .cargo/config.toml
 
 # install the ESP-IDF toolchain via espup
 setup-toolchain:
