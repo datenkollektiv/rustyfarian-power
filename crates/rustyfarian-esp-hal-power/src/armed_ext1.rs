@@ -3,7 +3,7 @@
 //! On the ESP32 a low-level (`AnyLow`) EXT1 wake can read an empty `ext_wakeup1_status` in the
 //! app, so the fired pin is reported instead from the configuration armed before the sleep:
 //! the same resolution the ESP-IDF tier runs, `stoker::ext1_fired_mask` (see
-//! `docs/project-lore.md` → "ESP-IDF tier — ESP32 EXT1 wake status (IDF v5.3.3)").
+//! `docs/project-lore.md` → "ESP-IDF tier — ESP32 EXT1 wake status (IDF v6.1)").
 //!
 //! `.rtc_fast.persistent` is the only RTC memory that survives deep sleep on this tier:
 //! `RtcSleepConfig::deep()` powers down the RTC slow memories, and `deep_sleep_config()`

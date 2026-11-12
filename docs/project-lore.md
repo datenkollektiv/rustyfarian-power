@@ -10,7 +10,7 @@ Refer to `AGENTS.md` and the `/project-lore` skill for recording guidelines.
 
 - With no `deny.toml`, `cargo-deny` defaults to an empty licence allow-list and rejects every crate, even MIT and Apache-2.0; keep a `[licenses].allow` list in `deny.toml`.
 - The `multiple-versions = "warn"` duplicate-crate warnings from the `embuild`/`esp-idf-sys` tree are expected and harmless.
-- `ubuntu-latest` is Ubuntu 26.04, whose libxml2 soname (`.so.16`) breaks ESP-IDF v5.3.3's prebuilt `esp-clang`, and `idf_tools.py` treats that self-check failure as fatal; `apt-get install libxml2` does not help, so pin `runs-on: ubuntu-24.04` on every job that builds ESP-IDF code.
+- ESP-IDF v5.3.3's prebuilt `esp-clang` 16 needs `libxml2.so.2`, which Ubuntu 26.04 (`ubuntu-latest`) no longer ships, and `idf_tools.py` treats that self-check failure as fatal; v6.1's `esp-clang` (`esp-21.1.3`) has no libxml2 dependency, so the IDF jobs run on `ubuntu-latest`, and moving the pin back below v6 needs `runs-on: ubuntu-24.04` again.
 - `RUSTUP_TOOLCHAIN: stable` must stay set in every workflow, because `rust-toolchain.toml` selects the `esp` channel, which CI does not install.
 - The host gates (`just check`, `test`, `clippy`) run with `--no-default-features` and never compile the `esp-idf`-gated modules (`esp_adc`, `esp_charging`, `esp_sleep`, `esp_gate`); validate a driver change with `just check-all`, `just check-esp32` and `just check-c3`.
 - The tier conformance modules (`src/conformance.rs`, ADR-003 point 4) compile only under the chip recipes, so a `stoker` trait change breaks there and not under `just verify`; `check-hal` compiles the sleep, wake-cause and reset checks only for C3 and S3.
@@ -21,7 +21,9 @@ Refer to `AGENTS.md` and the `/project-lore` skill for recording guidelines.
 - `scripts/build-example.sh` passes only the features an example lists in `[[example]] required-features`, so gate an example that needs `critical-section-impl` there, not in the script.
 - `cargo clippy -p <crate>` lints only the selected packages and silently drops lint coverage of dependencies, which is why `clippy-all` names `stoker` and the IDF crate.
 - The hal recipes pass `-Zbuild-std=core,alloc` to override the config's `build-std = ["std", "panic_abort"]`, because std does not build for `*-none-elf` (it fails in gimli).
-- The hal C6 build needs `-Tlinkall.x` in `.cargo/config.toml` for `riscv32imac-unknown-none-elf`, or the riscv-rt symbols are undefined at link time; `.cargo/config.toml` is gitignored and `.cargo/config.toml.dist` is the tracked copy.
+- The hal C6 build needs `-Tlinkall.x` in `.cargo/config.toml` for `riscv32imac-unknown-none-elf`, or the riscv-rt symbols are undefined at link time.
+- `.cargo/config.toml` is tracked although this is a library workspace, because a fresh clone cannot link any firmware without its `ESP_IDF_VERSION`, `ldproxy`, `build-std` and `-Tlinkall.x` settings; Cargo never reads a dependency's config, so downstream users are unaffected.
+- Changing `ESP_IDF_VERSION` in a target dir that already holds an IDF build fails in `esp-idf-sys`'s build script with `CMake Error: The source ".../v6.1/components/bootloader/subproject/CMakeLists.txt" does not match the source ".../v5.3.3/..."`, because the bootloader sub-build keeps its old `CMakeCache.txt`; delete `<target-dir>/<triple>/*/build/esp-idf-sys-*` for the affected triples.
 - When the RAM disk `/Volumes/RustBuilds` is attached, `just build-example` writes the release ELF under `/Volumes/RustBuilds/targets/idf/<repo>`; that 12 GB disk is shared by every sibling repo and fills up, `just clean-hal` is the cheapest reclaim, and a cold C6 build without it takes about 20 minutes.
 
 ---
@@ -67,20 +69,20 @@ Refer to `AGENTS.md` and the `/project-lore` skill for recording guidelines.
 
 ---
 
-## ESP-IDF tier — ESP32-C3 deep sleep (IDF v5.3.3)
+## ESP-IDF tier — ESP32-C3 deep sleep (IDF v6.1)
 
 - `esp_deep_sleep_try_to_start` does not reject a GPIO wake pin already at its wake level on the C3, although `RTC_GPIO_TRIG_EN` is in the reject mask: the chip sleeps and wakes about 20 ms later with `cause=Gpio`, so a stuck sensor boot-loops at about 2.5 Hz; `try_sleep` on C2/C3 reads the wake pins right before entry and returns `Rejected` itself (`c3/pir-wake`).
 - That pre-read needs the pin input-enabled (`FUN_IE`, which arming does not set) and an external bias, and a pin that crosses its level after the read still wakes the chip at once.
-- The C2/C3 GPIO-wake path is selected by `cfg(all(esp_idf_soc_gpio_support_deepsleep_wakeup, not(esp_idf_soc_pm_support_ext1_wakeup)))`; the C6 has both SOC caps and stays on EXT1.
-- `esp_sleep_disable_wakeup_source(ALL)` clears only `RTC_GPIO_TRIG_EN`; the per-pin hardware enable and the SDK's `s_config.gpio_wakeup_mask` survive, the mask has no public clear, and a pin armed earlier in the same boot still gets a hold and internal pull at later GPIO-wake entries.
-- The manager disarms with `gpio_deep_sleep_wakeup_disable` only pins whose `RTC_CNTL_GPIO_WAKEUP_REG` enable bit is set, because the call also re-enables sleep-select and would override an application's `gpio_sleep_sel_dis()` on unrelated pins.
-- Switching a pin's wake level from HIGH to LOW leaves its SDK trigger-mode bit set (`gpio_trigger_mode &= ~(0 << idx)` is a no-op), so the pin keeps the internal pull-down through sleep until a reset.
-- `gpio_deep_sleep_wakeup_prepare` applies `gpio_hold_en` and the internal pull against the wake level (`CONFIG_ESP_SLEEP_GPIO_ENABLE_INTERNAL_RESISTORS=y`) but leaves the pads digitally routed, so a reject release on C2/C3 is `gpio_deep_sleep_wakeup_disable` plus `gpio_hold_dis` per register-armed pin.
+- The C2/C3 GPIO-wake path is selected by `cfg(all(esp_idf_soc_gpio_support_hp_periph_pd_sleep_wakeup, not(esp_idf_soc_pm_support_ext1_wakeup)))`; the C6 has both SOC caps and stays on EXT1.
+- `esp_sleep_disable_wakeup_source(ALL)` clears only `RTC_GPIO_TRIG_EN`; the per-pin hardware enable and the SDK's `gpio_wakeup_mask` and `gpio_trigger_mode` survive, so a pin armed earlier in the boot would still get a hold and internal pull at later GPIO-wake entries.
+- `esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO)` clears that SDK state but is a no-op returning `ESP_ERR_INVALID_STATE` once `RTC_GPIO_TRIG_EN` is clear (`CHECK_SOURCE`), so after the disable-all the manager sets the bit again with `esp_sleep_enable_gpio_wakeup()` and then disables the GPIO source.
+- The manager disarms with `gpio_wakeup_disable_on_hp_periph_powerdown_sleep` only pins whose `RTC_CNTL_GPIO_WAKEUP_REG` enable bit is set, because the call also re-enables sleep-select and would override an application's `gpio_sleep_sel_dis()` on unrelated pins.
+- `esp_sleep_gpio_wakeup_prepare_on_hp_periph_powerdown` applies `gpio_hold_en` and the internal pull against the wake level (`CONFIG_ESP_SLEEP_GPIO_ENABLE_INTERNAL_RESISTORS=y`) but leaves the pads digitally routed, so a reject release on C2/C3 is `gpio_wakeup_disable_on_hp_periph_powerdown_sleep` plus `gpio_hold_dis` per register-armed pin.
 - The C3 rejection postcondition (wake pin readable after a rejection, timer recount after a retry, UART drained inside the hal critical section) is benched only by hand with `C3_REJECT_HOLD_MS`; `s3/r2` proves the S3 twin.
 
 ---
 
-## ESP-IDF tier — ESP32 EXT1 wake status (IDF v5.3.3)
+## ESP-IDF tier — ESP32 EXT1 wake status (IDF v6.1)
 
 - ESP-IDF's boot code runs `esp_deep_sleep_wakeup_io_reset()` before `app_main`, which clears `RTC_CNTL_EXT_WAKEUP1_SEL`, so an `AnyLow` (`ALL_LOW`) wake reads `Ext1(0x0)` while `AnyHigh` keeps its bit; the SEL gating is inferred, not confirmed at register level.
 - Fix: `EspSleepManager` records the armed EXT1 mask and level in `.rtc_noinit` and `EspWakeCauseSource` resolves an empty status through `stoker::ext1_fired_mask`, exact because the ESP32 refuses multi-pin `AnyLow` (`esp32/anylow`).
@@ -88,7 +90,7 @@ Refer to `AGENTS.md` and the `/project-lore` skill for recording guidelines.
 
 ---
 
-## ESP-IDF tier — ESP32-S3 deep sleep (IDF v5.3.3)
+## ESP-IDF tier — ESP32-S3 deep sleep (IDF v6.1)
 
 - The S3 hardware rejects a held EXT1 wake pin on both tiers (`E sleep: Deep sleep request is rejected`, hundreds of `Rejected` in a row and no boot loop), unlike the C3, so the pre-sleep pin read is only needed while the global pad hold is effective (`s3/r2`).
 - On the CrowPanel 1.28" the CST816S touch INT (GPIO5) idles LOW until `LCD_3V3` (GPIO1) is on and touch RST (GPIO13) is released, so a sleep example that configures only GPIO5 never sleeps; drive both HIGH (rail on, 20 ms, RST low 10 ms, high, 50 ms) and hold them through sleep with IDF `gpio_hold_en` plus `gpio_deep_sleep_hold_en` or esp-hal `Output::set_pad_hold` (`s3/touch-wake`).
@@ -102,6 +104,17 @@ Refer to `AGENTS.md` and the `/project-lore` skill for recording guidelines.
 - Fix: while the hold is effective, `try_sleep` on both tiers reads the wake pins right before entry and returns `Rejected` from software, matching the hardware ANY/ALL condition (`stoker::digital_hold_effective`, `wake_pins_asserted`, `wake_pins_all_low`) (`s3/r3`, `s3/r4-guard`).
 - Residual: a pin that crosses its wake level after the read, or a non-pin hardware reject, still hangs with the global hold on; per-pin holds (`gpio_hold_en`, `set_pad_hold`) are not the trigger, so prefer them, and a downstream firmware that enables the global hold and retries rejected sleeps resets instead of retrying.
 - The CrowPanel's USB-C reaches the S3's native USB-Serial-JTAG (`/dev/cu.usbmodem*`), not a CH340: `esp-println` built with `uart` prints nowhere visible (use `auto`), and once the app spins in a tight rejection loop `espflash flash` cannot connect, so enter download mode by hand (hold BOOT, tap RST).
+
+---
+
+## ESP-IDF tier — v5.3.3 to v6.1 API drift
+
+- ESP-IDF v6.1 replaces the SOC cap `SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP` with `SOC_GPIO_SUPPORT_HP_PERIPH_PD_SLEEP_WAKEUP` (the old name survives only as a C macro alias), so esp-idf-sys stops emitting `esp_idf_soc_gpio_support_deepsleep_wakeup` and emits `esp_idf_soc_gpio_support_hp_periph_pd_sleep_wakeup` instead.
+- The new cap is also set on the ESP32 and ESP32-S3, which never had the old one, so it no longer means "deep-sleep GPIO wake chip"; `all(cap, not(esp_idf_soc_pm_support_ext1_wakeup))` still selects only C2/C3.
+- `sys::FUN_IE_S` is absent from the v6.1 bindings on every chip, because `io_mux_reg.h` moved from `soc/<chip>/include/soc/` to `soc/<chip>/register/soc/`; the value is 9 on ESP32, S3, C2, C3 and C6 in both versions.
+- In v6.1, `esp_sleep_get_gpio_wakeup_status()` returns a mask indexed by RTC IO number, not GPIO number, and `esp_sleep_wakeup_io_bit2num()` converts a bit to the GPIO.
+- v6.1 removed the C2/C3 calls `esp_deep_sleep_enable_gpio_wakeup` and `gpio_deep_sleep_wakeup_disable` and the type `esp_deepsleep_gpio_wake_up_mode_t`; the replacements are `esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown`, `gpio_wakeup_disable_on_hp_periph_powerdown_sleep` and `esp_sleep_gpio_wake_up_mode_t`.
+- The C3, ESP32 EXT1 and S3 deep-sleep bullets above were bench-proven on v5.3.3 and source-checked against v6.1 (esp-idf-hal 0.47, esp-idf-sys 0.38.1); re-run the bench before trusting one that a v6.1 symptom contradicts.
 
 ---
 
@@ -164,7 +177,7 @@ Refer to `AGENTS.md` and the `/project-lore` skill for recording guidelines.
 
 - espflash's USB-Serial-JTAG reset parks the SuperMini in download mode (`rst:0x15 ... boot:0x5 (DOWNLOAD)`) and the USB device never drops, so the app never starts after `just flash` or `espflash reset`; open the USB-Serial-JTAG port only to flash, read the console on UART0 (GPIO21) with an adapter whose DTR/RTS are unwired, and power-cycle the board to start the app.
 - A deep-sleep GPIO wake that "never fires" can be a sensor that never drives the pin: with a pull-up probe an open pin reads High, a pin wired to a push-pull sensor reads Low at rest and High on motion, and a pin stuck Low has a dead or unpowered source; probe the pin while awake (`C3_AWAKE_PROBE_MS`, `C3_PROBE_PULL=up`) before suspecting the sleep path, and `C3_PIR_PIN` moves the wake pin if the signal lands on a neighbouring header pin.
-- C3 chip revision v0.3 versus v0.4 carries no sleep erratum; IDF v5.3.3's only C3 sleep gate is below v0.3.
+- C3 chip revision v0.3 versus v0.4 carries no sleep erratum; IDF v6.1's only C3 sleep gate is below v0.3.
 
 ---
 

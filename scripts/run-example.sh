@@ -37,7 +37,7 @@ flash_chip="$chip"
 [ "$chip" = "c3" ] && flash_chip="esp32c3"
 [ "$chip" = "c6" ] && flash_chip="esp32c6"
 
-# Ensure the IDF-built v5.3.3 bootloader is cached.
+# Ensure the IDF-built bootloader is cached.
 "$SCRIPT_DIR/ensure-bootloader.sh" "$chip" "$idf_dir"
 
 # Look up the cached bootloader using lib.sh helper.

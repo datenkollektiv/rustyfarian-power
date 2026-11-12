@@ -31,7 +31,7 @@
 //!
 //! A power glitch maps to `Brownout` on both tiers (`ESP_RST_PWR_GLITCH`,
 //! `CorePwrGlitch`) because it may corrupt RTC memory the same way.
-//! ESP-IDF v5.3.3 reports `ESP_RST_PWR_GLITCH` only on chips whose port decodes
+//! ESP-IDF v6.1 reports `ESP_RST_PWR_GLITCH` only on chips whose port decodes
 //! that hardware code; on the C3 and S3 it arrives as `ESP_RST_UNKNOWN`, which is
 //! `PowerOn` and refused as well.
 //!
@@ -101,7 +101,7 @@ impl ResetReason {
     }
 }
 
-/// ESP-IDF v5.3.3 `esp_reset_reason_t` values, in `esp_system.h` order.
+/// ESP-IDF v6.1 `esp_reset_reason_t` values, in `esp_system.h` order.
 ///
 /// [`from_esp_idf_code`] maps them; the ESP-IDF tier pins its generated
 /// `esp_reset_reason_t_ESP_RST_*` constants to these at compile time, so an

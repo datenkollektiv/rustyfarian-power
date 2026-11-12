@@ -1,7 +1,6 @@
 /target
 Cargo.lock
 .embuild/
-.cargo/config.toml
 
 .claude/
 CLAUDE.md

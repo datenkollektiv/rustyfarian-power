@@ -123,9 +123,9 @@ pub enum WakeCause {
     /// by firmware outside this library's API.
     Ext0,
     /// Woken by the deep-sleep GPIO wakeup source
-    /// (`esp_deep_sleep_enable_gpio_wakeup`).
+    /// (`esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown`).
     ///
-    /// This source exists on chips with `SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP`
+    /// In deep sleep this source exists on chips with `SOC_GPIO_SUPPORT_HP_PERIPH_PD_SLEEP_WAKEUP`
     /// (ESP32-C3 and ESP32-C6), not on ESP32-S3.
     /// The EXT1 status register is not used for this wake source.
     ///
@@ -200,7 +200,7 @@ pub enum WakeSource {
     ///
     /// On the ESP-IDF tier this uses EXT1 wakeup (`esp_sleep_enable_ext1_wakeup_io`)
     /// on ESP32, ESP32-S3 and ESP32-C6, and deep-sleep GPIO wakeup
-    /// (`esp_deep_sleep_enable_gpio_wakeup`, GPIO0-5) on ESP32-C2 and ESP32-C3.
+    /// (`esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown`, GPIO0-5) on ESP32-C2 and ESP32-C3.
     /// Only RTC GPIOs 0–21 are valid on ESP32-S3.
     /// Bits for out-of-range pins are rejected at configuration time.
     ///
@@ -580,7 +580,7 @@ pub fn validate_wake_sources(sources: &[WakeSource]) -> Result<(), SleepError> {
 
 /// `DG_PAD_AUTOHOLD_EN` (bit 11) of `RTC_CNTL_DIG_ISO_REG`: the global digital-pad hold.
 ///
-/// Same bit position on ESP32, ESP32-S3, ESP32-C2 and ESP32-C3 (ESP-IDF v5.3.3
+/// Same bit position on ESP32, ESP32-S3, ESP32-C2 and ESP32-C3 (ESP-IDF v6.1
 /// `rtc_cntl_reg.h` / `gpio_ll`).
 pub const DIG_ISO_DG_PAD_AUTOHOLD_EN: u32 = 1 << 11;
 

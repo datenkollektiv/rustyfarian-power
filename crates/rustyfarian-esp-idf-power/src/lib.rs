@@ -85,6 +85,12 @@ pub use stoker::{
     GateError, GateErrorKind, GatedSleep, GatedSleepError, NoopPowerRailGate, PowerRailGate,
 };
 
+#[cfg(all(target_os = "espidf", not(esp_idf_version_at_least_6_0_0)))]
+compile_error!(
+    "rustyfarian-esp-idf-power requires ESP-IDF v6.0 or newer; \
+     set ESP_IDF_VERSION = \"v6.1\" in .cargo/config.toml"
+);
+
 mod conformance;
 mod esp_adc;
 mod esp_charging;

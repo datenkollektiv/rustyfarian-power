@@ -3,7 +3,7 @@
 ## Status
 Accepted (2026-10-24); point 4 reflects ADR-004 rung 1.
 
-Pinned to ESP-IDF v5.3.3 and esp-hal `=1.2.2`, as in ADR-001.
+Pinned to ESP-IDF v6.1 and esp-hal `=1.2.2`, as in ADR-001.
 The Heltec V3 pin facts come from the Zephyr board devicetree `heltec_wifi_lora32_v3_procpu.dts`.
 
 ## Context

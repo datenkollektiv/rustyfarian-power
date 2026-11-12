@@ -1,6 +1,6 @@
 # Bench Plan: ESP32-C3 DevKitM-1 Deep Sleep and Wake v1
 
-Operating guide for `just bench-c3` (`scripts/c3-bench.py`), the two-board driver for the C3 sleep cases with the ESP32-WROOM stimulus, pinned to esp-hal `=1.2.2` and ESP-IDF v5.3.3.
+Operating guide for `just bench-c3` (`scripts/c3-bench.py`), the two-board driver for the C3 sleep cases with the ESP32-WROOM stimulus, pinned to esp-hal `=1.2.2` and ESP-IDF v6.1.
 The guided single-board checks (`just bench c3`) are in [bench/c3/README.md](../../bench/c3/README.md); this driver covers the cases that need a scripted stimulus or a logic analyser.
 
 ## Prerequisites
@@ -8,7 +8,7 @@ The guided single-board checks (`just bench c3`) are in [bench/c3/README.md](../
 - Hal tier: sleep module in `crates/rustyfarian-esp-hal-power/src/sleep.rs` with the `bench` feature; `set_marker_pin(u8)` and `last() -> BenchTimings { drain_us, guard_us }`.
 - Firmware: `examples/hal_c3_sleep_bench.rs` (case selected at build time by the `BENCH_CASE` env var) and the stimulus `examples/hal_esp32_bench_stimulus.rs` (ESP32-WROOM bare-metal, esp-hal 1.2.2, UART0 and GPIO25/26 Flex pins).
 - Host script: `scripts/c3-bench.py` (Python 3, pyserial 3.5, PEP 723 header) via `just bench-c3`, which wraps `uv run`.
-- `just` recipes: `build-example-hal-c3`, `flash-hal-c3`, `build-example-hal-esp32`, `flash-hal-esp32`; the hal targets come from `.cargo/config.toml.dist` (espflash runner, `-Tlinkall.x`).
+- `just` recipes: `build-example-hal-c3`, `flash-hal-c3`, `build-example-hal-esp32`, `flash-hal-esp32`; the hal targets come from `.cargo/config.toml` (espflash runner, `-Tlinkall.x`).
 
 ## Instruments
 
