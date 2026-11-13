@@ -10,57 +10,52 @@ permissions:
 concurrency:
   group: rust-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+# Family pins (rustyfarian-ci CONVENTIONS.md). ESP_IDF_VERSION must match .cargo/config.toml:
+# the variable exported by setup-esp-idf wins over cargo's [env].
 env:
   CARGO_TERM_COLOR: always
-  RUSTUP_TOOLCHAIN: stable
+  XTENSA_VERSION: "1.97.0.0"
+  ESP_IDF_VERSION: v6.1
 jobs:
-  check-and-test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-      - name: Setup just
-        uses: extractions/setup-just@v4
-      - name: Cache cargo artifacts
-        uses: Swatinem/rust-cache@v2
-      - name: Install cargo-deny
-        run: cargo install cargo-deny --locked
-      - name: Deny (licenses, advisories, bans)
-        run: just deny
-      - name: Check (platform-independent)
-        run: just check
-      - name: Test (platform-independent)
-        run: just test
-      - name: Test the shared bench grammar (stoker feature `bench-conformance`)
-        run: just test-bench
+  # `just ci-test`: check, test and the shared bench grammar (stoker feature `bench-conformance`).
+  test:
+    uses: datenkollektiv/rustyfarian-ci/.github/workflows/host-checks.yml@v1
+    with:
+      check: test
+  deny:
+    uses: datenkollektiv/rustyfarian-ci/.github/workflows/host-checks.yml@v1
+    with:
+      check: deny
   # Needs the esp toolchain, not stable: `.cargo/config.toml` sets build-std for
-  # the *-espidf targets, which stable cannot do. The job-level RUSTUP_TOOLCHAIN
-  # overrides the workflow-level `stable`. The example build links, which `check`
-  # cannot verify (a missing SDK symbol only fails at link time), so ldproxy is needed.
+  # the *-espidf targets, which stable cannot do. The example build links, which `check`
+  # cannot verify (a missing SDK symbol only fails at link time), so ldproxy is needed
+  # (installed by setup-esp-idf). espup installs the esp toolchain only for an Xtensa
+  # target, so the RISC-V jobs request esp32.
   check-c3:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     env:
       RUSTUP_TOOLCHAIN: esp
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-      - name: Setup ESP-RS toolchain
-        uses: esp-rs/xtensa-toolchain@v1.7.0
+      - name: Setup Xtensa toolchain
+        uses: datenkollektiv/rustyfarian-ci/.github/actions/setup-xtensa@v1
         with:
-          default: true
-          ldproxy: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # The key covers the file that selects the ESP-IDF build: a restored esp-idf-sys
-      # CMake tree from another ESP_IDF_VERSION fails to configure.
+          version: ${{ env.XTENSA_VERSION }}
+          buildtargets: esp32
+      - name: Setup ESP-IDF
+        uses: datenkollektiv/rustyfarian-ci/.github/actions/setup-esp-idf@v1
+        with:
+          idf-version: ${{ env.ESP_IDF_VERSION }}
+          mcu: esp32c3
+      # The toolchain version keeps a toolchain bump from restoring stale artifacts. The key also
+      # covers the IDF version and the file that selects the ESP-IDF build: a restored
+      # esp-idf-sys CMake tree from another ESP_IDF_VERSION fails to configure.
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          key: idf-${{ hashFiles('.cargo/config.toml') }}
+          key: idf-${{ env.XTENSA_VERSION }}-${{ env.ESP_IDF_VERSION }}-${{ hashFiles('.cargo/config.toml') }}
       - name: Setup just
         uses: extractions/setup-just@v4
       - name: Check and link the C3 examples (ESP-IDF tier)
@@ -69,22 +64,26 @@ jobs:
   # Checks and links the two C6 examples (deep-sleep GPIO, RTC retention) via `just ci-c6`.
   check-c6:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     env:
       RUSTUP_TOOLCHAIN: esp
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-      - name: Setup ESP-RS toolchain
-        uses: esp-rs/xtensa-toolchain@v1.7.0
+      - name: Setup Xtensa toolchain
+        uses: datenkollektiv/rustyfarian-ci/.github/actions/setup-xtensa@v1
         with:
-          default: true
-          ldproxy: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          version: ${{ env.XTENSA_VERSION }}
+          buildtargets: esp32
+      - name: Setup ESP-IDF
+        uses: datenkollektiv/rustyfarian-ci/.github/actions/setup-esp-idf@v1
+        with:
+          idf-version: ${{ env.ESP_IDF_VERSION }}
+          mcu: esp32c6
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          key: idf-${{ hashFiles('.cargo/config.toml') }}
+          key: idf-${{ env.XTENSA_VERSION }}-${{ env.ESP_IDF_VERSION }}-${{ hashFiles('.cargo/config.toml') }}
       - name: Setup just
         uses: extractions/setup-just@v4
       - name: Check and link the C6 examples (ESP-IDF tier)
@@ -94,22 +93,26 @@ jobs:
   # the S3 has no separate `check` step because the links compile the same code.
   check-s3:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     env:
       RUSTUP_TOOLCHAIN: esp
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-      - name: Setup ESP-RS toolchain
-        uses: esp-rs/xtensa-toolchain@v1.7.0
+      - name: Setup Xtensa toolchain
+        uses: datenkollektiv/rustyfarian-ci/.github/actions/setup-xtensa@v1
         with:
-          default: true
-          ldproxy: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          version: ${{ env.XTENSA_VERSION }}
+          buildtargets: esp32s3
+      - name: Setup ESP-IDF
+        uses: datenkollektiv/rustyfarian-ci/.github/actions/setup-esp-idf@v1
+        with:
+          idf-version: ${{ env.ESP_IDF_VERSION }}
+          mcu: esp32s3
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          key: idf-${{ hashFiles('.cargo/config.toml') }}
+          key: idf-${{ env.XTENSA_VERSION }}-${{ env.ESP_IDF_VERSION }}-${{ hashFiles('.cargo/config.toml') }}
       - name: Setup just
         uses: extractions/setup-just@v4
       - name: Link the S3 examples (ESP-IDF tier)
@@ -119,22 +122,26 @@ jobs:
   # Its own job: the xtensa-esp32-espidf ESP-IDF build is separate from the S3 one.
   check-esp32:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     env:
       RUSTUP_TOOLCHAIN: esp
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-      - name: Setup ESP-RS toolchain
-        uses: esp-rs/xtensa-toolchain@v1.7.0
+      - name: Setup Xtensa toolchain
+        uses: datenkollektiv/rustyfarian-ci/.github/actions/setup-xtensa@v1
         with:
-          default: true
-          ldproxy: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          version: ${{ env.XTENSA_VERSION }}
+          buildtargets: esp32
+      - name: Setup ESP-IDF
+        uses: datenkollektiv/rustyfarian-ci/.github/actions/setup-esp-idf@v1
+        with:
+          idf-version: ${{ env.ESP_IDF_VERSION }}
+          mcu: esp32
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          key: idf-${{ hashFiles('.cargo/config.toml') }}
+          key: idf-${{ env.XTENSA_VERSION }}-${{ env.ESP_IDF_VERSION }}-${{ hashFiles('.cargo/config.toml') }}
       - name: Setup just
         uses: extractions/setup-just@v4
       - name: ESP32 (ESP-IDF tier) - compile-only (no link build, hardware deferred)

@@ -1,11 +1,24 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
-# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
-
 version: 2
 updates:
-  - package-ecosystem: "rust-toolchain"
+  - package-ecosystem: github-actions
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      # esp-idf-sys is a `links` crate: the esp-idf stack must move in lockstep.
+      esp-idf:
+        patterns: ["esp-idf-*", "embuild"]
+      # The esp-hal crates are pinned with `=` in Cargo.toml and only resolve together.
+      esp-hal:
+        patterns: ["esp-hal", "esp-hal-*", "esp-bootloader-esp-idf", "esp-println"]
+      cargo:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
