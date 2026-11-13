@@ -17,6 +17,8 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 - ESP32-C2/C3: every sleep call clears the SDK's GPIO wake mask and trigger modes, so a pin armed earlier in the same boot is no longer held and pulled during later GPIO-wake sleeps, and a pin switched from `AnyHigh` to `AnyLow` no longer keeps its pull-down.
 - `.cargo/config.toml` is tracked instead of `.cargo/config.toml.dist`, and `just setup-cargo-config` is gone; Cargo never reads it for downstream users.
 - The ESP-IDF and hal CI jobs run on `ubuntu-latest` again, because ESP-IDF v6.1's `esp-clang` installs on Ubuntu 26.04.
+- CI uses the shared `rustyfarian-ci@v1` workflow and setup actions: the host checks run through `host-checks.yml` (`just ci-fmt`, `ci-clippy`, `ci-test`, `ci-deny`, `ci-audit`), the chip jobs pin the esp toolchain to 1.97.0.0 and cache it and `~/.espressif`, and every job has a timeout; `just act` runs the jobs locally.
+- Dependabot bumps GitHub Actions and Cargo dependencies instead of the `rust-toolchain` channel.
 
 ### Fixed
 - `WakeCause::Gpio` maps ESP-IDF v6's RTC-IO-indexed wake status to GPIO numbers with `esp_sleep_wakeup_io_bit2num`.

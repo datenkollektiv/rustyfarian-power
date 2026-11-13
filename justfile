@@ -39,6 +39,10 @@ hal_dir := if path_exists(ramdisk + "/targets/hal") == "true" { ramdisk + "/targ
 bench_dir := env("RUSTYFARIAN_BENCH", "")
 bench := if bench_dir != "" { 'uv run --project "' + bench_dir + '" rustyfarian-bench' } else { "uvx --from git+https://github.com/datenkollektiv/rustyfarian-bench@v0.5.0 rustyfarian-bench" }
 
+# act: a local rustyfarian-ci checkout if RUSTYFARIAN_CI points at one, otherwise the pushed @v1.
+ci_dir := env("RUSTYFARIAN_CI", "")
+ci_repo_flag := if ci_dir != "" { '--local-repository "datenkollektiv/rustyfarian-ci@v1=' + absolute_path(ci_dir) + '"' } else { "" }
+
 # list available recipes (default)
 _default:
     @just --list
@@ -330,6 +334,36 @@ clean:
     cargo clean --target-dir target
     cargo clean --target-dir {{ idf_dir }}
     cargo clean --target-dir {{ hal_dir }}
+
+# --- CI host jobs ---------------------------------------------------------
+#
+# Called by the shared rustyfarian-ci host-checks.yml (`just ci-<check>`) from
+# fmt.yml, clippy.yml, audit.yml and rust.yml.
+
+# CI: format check
+ci-fmt: fmt-check
+
+# CI: lint the pure crate
+ci-clippy: clippy
+
+# CI: type-check and test the pure crate, including the shared bench grammar (`bench-conformance`)
+ci-test: check test test-bench
+
+# CI: cargo-deny licenses, advisories, bans and sources
+ci-deny: deny
+
+# CI: cargo-audit advisories
+ci-audit: audit
+
+# Set RUSTYFARIAN_CI to a local rustyfarian-ci checkout to test unpushed reusable workflows.
+# The default runs the host jobs; run a chip job with e.g. `just act check-c3` or `just act hal`.
+# run the CI jobs locally via act: all host jobs, or one (`just act fmt`; requires Docker + act)
+act job="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for j in {{ if job == "" { "fmt clippy test deny audit" } else { job } }}; do
+        act -j "$j" --pull=false -P ubuntu-latest=catthehacker/ubuntu:act-latest {{ ci_repo_flag }}
+    done
 
 # --- CI chip jobs ---------------------------------------------------------
 #

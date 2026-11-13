@@ -16,30 +16,34 @@ permissions:
 concurrency:
   group: hal-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+# XTENSA_VERSION is the family pin (rustyfarian-ci CONVENTIONS.md); keep the local espup install in step.
 env:
   CARGO_TERM_COLOR: always
   RUSTUP_TOOLCHAIN: esp
+  XTENSA_VERSION: "1.97.0.0"
 jobs:
   hal:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v5
       # The esp channel carries rust-src, which `-Zbuild-std=core,alloc` needs for the
       # riscv32imc and xtensa *-none-elf targets (no `rustup target add`). The action also
       # puts xtensa-esp-elf-gcc on PATH, which the Xtensa link needs. ldproxy is for the
-      # *-espidf targets only, so it is off here.
-      - name: Setup ESP-RS toolchain
-        uses: esp-rs/xtensa-toolchain@v1.7.0
+      # *-espidf targets only, so it is not installed here. One buildtarget is enough: the
+      # unified xtensa-esp-elf GCC links ESP32 and S3, and setup-xtensa's cache key rejects commas.
+      - name: Setup Xtensa toolchain
+        uses: datenkollektiv/rustyfarian-ci/.github/actions/setup-xtensa@v1
         with:
-          default: true
-          ldproxy: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          version: ${{ env.XTENSA_VERSION }}
+          buildtargets: esp32
+      # The toolchain version is part of the key, so a toolchain bump does not restore stale artifacts.
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target/hal"
+          key: hal-${{ env.XTENSA_VERSION }}
       - name: Setup just
         uses: extractions/setup-just@v4
       - name: Check all chips, link C3 and S3 examples

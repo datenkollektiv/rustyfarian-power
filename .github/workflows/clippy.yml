@@ -10,23 +10,8 @@ permissions:
 concurrency:
   group: clippy-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-env:
-  CARGO_TERM_COLOR: always
-  RUSTUP_TOOLCHAIN: stable
 jobs:
   clippy:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-      - name: Install Rust toolchain (stable + clippy)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          components: clippy
-      - name: Setup just
-        uses: extractions/setup-just@v4
-      - name: Cache cargo artifacts
-        uses: Swatinem/rust-cache@v2
-      - name: Run clippy
-        run: just clippy
+    uses: datenkollektiv/rustyfarian-ci/.github/workflows/host-checks.yml@v1
+    with:
+      check: clippy
