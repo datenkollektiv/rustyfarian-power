@@ -86,12 +86,12 @@ All shared versions live in the root `[workspace.dependencies]`.
 GitHub Actions workflows live in `.github/workflows/` and follow the family conventions in `rustyfarian-ci` (`CONVENTIONS.md`).
 - `audit.yml` runs the RustSec check on push, PR and a weekly schedule.
 - `clippy.yml` and `fmt.yml` are the lint and format gates.
-- `rust.yml` runs `test` and `deny`, plus the ESP-IDF chip jobs (`check-c3`, `check-c6`, `check-s3`, `check-esp32`).
-- `hal.yml` checks and links the esp-hal tier.
+- `rust.yml` runs `test` and `deny`, plus the ESP-IDF chip jobs (`c3`, `c6`, `s3`, `esp32`).
+- `cross-target-esp-hal.yml` checks and links the esp-hal tier.
 
 The host jobs are thin callers of the shared `host-checks.yml@v1`, which runs `just ci-<check>` on stable.
 The chip jobs use the shared `setup-xtensa@v1` and `setup-esp-idf@v1` actions.
-`XTENSA_VERSION` and `ESP_IDF_VERSION` in `rust.yml` and `hal.yml` are the family pins; `ESP_IDF_VERSION` must match `.cargo/config.toml`, because the exported variable wins over cargo's `[env]`.
+`XTENSA_VERSION` and `ESP_IDF_VERSION` in `rust.yml` and `cross-target-esp-hal.yml` are the family pins; `ESP_IDF_VERSION` must match `.cargo/config.toml`, because the exported variable wins over cargo's `[env]`.
 `just act` runs the host jobs locally; `just act <job>` runs one job, and `RUSTYFARIAN_CI` points it at a local `rustyfarian-ci` checkout.
 An action's Node runtime is only knowable from `runs.using` in its `action.yml` at the tag in use.
 `gh run list` needs `gh auth login`; without it, CI status is NOT VERIFIED.

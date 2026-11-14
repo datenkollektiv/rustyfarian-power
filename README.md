@@ -21,31 +21,6 @@ Powers the rustyfarian ecosystem's battery-driven field deployments — from bat
 > **Note:** Large parts of this library (and its documentation) were developed with the assistance of AI tools.
 > All generated code has been reviewed and curated by the maintainer.
 
-## Rustyfarian Family
-
-`rustyfarian-power` is one crate in the **rustyfarian** family — composable embedded-Rust libraries for
-battery-powered ESP32 field deployments (e.g. remote beehive monitoring over LoRaWAN).
-
-```mermaid
-graph TD
-    app["rustyfarian-rgb-clock<br/>(reference application)"]
-    net["rustyfarian-network<br/>Wi-Fi · MQTT · ESP-NOW · OTA"]
-    leds["rustyfarian-ws2812<br/>WS2812 / NeoPixel effects"]
-    pwr["rustyfarian-power<br/>battery · deep sleep · rail gating<br/>(this repo)"]
-    app --> net
-    app --> leds
-    net -->|"PowerRailGate"| pwr
-```
-
-| Repo                                                                             | Role                                               |
-|:---------------------------------------------------------------------------------|:---------------------------------------------------|
-| **rustyfarian-power** (this repo)                                                | Battery monitoring, deep sleep, power rail gating  |
-| [rustyfarian-network](https://github.com/datenkollektiv/rustyfarian-network)     | Wi-Fi, MQTT, LoRa, ESP-NOW, OTA                    |
-| [rustyfarian-ws2812](https://github.com/datenkollektiv/rustyfarian-ws2812)       | WS2812 / NeoPixel LED effects                      |
-| [rustyfarian-rgb-clock](https://github.com/datenkollektiv/rustyfarian-rgb-clock) | Reference application tying the libraries together |
-
-The `network → power` link uses `PowerRailGate`, which `stoker` defines and both ESP32 tiers implement; the network side lives in `rustyfarian-network`, see [VISION.md](./VISION.md).
-
 ## Vision
 
 > Give every rustyfarian application on ESP32 a single, ergonomic power management layer so battery-powered field deployments run reliably for months without intervention.
@@ -81,6 +56,38 @@ a pattern common in application development but rare in embedded Rust.
   - Merging them would imply a round-trip that does not exist in hardware.
 
 The core modules (`config.rs`, `sleep.rs`) can be fully unit-tested on your laptop without an ESP32 or ESP toolchain.
+
+## Rustyfarian Family
+
+`rustyfarian-power` is one repo in the **rustyfarian** family — composable embedded-Rust libraries for battery-powered ESP32 field deployments (e.g. remote beehive monitoring over LoRaWAN).
+
+```mermaid
+graph TD
+    app["rustyfarian-rgb-clock<br/>reference application"]
+    net["rustyfarian-network<br/>Wi-Fi · MQTT · LoRa · ESP-NOW · OTA"]
+    leds["rustyfarian-ws2812<br/>WS2812 / NeoPixel effects"]
+    pwr["rustyfarian-power<br/>battery · deep sleep · rail gating<br/>(this repo)"]
+    periph["rustyfarian-peripherals<br/>pins · debounce · encoders · buttons · tones"]
+    app --> leds
+    app --> net
+    app -.-> pwr
+    app -.-> periph
+    net --> leds
+    net -.->|PowerRailGate| pwr
+```
+
+Solid edge: depends on it today.
+Dotted edge: a natural fit, not adopted yet.
+
+| Repo                                                                             | Role                                                    |
+|:---------------------------------------------------------------------------------|:--------------------------------------------------------|
+| [rustyfarian-ws2812](https://github.com/datenkollektiv/rustyfarian-ws2812)       | WS2812 / NeoPixel LED effects and drivers               |
+| [rustyfarian-network](https://github.com/datenkollektiv/rustyfarian-network)     | Wi-Fi, MQTT, LoRa, ESP-NOW, OTA                         |
+| [rustyfarian-peripherals](https://github.com/datenkollektiv/rustyfarian-peripherals) | Pins, debounce, encoders, buttons, tones            |
+| **rustyfarian-power** (this repo)                                                | Battery monitoring, deep sleep, power rail gating       |
+| [rustyfarian-rgb-clock](https://github.com/datenkollektiv/rustyfarian-rgb-clock) | Reference application tying the libraries together      |
+
+The dotted `network → power` edge is `PowerRailGate`: `stoker` defines it and both ESP32 tiers implement it; `rustyfarian-network` does not use it yet, see [VISION.md](./VISION.md).
 
 ## Features
 
@@ -153,7 +160,7 @@ just setup-toolchain
 just setup-cargo-config
 ```
 
-## Common Tasks
+## Development
 
 Run `just` with no arguments to list all available recipes.
 

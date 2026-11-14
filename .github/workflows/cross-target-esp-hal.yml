@@ -14,7 +14,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: hal-${{ github.workflow }}-${{ github.ref }}
+  group: cross-target-esp-hal-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 # XTENSA_VERSION is the family pin (rustyfarian-ci CONVENTIONS.md); keep the local espup install in step.
 env:
