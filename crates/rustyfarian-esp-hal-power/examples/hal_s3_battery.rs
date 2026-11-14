@@ -1,7 +1,7 @@
 //! Heltec WiFi LoRa 32 V3 (ESP32-S3) — Battery Monitor Example (esp-hal)
 //!
 //! Reads the battery voltage once a second and prints the averaged status.
-//! The esp-hal counterpart of `idf_esp32s3_battery`.
+//! The esp-hal counterpart of `idf_s3_battery`.
 //!
 //! ## Board
 //!
@@ -33,9 +33,9 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 
 use stoker::bench::variant_index;
 
-/// `BENCH_VARIANT` at build time (`just bench-build NAME+VARIANT`): `calib` adds a
+/// `BENCH_VARIANT` at build time (`just bench-build NAME--VARIANT`): `calib` adds a
 /// `Calib:` line printing the compensated and averaged raw pin mV in every power state, for
-/// divider-ratio calibration (see `bench/heltec/battery-calib.toml`). Unknown values fail the build.
+/// divider-ratio calibration (see `bench/s3-heltec/battery-calib.toml`). Unknown values fail the build.
 const CALIB: bool = variant_index(option_env!("BENCH_VARIANT"), &["calib"]).is_some();
 
 #[esp_hal::main]

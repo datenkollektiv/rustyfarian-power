@@ -1,7 +1,7 @@
 # Bench Plan: ESP32-C3 DevKitM-1 Deep Sleep and Wake v1
 
 Operating guide for `just bench-c3` (`scripts/c3-bench.py`), the two-board driver for the C3 sleep cases with the ESP32-WROOM stimulus, pinned to esp-hal `=1.2.2` and ESP-IDF v6.1.
-The guided single-board checks (`just bench c3`) are in [bench/c3/README.md](../../bench/c3/README.md); this driver covers the cases that need a scripted stimulus or a logic analyser.
+The guided single-board checks (`just bench c3-mini1`) are in [bench/c3-mini1/README.md](../../bench/c3-mini1/README.md); this driver covers the cases that need a scripted stimulus or a logic analyser.
 
 ## Prerequisites
 

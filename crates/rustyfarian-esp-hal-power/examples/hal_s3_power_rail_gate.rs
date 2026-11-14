@@ -1,7 +1,7 @@
 //! Heltec WiFi LoRa 32 V3 (ESP32-S3) — Vext Power Rail Gate Example (esp-hal)
 //!
 //! Powers the Vext rail at boot, holds it for 10 s, then deep-sleeps for 30 s with the rail off.
-//! Built as `hal_s3_power_rail_gate+meter` (bench variant) it holds the rail for 90 s and sleeps for 120 s, so a meter can be read in each state.
+//! Built as `hal_s3_power_rail_gate--meter` (bench variant) it holds the rail for 90 s and sleeps for 120 s, so a meter can be read in each state.
 //! On wake the cycle repeats: the rail is switched on again by the firmware, because deep sleep never returns.
 //!
 //! ## Board
@@ -43,9 +43,9 @@ use rustyfarian_esp_hal_power::{
 
 use stoker::bench::variant_index;
 
-/// `BENCH_VARIANT` at build time (`just bench-build NAME+VARIANT`): `meter` stretches the
+/// `BENCH_VARIANT` at build time (`just bench-build NAME--VARIANT`): `meter` stretches the
 /// phases so an operator can read a meter on `Ve` in each state (90 s awake with the rail
-/// on, 120 s asleep with the rail off; see `bench/heltec/rail-gate-ve.toml`). Unknown values fail the build.
+/// on, 120 s asleep with the rail off; see `bench/s3-heltec/rail-gate-ve.toml`). Unknown values fail the build.
 const METER: bool = variant_index(option_env!("BENCH_VARIANT"), &["meter"]).is_some();
 
 const AWAKE_MS: u32 = if METER { 90_000 } else { 10_000 };

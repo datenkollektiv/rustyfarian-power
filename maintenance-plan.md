@@ -24,7 +24,7 @@ After any ESP-IDF crate bump, run:
 - `just check-all` for ESP32-S3 (`xtensa-esp32s3-espidf`, Heltec V3)
 - `just check-esp32` for ESP32 (`xtensa-esp32-espidf`, Feather V2)
 - `just clippy-all`
-- one `just build-example <name>` per chip: `idf_esp32s3_battery`, `idf_esp32_battery`, `idf_c3_deep_sleep_gpio` and `idf_s3_deep_sleep_gpio`
+- one `just build-example <name>` per chip: `idf_s3_battery`, `idf_esp32_battery`, `idf_c3_deep_sleep_gpio` and `idf_s3_deep_sleep_gpio`
 - `just check-hal`, `just clippy-hal` and `just build-example-hal-s3 hal_s3_deep_sleep_gpio` for the esp-hal tier
 
 Device builds need the espup `esp` toolchain (`just setup-toolchain`) and `just setup-cargo-config`.
@@ -42,12 +42,12 @@ Before connecting any LiPo, meter its polarity first (see `docs/project-lore.md`
 With USB connected and no battery, both boards report a phantom charge; this is expected.
 Record "compile-verified only" honestly when no board is attached.
 
-| Board                         | Chip     | Bench scenarios     |
-|:------------------------------|:---------|:--------------------|
-| Heltec WiFi LoRa 32 V3.1      | ESP32-S3 | `bench/heltec/`     |
-| Adafruit ESP32 Feather V2     | ESP32    | `bench/esp32/`      |
-| ESP32-C3-DevKitM-1 + HC-SR501 | ESP32-C3 | `bench/c3/`         |
-| Elecrow CrowPanel 1.28" HMI   | ESP32-S3 | `bench/s3/`         |
+| Board                         | Chip     | Bench scenarios        |
+|:------------------------------|:---------|:-----------------------|
+| Heltec WiFi LoRa 32 V3.1      | ESP32-S3 | `bench/s3-heltec/`     |
+| Adafruit ESP32 Feather V2     | ESP32    | `bench/esp32-feather/` |
+| ESP32-C3-DevKitM-1 + HC-SR501 | ESP32-C3 | `bench/c3-mini1/`      |
+| Elecrow CrowPanel 1.28" HMI   | ESP32-S3 | `bench/s3/`            |
 
 The last full pass per board is recorded in `bench/README.md`; run `just bench <board> --unattended` and then `--attended` to refresh it.
 
@@ -91,7 +91,8 @@ GitHub Actions workflows live in `.github/workflows/` and follow the family conv
 
 The host jobs are thin callers of the shared `host-checks.yml@v1`, which runs `just ci-<check>` on stable.
 The chip jobs use the shared `setup-xtensa@v1` and `setup-esp-idf@v1` actions.
-`XTENSA_VERSION` and `ESP_IDF_VERSION` in `rust.yml` and `cross-target-esp-hal.yml` are the family pins; `ESP_IDF_VERSION` must match `.cargo/config.toml`, because the exported variable wins over cargo's `[env]`.
+`XTENSA_VERSION` and `ESP_IDF_VERSION` in `rust.yml` and `cross-target-esp-hal.yml` are the family pins.
+`ESP_IDF_VERSION` must match `.cargo/config.toml`, because the exported variable wins over cargo's `[env]`.
 `just act` runs the host jobs locally; `just act <job>` runs one job, and `RUSTYFARIAN_CI` points it at a local `rustyfarian-ci` checkout.
 An action's Node runtime is only knowable from `runs.using` in its `action.yml` at the tag in use.
 `gh run list` needs `gh auth login`; without it, CI status is NOT VERIFIED.

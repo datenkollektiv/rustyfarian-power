@@ -14,12 +14,14 @@ arm = false       # must read the backlog from the reset
 [[step]]
 say = "Hands off: two 60 s timer wakes, no UartBusy, no GPIO wake"
 expect = ['Wake cause: Timer', 'Sleeping: GPIO25 AnyHigh', 'Wake cause: Timer', 'Sleeping: GPIO25 AnyHigh']
-reject = 'try_sleep failed|UartBusy|Wake cause: Ext1|PANIC|panicked|Guru Meditation'
+reject = 'try_sleep failed|UartBusy|Wake cause: Ext1|PANIC|panicked|Guru Meditation|abort\(\)|WDT'
 timeout = 150
+arm = false
 
 [[step]]
 say = "Hands off: after a timer wake the RTC clock continues (EspHalRtcClock survives deep sleep)"
 # Only a power-on or brownout may restart the clock at 0; after a 60 s sleep it reads at least 60 s.
 expect = ['Wake cause: Timer', 'RTC rtc_us=[1-9]\d{7,}']
-reject = 'RTC rtc_us=0\b|try_sleep failed|UartBusy|PANIC|panicked|Guru Meditation'
+reject = 'RTC rtc_us=0\b|try_sleep failed|UartBusy|PANIC|panicked|Guru Meditation|abort\(\)|WDT'
 timeout = 75
+arm = false

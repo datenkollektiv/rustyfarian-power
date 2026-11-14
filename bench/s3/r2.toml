@@ -4,7 +4,7 @@
 # then retries until the sleep succeeds. The 5 s timer wake prints `SLEPT`, the RTC-clock time since the
 # last sleep entry: forced and plain cycles must agree, so the timer counts from the retry.
 # Native USB-Serial-JTAG console: esp-hal prints no `PINREAD end` (the chip sleeps before the buffer drains).
-examples = ["hal_s3_deep_sleep_gpio+r2", "idf_s3_deep_sleep_gpio+r2"]
+examples = ["hal_s3_deep_sleep_gpio--r2", "idf_s3_deep_sleep_gpio--r2"]
 
 [[step]]
 say = "Wait for the boot line"
@@ -16,17 +16,20 @@ arm = false
 [[step]]
 say = "Hands off: forced rejection with the pad hold cleared, INT LOW at the read, then the L->H edge"
 expect = ['FORCED tier=\w+ int_before=L autohold=0', 'PINREAD start tier=\w+ pin=5 level=L', 'PINREAD edge tier=\w+ pin=5 L->H', 'WAKECAUSE tier=\w+ boot=\w+']
-reject = 'try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST'
+reject = 'try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST|abort\(\)|WDT'
 timeout = 60
+arm = false
 
 [[step]]
 say = "ESP-IDF only: the changed-mask retry while INT is still LOW is rejected too"
 expect = 'MASKRETRY tier=idf result=err:Rejected'
 timeout = 20
 optional = true   # esp-hal has no changed-mask retry (IDF-only bug)
+arm = false
 
 [[step]]
 say = "Hands off: the recount after a forced cycle and after a plain one both read the 5 s timer"
 expect = ['SLEPT tier=\w+ ms=5[0-6]\d\d forced=1', 'SLEPT tier=\w+ ms=5[0-6]\d\d forced=0']
-reject = 'try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST'
+reject = 'try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST|abort\(\)|WDT'
 timeout = 60
+arm = false

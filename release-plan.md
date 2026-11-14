@@ -5,10 +5,11 @@ Every release gets a `release/<date>-vX.Y.Z-record.md` (timeline, issues, verifi
 
 ## Crates & versioning
 
-- **`stoker`** — pure, host-buildable core. Published **first** (no internal deps).
-- **`rustyfarian-esp-idf-power`** — ESP-IDF tier; depends on `stoker = "X.Y"`, re-exports its surface. Published **second**.
-- **`rustyfarian-esp-hal-power`** — bare-metal esp-hal tier (`no_std`); depends on `stoker = "X.Y"` and pins `esp-hal = "=1.2.2"`. Published **third**.
-- SemVer, pre-1.0 (minor bumps may be breaking). All three crates move in lockstep via `[workspace.package].version`; members inherit with `version.workspace = true`.
+- **`stoker`** — pure, host-buildable core, published **first** (no internal deps).
+- **`rustyfarian-esp-idf-power`** — ESP-IDF tier; depends on `stoker = "X.Y"`, re-exports its surface, published **second**.
+- **`rustyfarian-esp-hal-power`** — bare-metal esp-hal tier (`no_std`); depends on `stoker = "X.Y"` and pins `esp-hal = "=1.2.2"`, published **third**.
+- SemVer, pre-1.0 (minor bumps may be breaking).
+- All three crates move in lockstep via `[workspace.package].version`; members inherit with `version.workspace = true`.
 - This repo doesn't depend on `rustyfarian-ws2812`/`-network`; no cross-repo publish ordering.
 
 ## Critical invariants
@@ -72,30 +73,49 @@ Keep notes short — the three crates + any breaking changes. Don't paste the wh
 
 - Confirm all three crates are live and not yanked (crates.io pages / `curl -A '<name>' https://crates.io/api/v1/crates/<crate>/X.Y.Z`).
 - The crates.io API rejects requests without a User-Agent; pass a neutral one with `-A`, never personal data.
-- docs.rs: `stoker` builds; **`rustyfarian-esp-idf-power` is expected to fail** (esp-idf-sys needs the ESP-IDF C toolchain + network, absent in the docs.rs sandbox) — not a regression; the README is the primary docs.
+- docs.rs: `stoker` builds.
+- docs.rs: **`rustyfarian-esp-idf-power` is expected to fail** (esp-idf-sys needs the ESP-IDF C toolchain + network, absent in the docs.rs sandbox).
+- That failure is not a regression; the README is the primary docs.
 - docs.rs: `rustyfarian-esp-hal-power` is expected to build (`riscv32imc-unknown-none-elf`, feature `esp32c3`, from its `[package.metadata.docs.rs]`); a failure there needs a look.
 - Write `release/<date>-vX.Y.Z-record.md` (timeline, issues, verification).
 - Update root `README.md` if it pins crate versions.
 
 ## Credentials
 
-`cargo publish` reads `CARGO_REGISTRY_TOKEN` from the environment (loaded via `.envrc`/direnv). The token's scope must permit publishing all three crates (a **new** crate name needs the "publish new crates" scope). Never commit the token.
+`cargo publish` reads `CARGO_REGISTRY_TOKEN` from the environment (loaded via `.envrc`/direnv).
+The token's scope must permit publishing all three crates (a **new** crate name needs the "publish new crates" scope).
+Never commit the token.
 
 ## Build environment
 
-`.envrc` (direnv, gitignored) supplies the build env: `LIBCLANG_PATH` (esp toolchain — no need to `source ~/export-esp.sh`), `RUSTC_WRAPPER=sccache` (global compiler cache, main disk), and `RAMDISK_SIZE_GB`.
+`.envrc` (direnv, gitignored) supplies the build env:
+- `LIBCLANG_PATH` (esp toolchain — no need to `source ~/export-esp.sh`)
+- `RUSTC_WRAPPER=sccache` (global compiler cache, main disk)
+- `RAMDISK_SIZE_GB`
 
-**RAM disk sizing matters for publishing:** `cargo publish` runs a fresh cold esp-idf verify-build (~3 GB) in a `package/` dir. The default 6 GB RAM disk, shared across projects, can overflow (`No space left on device`). Keep `RAMDISK_SIZE_GB` ≥ 12, and if it still OOMs, `just ramdisk detach && just ramdisk attach` (resizes) or free space. The failure is pre-upload, so a retry is always clean.
+**RAM disk sizing matters for publishing:**
+- `cargo publish` runs a fresh cold esp-idf verify-build (~3 GB) in a `package/` dir.
+- The default 6 GB RAM disk, shared across projects, can overflow (`No space left on device`).
+- Keep `RAMDISK_SIZE_GB` ≥ 12.
+- If it still OOMs, `just ramdisk detach && just ramdisk attach` (resizes) or free space.
+- The failure is pre-upload, so a retry is always clean.
 
 ## Rollback
 
-`cargo yank --version X.Y.Z <crate>` in **reverse** dependency order (`rustyfarian-esp-hal-power` and `rustyfarian-esp-idf-power` first, then `stoker`). crates.io versions can't be deleted, only yanked; `^` consumers skip a yanked version, `=` pins break. To fix: yank, correct the cause, bump the patch, re-publish.
+- `cargo yank --version X.Y.Z <crate>` in **reverse** dependency order (`rustyfarian-esp-hal-power` and `rustyfarian-esp-idf-power` first, then `stoker`).
+- crates.io versions can't be deleted, only yanked.
+- `^` consumers skip a yanked version, `=` pins break.
+- To fix: yank, correct the cause, bump the patch, re-publish.
 
 ## Troubleshooting
 
-- **`failed to select a version for 'stoker = "^X.Y"'`** — a tier crate was published before `stoker` indexed. Wait 2–5 min, retry Stage 2 or 4.
-- **esp-idf verify-build fails building `esp-idf-sys` on the host** — it must target `xtensa-esp32s3-espidf` via the `esp` toolchain (`just setup-toolchain`); the recipes already do this. Never use `--no-verify`.
-- **`cargo` vs `cargo +esp`** — `rust-toolchain.toml` pins `channel = "esp"`, so plain `cargo` uses the Xtensa fork. No `+esp` needed (unlike the RISC-V sibling repos).
+- **`failed to select a version for 'stoker = "^X.Y"'`** — a tier crate was published before `stoker` indexed.
+  - Wait 2–5 min, retry Stage 2 or 4.
+- **esp-idf verify-build fails building `esp-idf-sys` on the host** — it must target `xtensa-esp32s3-espidf` via the `esp` toolchain (`just setup-toolchain`).
+  - The recipes already do this.
+  - Never use `--no-verify`.
+- **`cargo` vs `cargo +esp`** — `rust-toolchain.toml` pins `channel = "esp"`, so plain `cargo` uses the Xtensa fork.
+  - No `+esp` needed (unlike the RISC-V sibling repos).
 
 ## Resources
 

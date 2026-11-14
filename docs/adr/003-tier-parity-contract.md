@@ -10,18 +10,25 @@ Platform pins follow ADR-001: ESP-IDF v6.1 and esp-hal `=1.2.2` in lockstep with
 ## Context
 `stoker` and the two tier crates implement the three-crate shape the whole family uses: a pure, host-testable core and one thin driver crate per HAL (ADR-001).
 `rustyfarian-ws2812` ADR-010 records two drivers whose methods had identical names but different semantics, so one downstream firmware behaved differently depending on the tier it was built for.
-`rustyfarian-network` ADR-022 records ~17 API and ~8 behaviour gaps between a blocking ESP-IDF tier and an async esp-hal tier, and answers them with shared traits, sans-IO cores, and per-tier parity compile checks.
+`rustyfarian-network` ADR-022 records ~17 API and ~8 behaviour gaps between a blocking ESP-IDF tier and an async esp-hal tier.
+It answers them with shared traits, sans-IO cores, and per-tier parity compile checks.
 This repo is exposed to the same drift.
 The esp-hal tier lacks the ADC battery monitor and the charging monitor that the ESP-IDF tier has.
 An async surface is deferred on both tiers, and neither tier manifests an async feature.
-The provider-selection link failure (duplicate `_critical_section_1_0_acquire` with `rustyfarian-esp-idf-network`'s `lora` feature) is the same failure class as network bug 007, and is handled by making `critical-section-impl` opt-in.
+The provider-selection link failure (duplicate `_critical_section_1_0_acquire` with `rustyfarian-esp-idf-network`'s `lora` feature) is the same failure class as network bug 007.
+It is handled by making `critical-section-impl` opt-in.
 This ADR adopts the siblings' contract and sets the requirements for making the tiers' shared, implemented capabilities interchangeable.
 Implementation gaps (the missing esp-hal monitors) are tracked separately, not folded into the promise.
 
 ## Decision
 
 ### 1. Same name means the same observable behaviour
-A method shared by name across the tiers delivers the same observable outcomes on both: the same validation outcome and error kinds, the same unsuccessful-attempt outcomes (for sleep, `Rejected`), the same successful behaviour, and the same what-remains-usable-after-a-failed-attempt guarantees.
+A method shared by name across the tiers delivers the same observable outcomes on both:
+- the same validation outcome and error kinds
+- the same unsuccessful-attempt outcomes (for sleep, `Rejected`)
+- the same successful behaviour
+- the same what-remains-usable-after-a-failed-attempt guarantees
+
 Internal sequencing, timing, and peripheral ownership may differ; a shared name requires identical observables, not identical internals.
 The esp-hal `BoundSleep` borrowing model remains valid under this rule.
 
@@ -33,19 +40,35 @@ Scope of the parity claim:
 Minimum portable postcondition after any `Rejected` attempt:
 - The caller may retry immediately through the same trait object, with no recovery, re-construction, or pin re-binding step.
 - The retry is observably a fresh attempt: the same validation outcomes and error kinds apply, and a `Timer` duration counts from the retry.
-- Every wake pin named in the rejected request's `pin_mask` is usable as a plain digital input once the call has returned (on the esp-hal tier, once the `BoundSleep` borrow ends, which is that tier's release step).
-- Whether wake sources stay armed between a rejection and its retry is adapter-internal, not an observable: the IDF tier leaves them applied and re-runs configuration on retry; the esp-hal tier disarms on rejection and re-arms on retry.
-- Every pad outside the request's `pin_mask` and every pad hold the caller set, RTC or digital, is as the caller left it, because sleep entry changes none of them before the hardware reject decision (source-read of IDF v6.1 `esp_sleep_start` and esp-hal 1.2.2 sleep entry; bench R4-S3 checks it on the S3).
-- The exception is the global digital-pad hold: while it is effective on the ESP32, ESP32-S3, ESP32-C2 and ESP32-C3, entry isolates every unheld digital-only pad (S3: GPIO26-48) and nothing restores it.
-- The postcondition excludes the console (UART or USB-Serial-JTAG output may be interrupted), the CPU and APB clock during the attempt, power-domain configuration and deep-sleep hooks of WiFi/BT, the persistent sleep-mode pad configuration that `isolate_gpio` writes (inert while awake), and timer-deadline persistence.
+- Every wake pin named in the rejected request's `pin_mask` is usable as a plain digital input once the call has returned (on esp-hal, once the `BoundSleep` borrow ends: that tier's release step).
+- Whether wake sources stay armed between a rejection and its retry is adapter-internal, not an observable.
+  - The IDF tier leaves them applied and re-runs configuration on retry.
+  - The esp-hal tier disarms on rejection and re-arms on retry.
+- Every pad outside the request's `pin_mask` and every pad hold the caller set, RTC or digital, is as the caller left it, because sleep entry changes none of them before the hardware reject decision.
+  - Basis: source-read of IDF v6.1 `esp_sleep_start` and esp-hal 1.2.2 sleep entry.
+  - Bench R4-S3 checks it on the S3.
+- The exception is the global digital-pad hold: while effective on the ESP32, ESP32-S3, ESP32-C2 and ESP32-C3, entry isolates every unheld digital-only pad (S3: GPIO26-48) and nothing restores it.
+- The postcondition excludes:
+  - the console (UART or USB-Serial-JTAG output may be interrupted)
+  - the CPU and APB clock during the attempt
+  - power-domain configuration and deep-sleep hooks of WiFi/BT
+  - the persistent sleep-mode pad configuration that `isolate_gpio` writes (inert while awake)
+  - timer-deadline persistence
 - esp-hal clears `WIFI_FORCE_ISO` in `RTC_CNTL_DIG_ISO_REG` at sleep entry and a rejection does not restore it (bench R4-S3).
 
 The three IDF rejection paths, and why none needs a weaker postcondition:
-- **EXT1 chips (ESP32, S3, C6), hardware reject:** it fires after `ext1_wakeup_prepare`, so the masked pins stay RTC-routed and RTC-held, `ext1_rtc_gpio_mask` stays stale (`esp_sleep_disable_wakeup_source(ALL)` does not clear it), and the timer and isolation config stay applied.
-- **C2/C3 hardware reject (timer-only, or a pin that reached its level after the pre-read):** wake pins keep their `gpio_hold_en` hold and the internal pull applied at entry; per-pin wake enables and the SDK's `gpio_wakeup_mask` survive.
+- **EXT1 chips (ESP32, S3, C6), hardware reject:** it fires after `ext1_wakeup_prepare`.
+  - The masked pins stay RTC-routed and RTC-held.
+  - `ext1_rtc_gpio_mask` stays stale (`esp_sleep_disable_wakeup_source(ALL)` does not clear it).
+  - The timer and isolation config stay applied.
+- **C2/C3 hardware reject (timer-only, or a pin that reached its level after the pre-read):**
+  - Wake pins keep their `gpio_hold_en` hold and the internal pull applied at entry.
+  - Per-pin wake enables and the SDK's `gpio_wakeup_mask` survive.
 - **C2/C3 software pre-read reject (`gpio_wake_pins_asserted`):** no sleep entry happened, so the residue is configuration only and no pin is held.
-- Holds do not block `gpio_get_level`, but `ext1_wakeup_prepare` also RTC-routes the pad, which does; the EXT1 reject path therefore calls `rtc_gpio_deinit` to keep the readability clause true, and on C2/C3 the pads stay digitally routed.
-- A retry that changes the EXT1 pin/level combination can fail with `ESP_ERR_NOT_ALLOWED` in the mask merge, because the disable-all branch does not clear `s_config.ext1_rtc_gpio_mask`; the adapter calls `esp_sleep_disable_ext1_wakeup_io(0)` after disable-all to close it.
+- Holds do not block `gpio_get_level`, but `ext1_wakeup_prepare` also RTC-routes the pad, which does.
+- The EXT1 reject path therefore calls `rtc_gpio_deinit` to keep the readability clause true; on C2/C3 the pads stay digitally routed.
+- A retry that changes the EXT1 pin/level combination can fail with `ESP_ERR_NOT_ALLOWED` in the mask merge, because the disable-all branch does not clear `s_config.ext1_rtc_gpio_mask`.
+- The adapter calls `esp_sleep_disable_ext1_wakeup_io(0)` after disable-all to close it.
 - The hardware holds are applied before the reject decision, so the rejection does not undo them; the esp-hal adapter instead disarms before returning.
 
 Global pad hold on the ESP32 and ESP32-S3:
@@ -78,15 +101,18 @@ Multi-pin `AnyLow` on the original ESP32 is rejected on both tiers with `SleepEr
 - The `try_sleep` row therefore has no ESP32 `AnyLow` exception; single-pin `AnyLow` is unchanged and still wakes.
 
 ### 3. Portable policy lives in `stoker`; sequencing lives in the adapters
-ADR-004 partially supersedes this point: sequencing for multi-step flows such as `try_sleep` moves into `stoker` as a sans-IO machine (rung 3 of the ADR-004 ladder), and register work stays in the adapters.
+ADR-004 partially supersedes this point: sequencing for multi-step flows such as `try_sleep` moves into `stoker` as a sans-IO machine (rung 3 of the ADR-004 ladder).
+Register work stays in the adapters.
 Portable policy and validation live in `stoker`, where they are host-testable.
-Hardware sequencing and register-dependent work remain in the tier adapters: draining UARTs, arming pins, guarding deadlines, entering critical sections, and cleaning up after rejection belong beside the hardware they drive.
+Hardware sequencing and register-dependent work remain in the tier adapters.
+Draining UARTs, arming pins, guarding deadlines, entering critical sections, and cleaning up after rejection belong beside the hardware they drive.
 Pure decisions that benefit from host tests are extracted into `stoker` when useful, without forcing hardware workarounds into the core.
 Existing instances: the `GatedSleep` coordinator (policy, in `stoker`), and the esp-hal sleep adapter's UART drain, deadline arming, and rejection cleanup (sequencing, in the adapter).
 
 ### 4. API conformance is checked at compile time; behavioural parity is tested separately
 Each tier compiles checked-in conformance modules that call the `stoker` traits generically, so a trait change that breaks one tier breaks its build the same way.
-- The conformance call must be instantiated with the tier's concrete adapter types inside that tier's build, including `BoundSleep` and its lifetimes, because a generic `fn check<S: SleepManager>(..)` alone compiles without proving the real adapter implements the trait.
+- The conformance call must be instantiated with the tier's concrete adapter types inside that tier's build, including `BoundSleep` and its lifetimes.
+- Reason: a generic `fn check<S: SleepManager>(..)` alone compiles without proving the real adapter implements the trait.
 - Coverage is per capability: a tier is checked for the capabilities it implements, not for every `stoker` trait.
 - The modules are `src/conformance.rs` in each tier crate, compiled per supported tier and chip by the chip recipes; a shared conformance crate stays unnecessary.
 - Compilation cannot verify rejection handling, wake-pin cleanup, timer accuracy, or wake-cause preservation.
@@ -98,7 +124,8 @@ A library crate in this stack never enables a process-global provider by default
 - The firmware selects the provider and must link exactly one implementation; examples do this themselves, because examples are firmware.
 - The critical-section provider is the documented instance here and in `rustyfarian-network` ADR-021; executor, console, and panic providers follow the same rule if they gain an opt-in feature.
 - A missing or duplicate provider is a link-time fact, only `cargo check`-clean, so validation includes representative firmware example link builds per tier and chip.
-- CI links the C3 sleep and retention examples and the S3 retention example; the remaining tier/chip combinations and composition builds that mirror the sibling-provider failure class are still to add.
+- CI links the C3 sleep and retention examples and the S3 retention example.
+- Still to add: the remaining tier/chip combinations and composition builds that mirror the sibling-provider failure class.
 
 ### 6. Shared example logic and async support are conditional, not goals
 Twin examples share application logic where it removes meaningful duplication, and keep per-tier shells for clear hardware setup.

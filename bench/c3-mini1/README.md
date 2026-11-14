@@ -1,4 +1,4 @@
-# Bench — ESP32-C3-MINI-1 / DevKitM-1
+# Bench — ESP32-C3-DevKitM-1 (ESP32-C3-MINI-1)
 
 Console on UART0 through the USB bridge (CH340 or CP2102N), so the port stays up through deep sleep.
 
@@ -7,11 +7,13 @@ Console on UART0 through the USB bridge (CH340 or CP2102N), so the port stays up
 | `retention` | `{hal,idf}_c3_rtc_retention`    | none                                     | two `RET reset=DeepSleep wake=Timer load=ok` lines, no `load=err`               |
 | `pir-wake`  | `{hal,idf}_c3_deep_sleep_gpio`  | HC-SR501 OUT on GPIO4, 10 kΩ to GND; 5V  | quiet: timer wake, no `Gpio`; wave: `Gpio` wake, held pin `Rejected`, no loop   |
 
-`pir-wake` splits by mode: `--unattended` proves the 60 s timer wake with nobody in view, `--attended` proves the PIR wake, the rejection while the PIR output is still HIGH, and 20 s without a GPIO wake loop afterwards.
-Each step waits for Enter before it starts timing; read the instruction, press Enter, then act.
+`pir-wake` splits by mode.
+`--unattended` proves the 60 s timer wake with nobody in view.
+`--attended` proves the PIR wake, the rejection while the PIR output is still HIGH, and 20 s without a GPIO wake loop afterwards.
+No step waits for Enter: each starts timing at once, so read the instruction and act.
 
 ```shell
-just bench c3
+just bench c3-mini1
 ```
 
 ## If it hangs

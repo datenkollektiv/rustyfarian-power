@@ -138,7 +138,7 @@ const AWAKE_MS: u32 = 6_000;
 /// before a sleep attempt can cut it off.
 const DRAIN_MS: u32 = 1_000;
 
-/// Bench variant (`just bench-build NAME+VARIANT`, `bench/s3/`): `r2` is the R2 flow, `r3` keeps
+/// Bench variant (`just bench-build NAME--VARIANT`, `bench/s3/`): `r2` is the R2 flow, `r3` keeps
 /// the global pad hold on (the guard path), `r4` adds the non-wake pad probes, `r4-guard` is R4
 /// with the hold kept on. Each uses the 5 s wake timer; the `S3_*` variables below still work.
 const VARIANT: Option<usize> = variant_index(

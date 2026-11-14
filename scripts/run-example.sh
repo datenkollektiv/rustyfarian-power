@@ -2,7 +2,7 @@
 set -euo pipefail
 # run-example.sh — build and flash an idf_{chip}_{name} example
 # Usage: scripts/run-example.sh <example> [idf_dir]
-#   example: idf_{chip}_{name}  e.g. idf_esp32_battery, idf_esp32s3_battery, idf_c3_deep_sleep_gpio, idf_c6_deep_sleep_gpio, idf_s3_deep_sleep_gpio
+#   example: idf_{chip}_{name}  e.g. idf_esp32_battery, idf_s3_battery, idf_c3_deep_sleep_gpio, idf_c6_deep_sleep_gpio, idf_s3_deep_sleep_gpio
 #   idf_dir: target directory for ESP-IDF builds (default: target/idf)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

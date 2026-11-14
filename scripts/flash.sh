@@ -2,7 +2,7 @@
 set -euo pipefail
 # flash.sh — route an idf_{chip}_{name} example to run-example.sh
 # Usage: scripts/flash.sh <example> [idf_dir]
-#   example: idf_{chip}_{name}  e.g. idf_esp32_battery, idf_esp32s3_battery
+#   example: idf_{chip}_{name}  e.g. idf_esp32_battery, idf_s3_battery
 #   idf_dir: target directory for ESP-IDF builds (default: target/idf)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

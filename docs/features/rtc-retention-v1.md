@@ -5,7 +5,7 @@ desk-work: available
 
 # Feature: RTC Retention Record v1
 
-A validity-checked, `no_std`, allocation-free retention envelope in `stoker` with placement in both tiers, so a few words survive deep sleep and ordinary resets without each firmware writing its own magic-and-checksum record.
+A validity-checked, `no_std`, allocation-free retention envelope in `stoker`, placed in both tiers, so a few words survive deep sleep and ordinary resets without per-firmware magic-and-checksum records.
 Requested by rustbox-spookhouse; the envelope format is documented in `stoker::retain`, the cell and provider rules in `docs/project-lore.md` (stoker — RTC retention cell).
 
 ## Decisions

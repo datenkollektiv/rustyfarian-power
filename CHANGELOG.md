@@ -10,15 +10,21 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 ## [Unreleased]
 
 ### Migration
-- **Breaking:** `rustyfarian-esp-idf-power` requires ESP-IDF v6.0 or newer (the workspace builds v6.1); a firmware on ESP-IDF v5.x stays on 0.3.x, and an older build now stops with a `compile_error!` naming the requirement.
+- **Breaking:** `rustyfarian-esp-idf-power` requires ESP-IDF v6.0 or newer (workspace builds v6.1); ESP-IDF v5.x firmware stays on 0.3.x, and an older build stops with a `compile_error!` naming the requirement.
 
 ### Changed
-- The workspace builds its ESP-IDF examples against ESP-IDF v6.1 (was v5.3.3); the C2/C3 GPIO wake path uses the v6 calls `esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown` and `gpio_wakeup_disable_on_hp_periph_powerdown_sleep`.
-- ESP32-C2/C3: every sleep call clears the SDK's GPIO wake mask and trigger modes, so a pin armed earlier in the same boot is no longer held and pulled during later GPIO-wake sleeps, and a pin switched from `AnyHigh` to `AnyLow` no longer keeps its pull-down.
+- ESP-IDF examples build against v6.1 (was v5.3.3); the C2/C3 GPIO wake path uses the v6 calls `esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown` and `gpio_wakeup_disable_on_hp_periph_powerdown_sleep`.
+- ESP32-C2/C3: every sleep call clears the SDK's GPIO wake mask and trigger modes, so a pin armed earlier in the same boot is no longer held and pulled in later GPIO-wake sleeps, and an `AnyHigh`-to-`AnyLow` pin drops its pull-down.
 - `.cargo/config.toml` is tracked instead of `.cargo/config.toml.dist`, and `just setup-cargo-config` is gone; Cargo never reads it for downstream users.
 - The ESP-IDF and hal CI jobs run on `ubuntu-latest` again, because ESP-IDF v6.1's `esp-clang` installs on Ubuntu 26.04.
-- CI uses the shared `rustyfarian-ci@v1` workflow and setup actions: the host checks run through `host-checks.yml` (`just ci-fmt`, `ci-clippy`, `ci-test`, `ci-deny`, `ci-audit`), the chip jobs pin the esp toolchain to 1.97.0.0 and cache it and `~/.espressif`, and every job has a timeout; `just act` runs the jobs locally.
+- CI uses the shared `rustyfarian-ci@v1` workflow and setup actions: host checks run via `host-checks.yml` (`just ci-fmt`, `ci-clippy`, `ci-test`, `ci-deny`, `ci-audit`), chip jobs pin the esp toolchain to 1.97.0.0 and cache it and `~/.espressif`, every job has a timeout, `just act` runs jobs locally.
 - Dependabot bumps GitHub Actions and Cargo dependencies instead of the `rust-toolchain` channel.
+- `just verify` is offline and host-only: it depends on `fmt-check` and no longer runs `cargo deny`; `pre-commit` is `fmt verify` and `ci` is `verify deny`.
+- `just check-docs-esp32` is gone; it duplicated `check-esp32`.
+- `scripts/ramdisk.sh` matches the rustyfarian-ci copy (adds `prune`), and RAM-disk detection uses `scripts/ramdisk-mounted.sh`.
+- Bench board keys follow the family catalogue: `c3` → `c3-mini1`, `heltec` → `s3-heltec`, `esp32` → `esp32-feather`, and their `bench/` directories move with them.
+- Bench variants are named `NAME--VARIANT` instead of `NAME+VARIANT`, and the example `idf_esp32s3_battery` is now `idf_s3_battery`.
+- Bench steps no longer wait for Enter (`arm = false`), and every `reject` also catches `abort()`, `WDT` and reboots inside watch windows.
 
 ### Fixed
 - `WakeCause::Gpio` maps ESP-IDF v6's RTC-IO-indexed wake status to GPIO numbers with `esp_sleep_wakeup_io_bit2num`.

@@ -2,7 +2,7 @@
 # Unattended: with A1 unconnected the pull-up must hold, so only the timer wakes the board.
 # Attended: a jumper wire from A1 to GND wakes it (EXT1 bit 25), held it is rejected, released the timer wakes it.
 # Covers single-pin `AnyLow` and the low polarity of "wake mask matches the physical pin" on the ESP32.
-examples = ["hal_esp32_deep_sleep_gpio+anylow", "idf_esp32_deep_sleep_gpio+anylow"]
+examples = ["hal_esp32_deep_sleep_gpio--anylow", "idf_esp32_deep_sleep_gpio--anylow"]
 
 [[step]]
 say = "Wait for the first sleep (A1 unconnected)"
@@ -14,8 +14,9 @@ arm = false       # must read the backlog from the reset
 [[step]]
 say = "Hands off (A1 unconnected): the pull-up holds, so the board wakes on the 60 s timer only"
 expect = ['Wake cause: Timer', 'GPIO25 level before sleep: High']
-reject = 'Wake cause: Ext1|try_sleep failed|PANIC|panicked|Guru Meditation'
+reject = 'Wake cause: Ext1|try_sleep failed|PANIC|panicked|Guru Meditation|abort\(\)|WDT'
 timeout = 75
+arm = false
 
 [[step]]
 say = "Hands off: wait until the board is asleep (A1 unconnected)"
@@ -28,7 +29,7 @@ attended = true   # part of the wire flow: absorbs the boot output, so the next 
 [[step]]
 say = "Now: touch A1 (GPIO25) to GND for about a second, then remove the wire"
 expect = ['Wake cause: Ext1 .*fired pins: 0x2000000, GPIO25 fired: true', 'Sleeping: GPIO25 AnyLow']
-reject = 'try_sleep failed|PANIC|panicked|Guru Meditation'
+reject = 'try_sleep failed|PANIC|panicked|Guru Meditation|abort\(\)|WDT'
 timeout = 60
 attended = true
 arm = false
@@ -36,7 +37,7 @@ arm = false
 [[step]]
 say = "Now: connect A1 to GND and leave it there: the wake pin is held, so every attempt must be rejected"
 expect = ['Wake cause: Ext1 .*GPIO25 fired: true', 'GPIO25 level before sleep: Low', 'try_sleep rejected \(first\).*kind=Rejected', 'try_sleep rejected: 20 so far']
-reject = 'try_sleep failed|PANIC|panicked|Guru Meditation'
+reject = 'try_sleep failed|PANIC|panicked|Guru Meditation|abort\(\)|WDT'
 timeout = 60
 attended = true
 arm = false
@@ -44,7 +45,7 @@ arm = false
 [[step]]
 say = "Now: remove the wire: the board must sleep and wake on the 60 s timer, with no EXT1 wake"
 expect = ['Wake cause: Timer', 'GPIO25 level before sleep: High']
-reject = 'Wake cause: Ext1|try_sleep failed|PANIC|panicked|Guru Meditation'
+reject = 'Wake cause: Ext1|try_sleep failed|PANIC|panicked|Guru Meditation|abort\(\)|WDT'
 timeout = 80
 attended = true   # follows the held wire above
 arm = false

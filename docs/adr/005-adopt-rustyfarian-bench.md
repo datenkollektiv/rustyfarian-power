@@ -16,16 +16,20 @@ Follows `rustyfarian-peripherals`, `rustyfarian-ws2812` and `rustyfarian-knob` (
 1. On-device checks of the default example builds are written as `rustyfarian-bench` scenarios under `bench/<board>/`, one per facet, each running the hal example first and then its idf twin.
 2. `bench/bench.toml` calls two new recipes, `just bench-build NAME` and `just bench-flash NAME PORT`.
    They dispatch on the name prefix to the existing `build-example` / `flash` and `build-example-hal-<chip>` / `flash-hal-<chip>` recipes; the port reaches espflash through `ESPFLASH_PORT`.
-3. `just bench`, `just bench-list` and `just bench-detect` match the sibling repos and run a pinned release through `uvx --from git+https://github.com/datenkollektiv/rustyfarian-bench@v0.3.0`; bumping the tag is how this repo opts into a new runner.
+3. `just bench`, `just bench-list` and `just bench-detect` match the sibling repos and run a pinned release through `uvx --from git+https://github.com/datenkollektiv/rustyfarian-bench@v0.3.0`.
+   Bumping the tag is how this repo opts into a new runner.
    `RUSTYFARIAN_BENCH=<path>` switches to a local checkout for bench development.
 4. Run logs and `results.jsonl` stay git-ignored, because results record board MACs and this repository is public; `bench.toml` pins no MAC.
 5. The first pass covers boards whose console survives deep sleep (UART bridge): C3 retention and PIR wake, Heltec V3 retention, rail gate and battery, Feather V2 battery.
 6. `just bench-c3` and the `serial-capture` R-cases stay; they need build-time switches or a stimulus board that the runner cannot drive.
-7. Build-time cases run as bench variants: a scenario names `NAME+VARIANT`, `bench-build` and `bench-flash` export `BENCH_VARIANT=VARIANT` for both steps (so the flash step's rebuild uses the same variant), and the example maps the value to its configuration, failing the build on an unknown one.
+7. Build-time cases run as bench variants: a scenario names `NAME--VARIANT`.
+   `bench-build` and `bench-flash` export `BENCH_VARIANT=VARIANT` for both steps (so the flash step's rebuild uses the same variant).
+   The example maps the value to its configuration, failing the build on an unknown one.
    This lets switch-dependent cases run through the runner.
 
 ## Consequences
-- Hardware validation of the default builds becomes rerunnable and comparable across tiers, with an automatic verdict where serial output proves it and an explicit operator answer where it cannot (battery voltage against a meter).
+- Hardware validation of the default builds becomes rerunnable and comparable across tiers.
+- The verdict is automatic where serial output proves it, and an explicit operator answer where it cannot (battery voltage against a meter).
 - Bench runs depend on `uv` and network access to GitHub on first use (then the uv cache); builds, `just verify` and CI are unaffected.
 - Build-time switches (`C3_SLEEP_TIMER_MS`, `C3_RET_ACTION`, `S3_R2`, …) reach the runner only through decision 7; until an example maps a switch to a variant, its cases keep their existing tools.
 - Scenario regexes couple to example log lines; changing an example's log text means updating its scenario.

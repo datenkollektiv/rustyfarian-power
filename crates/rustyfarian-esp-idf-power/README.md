@@ -35,7 +35,7 @@ rustyfarian-esp-idf-power = { git = "https://github.com/datenkollektiv/rustyfari
 
 | Board                     | Chip     | Example                  |
 |:--------------------------|:---------|:-------------------------|
-| Heltec WiFi LoRa 32 V3.1  | ESP32-S3 | `idf_esp32s3_battery`    |
+| Heltec WiFi LoRa 32 V3.1  | ESP32-S3 | `idf_s3_battery`    |
 | Adafruit ESP32 Feather V2 | ESP32    | `idf_esp32_battery`      |
 | ESP32-C3-DevKitM-1        | ESP32-C3 | `idf_c3_deep_sleep_gpio` |
 | ESP32-C3-DevKitM-1        | ESP32-C3 | `idf_c3_rtc_retention`   |

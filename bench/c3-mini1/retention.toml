@@ -12,5 +12,6 @@ arm = false       # must read the backlog from the reset
 [[step]]
 say = "Hands off: watch two 5 s timer wakes keep the record"
 expect = ['RET reset=DeepSleep wake=Timer load=ok', 'RET reset=DeepSleep wake=Timer load=ok']
-reject = 'load=err|store failed|sleep failed|PANIC|panicked|Guru Meditation'
+reject = 'load=err|store failed|sleep failed|PANIC|panicked|Guru Meditation|abort\(\)|WDT'
 timeout = 30
+arm = false

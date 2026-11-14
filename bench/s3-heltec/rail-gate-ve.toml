@@ -5,14 +5,14 @@
 # A missed window cannot be retried in place (the retry only re-asks): answer no, decline the
 # retry, and run the scenario again; the first step restarts the board at the awake phase.
 # Meter: `Ve` header pin to GND. No other wiring.
-examples = ["hal_s3_power_rail_gate+meter", "idf_s3_power_rail_gate+meter"]
+examples = ["hal_s3_power_rail_gate--meter", "idf_s3_power_rail_gate--meter"]
 
 # Armed: the awake window only starts when the operator is ready, and the reset puts the
 # board at the start of its 90 s awake phase whatever state it is in.
 [[step]]
 say = "the board restarts and comes up awake with the Ve rail on. Please have the meter on Ve and GND before you press"
 expect = 'BENCH case=rail tier=\w+ (event=boot reset=\w+ powered=true|phase=on cycle=0 powered=true)'
-reject = 'failed|PANIC|panicked|Guru Meditation'
+reject = 'failed|PANIC|panicked|Guru Meditation|abort\(\)|WDT'
 timeout = 30
 attended = true
 reset = true
@@ -21,7 +21,7 @@ reset = true
 say = "The board is awake and the Ve rail is on. Please measure Ve to GND now; about 3.3 V is expected (Enter ends the wait early)"
 duration = 60
 # The rail must stay on for the whole window.
-reject = 'event=sleep|phase=off|phase=sleep|PANIC|panicked|Guru Meditation'
+reject = 'event=sleep|phase=off|phase=sleep|PANIC|panicked|Guru Meditation|abort\(\)|WDT|ESP-ROM:|rst:0x'
 attended = true
 arm = false
 
@@ -32,7 +32,7 @@ confirm = "Did Ve read about 3.3 V while the board was awake?"
 [[step]]
 say = "Waiting for the board to switch the rail off and go to sleep"
 expect = 'BENCH case=rail tier=\w+ (event=sleep powered=false|phase=sleep)'
-reject = 'PANIC|panicked|Guru Meditation'
+reject = 'PANIC|panicked|Guru Meditation|abort\(\)|WDT'
 timeout = 120
 attended = true
 arm = false
@@ -41,7 +41,7 @@ arm = false
 say = "The board is asleep and the Ve rail is off. Please measure Ve to GND now; about 0 V is expected (Enter ends the wait early)"
 duration = 60
 # A wake during the window means the sleep was shorter than promised.
-reject = 'event=boot|phase=boot|PANIC|panicked|Guru Meditation'
+reject = 'event=boot|phase=boot|PANIC|panicked|Guru Meditation|abort\(\)|WDT|ESP-ROM:|rst:0x'
 attended = true
 arm = false
 
