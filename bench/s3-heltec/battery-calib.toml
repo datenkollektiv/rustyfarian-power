@@ -10,19 +10,19 @@
 # agrees with `comp`; both tiers are asked against the same meter, which also bounds
 # their agreement with each other (the logs keep every `Calib:` line for a closer look).
 # Meter the pack's polarity BEFORE connecting it (docs/project-lore.md -> Hardware).
-examples = ["hal_s3_battery+calib", "idf_esp32s3_battery+calib"]
+examples = ["hal_s3_battery--calib", "idf_s3_battery--calib"]
 
 [[step]]
 say = "Waiting for three Calib: lines (pack connected)"
 expect = ['Calib: comp=\d+ raw=[1-9]\d*', 'Calib: comp=\d+ raw=[1-9]\d*', 'Calib: comp=(?P<comp>\d+) raw=(?P<raw>[1-9]\d*)']
-reject = 'ADC read failed|PANIC|panicked|Guru Meditation|raw=0\b'
+reject = 'ADC read failed|PANIC|panicked|Guru Meditation|raw=0\b|abort\(\)|WDT'
 timeout = 15
 arm = false
 
 [[step]]
 say = "When convenient, please read the meter at the pack terminals; the Calib: lines keep scrolling meanwhile (Enter ends the wait early)"
 duration = 60
-reject = 'ADC read failed|PANIC|panicked|Guru Meditation|raw=0\b'
+reject = 'ADC read failed|PANIC|panicked|Guru Meditation|raw=0\b|abort\(\)|WDT|ESP-ROM:|rst:0x'
 attended = true
 arm = false
 

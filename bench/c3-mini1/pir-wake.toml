@@ -11,21 +11,24 @@ optional = true   # can be printed before the port reopens after reset
 arm = false       # must read the backlog from the reset
 
 [[step]]
-say = "Stay out of the PIR's view (or cover it): the board wakes on the 60 s timer only"
+say = "Hands off, nobody in the PIR's view: the board wakes on the 60 s timer only"
 expect = ['Wake cause: Timer', 'Sleeping: GPIO4 AnyHigh']
-reject = 'Wake cause: Gpio|try_sleep failed|sleep failed|PANIC|panicked|Guru Meditation'
+reject = 'Wake cause: Gpio|try_sleep failed|sleep failed|PANIC|panicked|Guru Meditation|abort\(\)|WDT'
 timeout = 75
+arm = false
 
 [[step]]
-say = "Keep still until the PIR output is LOW, then wave a hand in front of the PIR"
+say = "Now: keep still until the PIR output is LOW, then wave a hand in front of the PIR"
 # The PIR holds its output HIGH past the boot, so the first attempt must be rejected (wake-pin-held-at-entry).
 expect = ['Wake cause: Gpio', 'Sleeping: GPIO4 AnyHigh', 'try_sleep rejected \(first\).*kind=Rejected']
-reject = 'try_sleep failed|sleep failed|PANIC|panicked|Guru Meditation'
+reject = 'try_sleep failed|sleep failed|PANIC|panicked|Guru Meditation|abort\(\)|WDT'
 timeout = 90
 attended = true
+arm = false
 
 [[step]]
 say = "Keep still: the board must sleep through the PIR hold time without a GPIO wake loop"
 duration = 20
-reject = 'Wake cause: Gpio|try_sleep failed|PANIC|panicked|Guru Meditation'
+reject = 'Wake cause: Gpio|try_sleep failed|PANIC|panicked|Guru Meditation|abort\(\)|WDT|ESP-ROM:|rst:0x'
 attended = true   # follows the wave above
+arm = false

@@ -4,7 +4,8 @@
 Proposed (2026-10-12).
 Decided for the C3 and ESP32-S3; the ESP32 and C6 joined the same contract under [ADR-003](003-tier-parity-contract.md) and [ADR-004](004-shared-logic-ladder.md).
 Pinned to esp-hal `=1.2.2` (unstable sleep API) and ESP-IDF v6.1; re-verify every esp-hal claim before the next esp-hal wave.
-The acceptance benches still open (short-timer sweep for the provisional timer constants, held-level custom handler, rejection retry loop, foreign wake pin, wake cause after a rejection) are tracked in `docs/features/esp-hal-sleep-tier-v1.md`.
+Acceptance benches still open: short-timer sweep for the provisional timer constants, held-level custom handler, rejection retry loop, foreign wake pin, wake cause after a rejection.
+They are tracked in `docs/features/esp-hal-sleep-tier-v1.md`.
 
 ## Context
 `stoker` defines `SleepManager`, `WakeSource`, `WakeCause` and `WakeCauseSource` for the ESP-IDF tier.
@@ -40,7 +41,7 @@ pub trait SleepManager {
   On device it returns only with a configuration error.
 - `try_sleep` maps to `esp_deep_sleep_try_to_start()` and esp-hal `sleep_deep_with_rejection`.
   On device `Ok(())` is unreachable; the method returns `Err` whose `kind()` is `Rejected` when a wake source was already asserted.
-- `Rejected` may come from a software pre-read instead of the hardware: on C2/C3 always (IDF tier), and on ESP32/S3 while the global digital-pad hold is effective, because a hardware rejection then hangs (ADR-003 point 1).
+- `Rejected` may come from a software pre-read: on C2/C3 always (IDF tier), and on ESP32/S3 while the global digital-pad hold is effective, because a hardware rejection then hangs (ADR-003 point 1).
 - `WakeSource` stays HAL-neutral and `Copy`: `Timer { duration_ms }` and `GpioLevel { pin_mask, level }`, one level per source.
   The IDF tier passes `pin_mask` to `esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown` (C2/C3) or EXT1 (ESP32/S3/C6).
   The hal tier matches every set bit against the pins bound for the attempt (decision 2), arms exactly those pins, and reports a bit without a bound pin as `SleepError::PinNotBound { pin }`.
@@ -49,7 +50,8 @@ pub trait SleepManager {
   On the C3 `Gpio` builds the mask from `caused_wakeup()` on the pins handed in.
   On the S3 `Ext1` builds `Ext1(mask)` the same way (`Ext0` maps to `WakeCause::Ext0`), so both tiers report the same variant per chip.
 - Firmware must capture the cause before the first `try_sleep`: a rejected sleep ends with `record_wakeup()` after sleep entry cleared the per-pin wake status, so the boot record is overwritten.
-- `NoopSleepManager` validates and returns `Ok(())` from both methods for host tests, and `NoopSleepManager::rejecting()` returns `SleepError::Rejected` from `try_sleep`, so a consumer's retry path is host-testable.
+- `NoopSleepManager` validates and returns `Ok(())` from both methods for host tests.
+- `NoopSleepManager::rejecting()` returns `SleepError::Rejected` from `try_sleep`, so a consumer's retry path is host-testable.
 
 ### 2. Pin ownership: borrow `&mut Input` per attempt
 
@@ -68,7 +70,9 @@ impl SleepManager for BoundSleep<'_, '_, '_, '_> { /* ... */ }
 
 - The pin lifetime `'i` is a separate parameter: `&mut Input<'d>` is invariant in `'d`, so tying the pin to the manager lifetime fails to compile at the consumer loop.
 - The borrow ends when `BoundSleep` is dropped, so `pir.is_high()` works again right after a rejected `try_sleep`.
-- Both consumer forms type-check: the one-statement temporary `manager.bind_wake_pins(&mut [&mut pir]).try_sleep(&sources)` and a block-scoped `let mut pins = [&mut pir]; let mut bound = manager.bind_wake_pins(&mut pins);`.
+- Both consumer forms type-check:
+  - the one-statement temporary `manager.bind_wake_pins(&mut [&mut pir]).try_sleep(&sources)`
+  - a block-scoped `let mut pins = [&mut pir]; let mut bound = manager.bind_wake_pins(&mut pins);`
 - The slice form is kept over `[&'p mut Input<'i>; N]` by value, because a slice lets firmware vary the pin count.
 
 ### 3. Error contract
@@ -92,18 +96,27 @@ pub enum SleepErrorKind {
 - The trait lives in `stoker::sleep` and bounds `SleepManager::Error`.
   It mirrors embedded-hal 1.0 (`Debug` + `kind()`) and does not require `core::error::Error`, which would add nothing for generic consumers and would rule out `defmt`-only error types.
   `stoker::SleepError` keeps its `core::error::Error` impl, so `?` into `anyhow` still works for IDF firmware.
-- Kinds: `InvalidConfig` is a request this chip and tier cannot honour as written; `Unsupported` is a source kind the tier does not implement; `Rejected` is the hardware refusing because a wake source was already asserted; `Platform` is a HAL or SDK failure after validation; `Other` is the catch-all.
-- `SleepError` gains variants (additive, `#[non_exhaustive]`): `NoWakeSource`, `Rejected`, `TimerTooShort { duration_ms, min_ms }`, `TimerTooLong { duration_ms, max_ms }`, `PinNotBound { pin }`, `ForeignWakePin { pin }`, `UartBusy { uart }`, `IsolationConflict`.
-  `kind()` maps `Rejected` to `Rejected`, `UartBusy` to `Platform`, and every other variant, including the four existing ones, to `InvalidConfig`.
+- Kinds:
+  - `InvalidConfig` is a request this chip and tier cannot honour as written.
+  - `Unsupported` is a source kind the tier does not implement.
+  - `Rejected` is the hardware refusing because a wake source was already asserted.
+  - `Platform` is a HAL or SDK failure after validation.
+  - `Other` is the catch-all.
+- `SleepError` gains variants (additive, `#[non_exhaustive]`):
+  - `NoWakeSource`, `Rejected`, `PinNotBound { pin }`, `ForeignWakePin { pin }`, `UartBusy { uart }`, `IsolationConflict`
+  - `TimerTooShort { duration_ms, min_ms }`, `TimerTooLong { duration_ms, max_ms }`
+- `kind()` maps `Rejected` to `Rejected`, `UartBusy` to `Platform`, and every other variant, including the four existing ones, to `InvalidConfig`.
 - Hal tier: `type Error = SleepError`, no second error type.
-  esp-hal's only fallible call, `apply_wakeup_config`, fails with `WakeConfigError::NoLowPowerPath` for a pad outside GPIO0-5; the mask check makes that unreachable, and the manager maps it to `GpioMaskOutOfRange { pin_mask: 1 << pin, valid_mask }` if it ever happens.
+  esp-hal's only fallible call, `apply_wakeup_config`, fails with `WakeConfigError::NoLowPowerPath` for a pad outside GPIO0-5.
+  The mask check makes that unreachable, and the manager maps it to `GpioMaskOutOfRange { pin_mask: 1 << pin, valid_mask }` if it ever happens.
   The manager converts the return of `sleep_deep_with_rejection` to `SleepError::Rejected`.
 - IDF tier: `EspSleepManager` drops `anyhow::Error` for a local `EspSleepError { Config(SleepError), Idf { code: esp_err_t, kind: SleepErrorKind } }` with `Display`, `core::error::Error` and `kind()`.
   `ESP_ERR_SLEEP_REJECT` is an alias of `ESP_ERR_INVALID_STATE` (`0x103`), so the mapping to `Rejected` is by call site, the return of `esp_deep_sleep_try_to_start()`, never by code.
   `ESP_ERR_INVALID_ARG` from the enable calls is `Platform` (pre-validation makes it unreachable).
   The `isolate_gpio` versus `GpioLevel` conflict, once an `anyhow::bail!`, becomes `Config(SleepError::IsolationConflict)`, kind `InvalidConfig`.
 - Consumer code bounded on `S::Error: Debug` keeps compiling.
-  A third-party implementor with `type Error = anyhow::Error` must switch to a newtype, because the orphan rule forbids `impl stoker::sleep::Error for anyhow::Error`; the CHANGELOG migration section says so.
+  A third-party implementor with `type Error = anyhow::Error` must switch to a newtype, because the orphan rule forbids `impl stoker::sleep::Error for anyhow::Error`.
+  The CHANGELOG migration section says so.
 
 ### 4. Validation, interrupt control and timing on the esp-hal tier
 
@@ -132,29 +145,35 @@ Shared checks live in `stoker` and run on both tiers; the hal-only checks need t
 #### 4b. Interrupt delivery: arm, sleep and clean up with interrupts masked
 
 `Input::listen` enables the pin's CPU interrupt at once, so with the wake pin already at its wake level a handler runs before sleep entry, and again after a rejection until cleanup.
-A custom handler (or an async `wait_for_*` on the pin) that calls `unlisten()` removes the pin from the wake set; sleep entry then drops the GPIO source, and with no timer armed `sleep_deep` panics, or with a timer the chip sleeps timer-only.
+A custom handler (or an async `wait_for_*` on the pin) that calls `unlisten()` removes the pin from the wake set.
+Sleep entry then drops the GPIO source: with no timer armed `sleep_deep` panics, with a timer the chip sleeps timer-only.
 The default handler only clears `int_ena` and keeps the pin a wake source.
 
 Decision: the manager runs arming, the sleep call and the post-rejection cleanup inside one `critical_section::with`.
 - On the C3, esp-hal's implementation clears `mstatus.MIE`, so no GPIO handler runs between `listen` and the sleep, and none runs before the pins are released after a rejection.
-- The release is `unlisten`, `clear_interrupt` and `apply_wakeup_config(&WakeupConfig::default())` for every bound pin, then `clear_wakeup_deadline`; the section ends only after that, so the held level cannot fire on exit.
+- The release is `unlisten`, `clear_interrupt` and `apply_wakeup_config(&WakeupConfig::default())` for every bound pin, then `clear_wakeup_deadline`.
+- The section ends only after that, so the held level cannot fire on exit.
 - `sleep_deep_with_rejection` reports the outcome by polling raw interrupt bits, so it needs no CPU interrupt.
 - The hal crate depends on `critical-section = "1.2"`; esp-hal's default `rt` feature provides the implementation.
 
-Contract for firmware, stated in the driver docs: a custom GPIO handler must not `unlisten` a pin that is bound for sleep, and the manager owns the pin's interrupt configuration for the duration of the borrow.
+Contract for firmware, stated in the driver docs: a custom GPIO handler must not `unlisten` a pin that is bound for sleep.
+The manager owns the pin's interrupt configuration for the duration of the borrow.
 After `try_sleep` returns the pin is unlistened; firmware that uses interrupts on it re-arms its own `listen`.
 
 #### 4c. Timer: drain, floor, post-arm guard
 
-esp-hal's `sleep` runs a UART drain after `sleep_deep`'s deadline assert, and the drain spins until every TX FIFO is empty (about 11 ms for a full FIFO at 115200 baud, about 133 ms at 9600 baud, far longer than a 1 ms timer).
+esp-hal's `sleep` runs a UART drain after `sleep_deep`'s deadline assert.
+The drain spins until every TX FIFO is empty (about 11 ms for a full FIFO at 115200 baud, about 133 ms at 9600 baud, far longer than a 1 ms timer).
 Masking interrupts does not shorten a hardware wait, so the manager orders the steps inside the critical section of 4b:
 1. **Drain first.** The manager waits until UART0 and UART1 report an empty TX FIFO and an idle transmitter, the condition esp-hal spins on.
    With interrupts masked nothing refills a FIFO, so esp-hal's own drain at sleep entry then finds nothing to wait for.
-   The wait is bounded by `UART_DRAIN_TIMEOUT_US` (200 ms, a full FIFO at 9600 baud plus margin); a transmitter still busy then, for example held off by CTS, returns `UartBusy` (kind `Platform`).
+   The wait is bounded by `UART_DRAIN_TIMEOUT_US` (200 ms, a full FIFO at 9600 baud plus margin).
+   A transmitter still busy then, for example held off by CTS, returns `UartBusy` (kind `Platform`).
    DMA-driven UART transmission (UHCI) must be stopped by the firmware before a sleep; the manager does not see it.
 2. **Request floor.** `MIN_TIMER_MS` (provisionally 1 ms) rejects requests that cannot work on any chip, before anything is touched (4a).
 3. **Pins, then the deadline, last.** The deadline is computed from `Instant::now()` after the drain, so the requested duration counts from arming, not from the call.
-4. **Post-arm guard.** After `set_wakeup_deadline` and before the sleep call, the manager re-reads `Instant::now()`; if less than `POST_ARM_MARGIN_US` (provisionally 200 µs) remains, it releases everything and returns `TimerTooShort`.
+4. **Post-arm guard.** After `set_wakeup_deadline` and before the sleep call, the manager re-reads `Instant::now()`.
+   If less than `POST_ARM_MARGIN_US` (provisionally 200 µs) remains, it releases everything and returns `TimerTooShort`.
    esp-hal's own `deadline_missed` is `pub(crate)`, so the manager keeps an equivalent check.
 
 Guarantee: no panic and no endless sleep for empty sources, timers outside `[MIN_TIMER_MS, MAX_TIMER_MS]`, bad or foreign pins, by construction.
@@ -164,13 +183,16 @@ On the hal tier, `sleep` keeps `sleep_deep`, so esp-hal's assert stays as the la
 #### 4d. Exclusive low-power wake pins, re-arming, other pads, pulls
 
 During a sleep attempt the binding is the complete set of low-power wake pins.
-esp-hal collects every pad that listens and carries the low-power flag, globally, so a pad firmware configured elsewhere would wake or reject an attempt that binds only another pin, and the cleanup would leave it armed.
+esp-hal collects every pad that listens and carries the low-power flag, globally.
+A pad firmware configured elsewhere would therefore wake or reject an attempt that binds only another pin, and the cleanup would leave it armed.
 
 - Firmware must not call `apply_wakeup_config` itself; the manager is the only code that sets the low-power flag, and it clears it on every bound pin on release.
-- Inside the critical section and before any mutation, the manager reads the trigger of every C3 low-power pad (GPIO0-5) outside the binding; a set trigger returns `ForeignWakePin { pin }` (kind `InvalidConfig`).
-- esp-hal keeps the low-power flag in a private static, so the check is conservative: it also refuses an unbound pad that only listens for an ordinary interrupt, which firmware fixes by `unlisten` before the sleep or by binding it.
+- Inside the critical section and before any mutation, the manager reads the trigger of every C3 low-power pad (GPIO0-5) outside the binding.
+- A set trigger returns `ForeignWakePin { pin }` (kind `InvalidConfig`).
+- esp-hal keeps the low-power flag in a private static, so the check is conservative.
+- It also refuses an unbound pad that only listens for an ordinary interrupt; firmware fixes that by `unlisten` before the sleep or by binding it.
 - Every attempt re-applies `apply_wakeup_config` and `listen` for the mask pins only; other bound pins are released.
-- Other digital pads that esp-hal isolated at entry are the firmware's to reconfigure after a rejection; the manager documents this and does not snapshot them, because it cannot know their configuration.
+- Other digital pads that esp-hal isolated at entry are the firmware's to reconfigure after a rejection; the manager documents this and takes no snapshot, because it cannot know their configuration.
 - Wake pins need a pull against their wake level; esp-hal keeps the pin's pull and adds none, and a floating pad wakes immediately.
 
 ### 5. Consumer follow-up points

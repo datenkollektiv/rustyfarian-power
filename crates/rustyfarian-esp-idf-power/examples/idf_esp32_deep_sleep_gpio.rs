@@ -60,7 +60,7 @@
 //! ## Bench variants
 //!
 //! `BENCH_VARIANT` at build time selects the wake configuration; the bench names it as
-//! `<example>+<variant>` (`just bench-build`), and an unknown value fails the build.
+//! `<example>--<variant>` (`just bench-build`), and an unknown value fails the build.
 //!
 //! | `BENCH_VARIANT` | Wake                        | Pull | Expected                                         |
 //! |:----------------|:----------------------------|:-----|:-------------------------------------------------|
@@ -84,7 +84,7 @@ const PIR_PIN: u8 = 25;
 /// Second wake pin of the `anylow-multi` variant (Feather V2 pin A0).
 const SECOND_PIN: u8 = 26;
 
-/// Wake configuration chosen at build time by `BENCH_VARIANT` (`just bench-build NAME+VARIANT`).
+/// Wake configuration chosen at build time by `BENCH_VARIANT` (`just bench-build NAME--VARIANT`).
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Variant {
     /// Unset: GPIO25 `AnyHigh` with a pull-down (the default).

@@ -53,8 +53,11 @@ The main recipes are:
 | `just check-c3` | Check the ESP-IDF crate and its C3 example for ESP32-C3 |
 | `just check-hal` | Check the esp-hal crate for all four chips |
 | `just clippy-hal` | Clippy the esp-hal crate for all four chips |
-| `just verify` | Non-modifying gate: fmt-check, deny, check, clippy, test |
-| `just pre-commit` | Fmt, check, clippy, test (modifies files, local only) |
+| `just verify` | Non-modifying offline gate: fmt-check, check, clippy, test |
+| `just pre-commit` | Fmt, then `verify` (modifies files, local only) |
+| `just ci` | `verify` plus `cargo deny` |
+| `just ci-<job>` | One recipe per CI job (`ci-fmt`, `ci-test`, `ci-c3`, `ci-hal`, …) |
+| `just act [job]` | Run the CI jobs locally via `act` (needs Docker) |
 | `just build-example <name>` | Build an example; chip inferred from the `idf_{chip}_{name}` prefix |
 | `just run <name>` | Build, flash, and open the serial monitor |
 | `just run-hal-s3 <name>` | Build and flash an esp-hal S3 example |
@@ -68,7 +71,7 @@ Run `just` with no arguments to list all recipes. Building the ESP32 (Feather V2
 
 **Trait-first:** All hardware reads sit behind a trait; supporting a new board means implementing the trait, not editing logic. Follow the `Noop*` mock pattern for any new trait.
 
-**Board presets:** Start from `BatteryConfig::heltec_v3()` or `adafruit_feather_v2()` — each encodes a calibrated divider ratio and ADC setup. `heltec_v3`'s `divider_ratio` (5.05) is metered on hardware, not the textbook 4.9; recalibrate against a meter with the pack connected (`bench/heltec/battery-calib.toml`).
+**Board presets:** Start from `BatteryConfig::heltec_v3()` or `adafruit_feather_v2()` — each encodes a calibrated divider ratio and ADC setup. `heltec_v3`'s `divider_ratio` (5.05) is metered on hardware, not the textbook 4.9; recalibrate against a meter with the pack connected (`bench/s3-heltec/battery-calib.toml`).
 
 **Error handling:** `stoker` returns typed `core::error::Error` enums (`SleepError`); `rustyfarian-esp-idf-power` returns `EspError` / `EspSleepError` (`anyhow` only in examples); no `.unwrap()` outside tests. Log via `log::info!/warn!/error!`.
 
@@ -93,4 +96,4 @@ Run `just` with no arguments to list all recipes. Building the ESP32 (Feather V2
 - `docs/project-lore.md` — hardware quirks, build gotchas, SDK behaviour that caused failures; one bullet per fact; read before any non-trivial task
 - `docs/hardware-setup.md` — GPIO wiring tables and power budgets for Heltec V3 and Feather V2
 - `crates/rustyfarian-esp-idf-power/examples/idf_esp32_battery.rs` — complete Feather V2 example: wake-cause detection, ADC read, charging state, deep sleep
-- `release-plan.md` — staged two-crate publish sequence (`stoker` first, then the ESP-IDF crate)
+- `release-plan.md` — staged three-crate publish sequence (`stoker`, then the ESP-IDF crate, then the esp-hal crate)

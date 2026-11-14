@@ -29,7 +29,7 @@ case "$chip" in
         ;;
     esp32s3)
         idf_target="xtensa-esp32s3-espidf"
-        idf_example="idf_esp32s3_battery"
+        idf_example="idf_s3_battery"
         ;;
     c3)
         idf_target="riscv32imc-esp-espidf"

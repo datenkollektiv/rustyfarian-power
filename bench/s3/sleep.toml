@@ -16,11 +16,13 @@ arm = false       # must read the backlog from the reset
 [[step]]
 say = "Hands off the screen: the first 60 s timer wake, no touch wake"
 expect = ['S3BENCH tier=\w+ cycle=(?P<cycle>\d+) reset=DeepSleep cause=Timer mask=0x0', 'SLEPT tier=\w+ ms=(?:59\d{3}|6[0-4]\d{3}) forced=0']
-reject = 'cause=Ext1|try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST'
+reject = 'cause=Ext1|try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST|abort\(\)|WDT'
 timeout = 90
+arm = false
 
 [[step]]
 say = "Hands off: a second timer wake with a new cycle number"
 expect = ['S3BENCH tier=\w+ cycle=(?!(?P=cycle)\b)\d+ reset=DeepSleep cause=Timer mask=0x0', 'SLEPT tier=\w+ ms=(?:59\d{3}|6[0-4]\d{3}) forced=0']
-reject = 'cause=Ext1|try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST'
+reject = 'cause=Ext1|try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST|abort\(\)|WDT'
 timeout = 90
+arm = false

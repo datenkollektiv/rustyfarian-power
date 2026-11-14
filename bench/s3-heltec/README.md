@@ -9,17 +9,16 @@ Console on UART0 through the CP2102 bridge, so the port stays up through deep sl
 |:----------------|:---------------------------------------|:--------------------------------------|:---------------------------------------------------------------------------|
 | `retention`     | `idf_s3_rtc_retention`                 | none                                  | two `RET reset=DeepSleep wake=Timer load=ok` lines, no `load=err`          |
 | `rail-gate`     | `{hal,idf}_s3_power_rail_gate`         | none                                  | rail cycles, `event=sleep powered=false`, then the 30 s timer wake         |
-| `rail-gate-ve`  | `{hal,idf}_s3_power_rail_gate+meter`   | meter from `Ve` to GND                | attended: `Ve` reads about 3.3 V awake and about 0 V asleep (two confirms) |
-| `battery`       | `hal_s3_battery`, `idf_esp32s3_battery`| LiPo on JST-1.25                      | three `Battery: <mV>` lines                                                |
-| `battery-calib` | `{hal,idf_esp32s3}_battery+calib`      | LiPo on JST-1.25; meter at the pack   | three non-zero `Calib:` raws; attended: meter within 40 mV of `comp`      |
+| `rail-gate-ve`  | `{hal,idf}_s3_power_rail_gate--meter`   | meter from `Ve` to GND                | attended: `Ve` reads about 3.3 V awake and about 0 V asleep (two confirms) |
+| `battery`       | `hal_s3_battery`, `idf_s3_battery`| LiPo on JST-1.25                      | three `Battery: <mV>` lines                                                |
+| `battery-calib` | `{hal,idf}_s3_battery--calib`        | LiPo on JST-1.25; meter at the pack   | three non-zero `Calib:` raws; attended: meter within 40 mV of `comp`      |
 
-`battery-calib` examples are `hal_s3_battery+calib` and `idf_esp32s3_battery+calib`.
-Most steps wait for Enter before they start timing; read the instruction, press Enter, then act.
-`battery-calib` starts on its own; `rail-gate-ve` asks for one Enter once the meter is on `Ve` and GND, then restarts the board.
+`battery-calib` examples are `hal_s3_battery--calib` and `idf_s3_battery--calib`.
+Steps start on their own; only `rail-gate-ve` asks for one Enter once the meter is on `Ve` and GND, then restarts the board.
 Both announce the board's state and give you a 60 s window per measurement.
 
 ```shell
-just bench heltec
+just bench s3-heltec
 ```
 
 ## If it hangs

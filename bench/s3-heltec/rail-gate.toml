@@ -13,11 +13,13 @@ arm = false       # must read the backlog from the reset
 [[step]]
 say = "Hands off: the rail cycles, then the board sleeps with the rail off (up to 60 s)"
 expect = 'BENCH case=rail tier=\w+ (event=sleep powered=false|phase=sleep)'
-reject = 'phase=on cycle=\d+ powered=false|phase=off cycle=\d+ powered=true|failed|PANIC|panicked|Guru Meditation'
+reject = 'phase=on cycle=\d+ powered=false|phase=off cycle=\d+ powered=true|failed|PANIC|panicked|Guru Meditation|abort\(\)|WDT'
 timeout = 60
+arm = false
 
 [[step]]
 say = "Wait for the 30 s timer wake"
 expect = 'BENCH case=rail tier=\w+ (event=boot reset=\w+ powered=true|phase=boot cause=Timer)'
-reject = 'failed|PANIC|panicked|Guru Meditation'
+reject = 'failed|PANIC|panicked|Guru Meditation|abort\(\)|WDT'
 timeout = 45
+arm = false

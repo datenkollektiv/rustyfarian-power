@@ -9,14 +9,14 @@ examples = ["hal_esp32_battery", "idf_esp32_battery"]
 [[step]]
 say = "Wait for a battery reading"
 expect = 'Battery: '
-reject = 'ADC read failed|PANIC|panicked|Guru Meditation'
+reject = 'ADC read failed|PANIC|panicked|Guru Meditation|abort\(\)|WDT'
 timeout = 15
 arm = false       # idf prints its only reading right after the reset
 
 [[step]]
 say = "Now: hold the meter on the BAT and GND header pins (USB stays in); waiting for a Battery: line"
 expect = 'Battery: (?P<mv>\d+)mV'
-reject = 'ADC read failed|PANIC|panicked|Guru Meditation'
+reject = 'ADC read failed|PANIC|panicked|Guru Meditation|abort\(\)|WDT'
 timeout = 15      # sees the boot reading too, so idf's single line counts
 attended = true
 arm = false

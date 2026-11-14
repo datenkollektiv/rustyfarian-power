@@ -30,9 +30,9 @@ hal_s3_target    := "xtensa-esp32s3-none-elf"
 hal_std := "-Zbuild-std=core,alloc"
 
 ramdisk := "/Volumes/RustBuilds"
-idf_dir := if path_exists(ramdisk + "/targets/idf") == "true" { ramdisk + "/targets/idf/" + file_name(justfile_directory()) } else { "target/idf" }
+idf_dir := if shell('scripts/ramdisk-mounted.sh "$1"', ramdisk) == "true" { ramdisk + "/targets/idf/" + file_name(justfile_directory()) } else { "target/idf" }
 # bare-metal builds use a separate target dir so they do not thrash the IDF cache
-hal_dir := if path_exists(ramdisk + "/targets/hal") == "true" { ramdisk + "/targets/hal/" + file_name(justfile_directory()) } else { "target/hal" }
+hal_dir := if shell('scripts/ramdisk-mounted.sh "$1"', ramdisk) == "true" { ramdisk + "/targets/hal/" + file_name(justfile_directory()) } else { "target/hal" }
 
 # Guided bench runner: a local rustyfarian-bench checkout if RUSTYFARIAN_BENCH points at one,
 # otherwise the pinned release from GitHub.
@@ -72,11 +72,6 @@ check-c3:
 # check the ESP-IDF power crate and its C6 examples for the ESP32-C6 target (ESP32-C6-DevKitC-1, requires espup)
 check-c6:
     MCU=esp32c6 CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p rustyfarian-esp-idf-power --features critical-section-impl --target {{ c6_target }} --lib --example idf_c6_deep_sleep_gpio --example idf_c6_rtc_retention
-
-# verify device-side rustdoc snippets type-check for the ESP32 target (requires espup)
-# run this whenever touching rust,ignore doc snippets or esp-idf-gated code
-check-docs-esp32:
-    MCU=esp32 CARGO_TARGET_DIR="{{ idf_dir }}" cargo check -p rustyfarian-esp-idf-power --features critical-section-impl --target {{ esp32_target }}
 
 # check the esp-hal crate for all four chips (C3, C6, ESP32, S3; esp toolchain, no espup); the first line is the stoker-only surface without `unstable`
 check-hal:
@@ -168,7 +163,7 @@ run-hal-esp32 example features="esp32,unstable,examples": (build-example-hal-esp
 flash-hal-esp32 example features="esp32,unstable,examples": (build-example-hal-esp32 example features)
     espflash flash --chip esp32 {{ hal_dir }}/{{ hal_esp32_target }}/release/examples/{{ example }}
 
-# guided hardware check: `just bench c3 retention`, `just bench hal_c3_rtc_retention`, `just bench c3` (see bench/README.md)
+# guided hardware check: `just bench c3-mini1 retention`, `just bench hal_c3_rtc_retention`, `just bench c3-mini1` (see bench/README.md)
 bench target *args:
     {{ bench }} --repo . run "{{ target }}" {{ args }}
 
@@ -180,15 +175,15 @@ bench-list:
 bench-detect:
     {{ bench }} detect
 
-# Bench build step (bench/bench.toml): `idf_*` via build-example, `hal_<chip>_*` via build-example-hal-<chip>; `NAME+VARIANT` sets BENCH_VARIANT
+# Bench build step (bench/bench.toml): `idf_*` via build-example, `hal_<chip>_*` via build-example-hal-<chip>; `NAME--VARIANT` sets BENCH_VARIANT
 bench-build NAME:
     #!/usr/bin/env bash
     set -euo pipefail
     # the esp-hal Xtensa links need xtensa-esp32-elf-gcc on PATH (no `source ~/export-esp.sh` required)
-    # `NAME+VARIANT` builds NAME with BENCH_VARIANT=VARIANT (examples that support variants read it at build time)
+    # `NAME--VARIANT` builds NAME with BENCH_VARIANT=VARIANT (examples that support variants read it at build time)
     name="{{ NAME }}"
-    base="${name%%+*}"
-    if [ "$base" != "$name" ]; then export BENCH_VARIANT="${name#*+}"; else unset BENCH_VARIANT; fi
+    base="${name%%--*}"
+    if [ "$base" != "$name" ]; then export BENCH_VARIANT="${name#*--}"; else unset BENCH_VARIANT; fi
     . scripts/xtensa-toolchain.sh
     case "$base" in hal_esp32_* | hal_s3_*) setup_xtensa_toolchain ;; esac
     case "$base" in
@@ -205,10 +200,10 @@ bench-flash NAME PORT:
     #!/usr/bin/env bash
     set -euo pipefail
     # the esp-hal Xtensa links need xtensa-esp32-elf-gcc on PATH (no `source ~/export-esp.sh` required)
-    # `NAME+VARIANT` builds NAME with BENCH_VARIANT=VARIANT (examples that support variants read it at build time)
+    # `NAME--VARIANT` builds NAME with BENCH_VARIANT=VARIANT (examples that support variants read it at build time)
     name="{{ NAME }}"
-    base="${name%%+*}"
-    if [ "$base" != "$name" ]; then export BENCH_VARIANT="${name#*+}"; else unset BENCH_VARIANT; fi
+    base="${name%%--*}"
+    if [ "$base" != "$name" ]; then export BENCH_VARIANT="${name#*--}"; else unset BENCH_VARIANT; fi
     . scripts/xtensa-toolchain.sh
     case "$base" in hal_esp32_* | hal_s3_*) setup_xtensa_toolchain ;; esac
     export ESPFLASH_PORT="{{ PORT }}"
@@ -357,7 +352,7 @@ ci-audit: audit
 
 # Set RUSTYFARIAN_CI to a local rustyfarian-ci checkout to test unpushed reusable workflows.
 # The default runs the host jobs; run a chip job with e.g. `just act c3` or `just act hal`.
-# run the CI jobs locally via act: all host jobs, or one (`just act fmt`; requires Docker + act)
+[doc('run the CI jobs locally via act: all host jobs, or one (`just act fmt`; requires Docker + act)')]
 act job="":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -390,21 +385,19 @@ ci-hal: check-hal (build-example-hal-c3 "hal_c3_deep_sleep_gpio") (build-example
 
 # --- Composite ------------------------------------------------------------
 
-# full pre-commit verification: format, check, lint, test (modifies files — local use only)
-pre-commit: fmt check clippy test
+# full pre-commit verification: format, then verify (modifies files — local use only)
+pre-commit: fmt verify
 
-# non-modifying full verification (format check, deny, check, lint, test): fails on any anomaly
-verify:
-    @cargo fmt -- --check || (printf '\nFormatting issues found — run `just pre-commit` to auto-fix.\n' >&2 && exit 1)
-    cargo deny check
+# non-modifying, offline host verification (format check, check, lint, test): fails on any anomaly
+verify: fmt-check
     cargo check {{ host_flags }}
     cargo clippy {{ host_flags }} -- -D warnings
     cargo clippy {{ host_flags }} --features bench-conformance -- -D warnings
     cargo test {{ host_flags }}
     cargo test {{ host_flags }} --features bench-conformance
 
-# CI-equivalent verification (non-modifying): format check, deny, check, lint, test
-ci: fmt-check deny check clippy test test-bench
+# CI-equivalent verification (non-modifying): verify, then deny
+ci: verify deny
 
 # --- Release --------------------------------------------------------------
 #
@@ -434,13 +427,13 @@ release-publish-validate:
 release-dry-run-stoker:
     cargo publish --dry-run -p stoker --target {{ host_target }} --all-features
 
-# dry-run package rustyfarian-esp-idf-power against the ESP32-S3 target (no upload; requires espup)
 # NOTE: only succeeds AFTER stoker is published to crates.io (resolves stoker ^X.Y from the index)
+[doc('dry-run package rustyfarian-esp-idf-power against the ESP32-S3 target (no upload; requires espup)')]
 release-dry-run-idf:
     CARGO_TARGET_DIR="{{ idf_dir }}" cargo publish --dry-run -p rustyfarian-esp-idf-power --target {{ esp32s3_target }}
 
-# dry-run package rustyfarian-esp-hal-power against the ESP32-C3 target (no upload; esp toolchain, no espup)
 # NOTE: only succeeds AFTER stoker is published to crates.io (resolves stoker ^X.Y from the index)
+[doc('dry-run package rustyfarian-esp-hal-power against the ESP32-C3 target (no upload; esp toolchain, no espup)')]
 release-dry-run-hal:
     cargo publish --dry-run {{ hal_std }} -p rustyfarian-esp-hal-power --target {{ hal_c3_target }} --target-dir {{ hal_dir }}
 

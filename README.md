@@ -105,7 +105,7 @@ See [docs/hardware-setup.md](docs/hardware-setup.md) for wiring diagrams, ADC co
 
 | Board                     | Chip     | Example binary                     | Run command                              |
 |:--------------------------|:---------|:-----------------------------------|:-----------------------------------------|
-| Heltec WiFi LoRa 32 V3.1  | ESP32-S3 | `idf_esp32s3_battery`              | `just run idf_esp32s3_battery`           |
+| Heltec WiFi LoRa 32 V3.1  | ESP32-S3 | `idf_s3_battery`              | `just run idf_s3_battery`           |
 | Adafruit ESP32 Feather V2 | ESP32    | `idf_esp32_battery`                | `just run idf_esp32_battery`             |
 | ESP32-C3-DevKitM-1        | ESP32-C3 | `idf_c3_deep_sleep_gpio`           | `just run idf_c3_deep_sleep_gpio`        |
 | Elecrow CrowPanel 1.28"   | ESP32-S3 | `idf_s3_deep_sleep_gpio`           | `just run idf_s3_deep_sleep_gpio`        |
@@ -117,7 +117,7 @@ Connect the matching board before running — `espflash` will reject the binary 
 **Heltec WiFi LoRa 32 V3** (ESP32-S3) — reads battery voltage on GPIO1 every 2 s:
 
 ```shell
-just run idf_esp32s3_battery
+just run idf_s3_battery
 ```
 
 Expected serial output:
@@ -198,11 +198,21 @@ just pre-commit
 
 This repository publishes three crates, one per tier (see [release-plan.md](release-plan.md)):
 
-| Crate                                                           | Tier                         | crates.io                                                                                                                         | Docs                                                                                                   |
-|:----------------------------------------------------------------|:-----------------------------|:----------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------|
-| [`stoker`](crates/stoker)                                       | Pure / host-buildable        | [![crates.io](https://img.shields.io/crates/v/stoker.svg)](https://crates.io/crates/stoker)                                       | [![docs.rs](https://img.shields.io/docsrs/stoker)](https://docs.rs/stoker)                             |
-| [`rustyfarian-esp-idf-power`](crates/rustyfarian-esp-idf-power) | ESP-IDF (std)                | [![crates.io](https://img.shields.io/crates/v/rustyfarian-esp-idf-power.svg)](https://crates.io/crates/rustyfarian-esp-idf-power) | [![readme](https://img.shields.io/badge/docs-readme-blue)](crates/rustyfarian-esp-idf-power/README.md) |
-| [`rustyfarian-esp-hal-power`](crates/rustyfarian-esp-hal-power) | Bare-metal (esp-hal, no_std) | [![crates.io](https://img.shields.io/crates/v/rustyfarian-esp-hal-power.svg)](https://crates.io/crates/rustyfarian-esp-hal-power) | [![readme](https://img.shields.io/badge/docs-readme-blue)](crates/rustyfarian-esp-hal-power/README.md) |
+| Crate                                                           | Tier                         | crates.io                                  | Docs                                                                    |
+|:----------------------------------------------------------------|:-----------------------------|:-------------------------------------------|:------------------------------------------------------------------------|
+| [`stoker`](crates/stoker)                                       | Pure / host-buildable        | [![crates.io][badge-stoker]][crate-stoker] | [![docs.rs][badge-docsrs-stoker]][docsrs-stoker]                        |
+| [`rustyfarian-esp-idf-power`](crates/rustyfarian-esp-idf-power) | ESP-IDF (std)                | [![crates.io][badge-idf]][crate-idf]       | [![readme][badge-readme]](crates/rustyfarian-esp-idf-power/README.md)   |
+| [`rustyfarian-esp-hal-power`](crates/rustyfarian-esp-hal-power) | Bare-metal (esp-hal, no_std) | [![crates.io][badge-hal]][crate-hal]       | [![readme][badge-readme]](crates/rustyfarian-esp-hal-power/README.md)   |
+
+[badge-stoker]: https://img.shields.io/crates/v/stoker.svg
+[crate-stoker]: https://crates.io/crates/stoker
+[badge-docsrs-stoker]: https://img.shields.io/docsrs/stoker
+[docsrs-stoker]: https://docs.rs/stoker
+[badge-idf]: https://img.shields.io/crates/v/rustyfarian-esp-idf-power.svg
+[crate-idf]: https://crates.io/crates/rustyfarian-esp-idf-power
+[badge-hal]: https://img.shields.io/crates/v/rustyfarian-esp-hal-power.svg
+[crate-hal]: https://crates.io/crates/rustyfarian-esp-hal-power
+[badge-readme]: https://img.shields.io/badge/docs-readme-blue
 
 Contents of `stoker`:
 - Types: `BatteryConfig`, `BatteryStatus`, `PowerSource`, `GatedSleep`, `ChargingState`, `WakeCause` / `WakeSource`.

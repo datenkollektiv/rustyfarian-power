@@ -4,7 +4,7 @@
 # before the forced `try_sleep` and right after its `Rejected`; the two must match and the holds must stick.
 # A per-boot self-test must detect a deliberate difference (`detect=1`).
 # Guard path: the forced cycles keep the global pad hold on, so the library guard rejects before sleep entry.
-examples = ["hal_s3_deep_sleep_gpio+r4-guard", "idf_s3_deep_sleep_gpio+r4-guard"]
+examples = ["hal_s3_deep_sleep_gpio--r4-guard", "idf_s3_deep_sleep_gpio--r4-guard"]
 
 [[step]]
 say = "Wait for the boot line"
@@ -16,5 +16,6 @@ arm = false
 [[step]]
 say = "Hands off: self-test detects, then the guard-path rejection leaves every probe pad and hold unchanged"
 expect = ['NONWAKE selftest tier=\w+ detect=1 hold38=1', 'FORCED tier=\w+ int_before=L autohold=1', 'NONWAKE tier=\w+ path=guard same=1 holdok=1 diff=-']
-reject = 'NONWAKE tier=\w+ path=guard same=0|holdok=0|rst:0x8|try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST'
+reject = 'NONWAKE tier=\w+ path=guard same=0|holdok=0|rst:0x8|try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST|abort\(\)|WDT'
 timeout = 60
+arm = false

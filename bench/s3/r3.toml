@@ -3,7 +3,7 @@
 # the library guard must answer `Rejected` from its pre-entry pin read instead. Same stimulus as `r2`.
 # esp-hal boots after a guarded rejection print nothing the capture receives, so only the plain-cycle
 # recount is required here; the forced recount is covered by `r2`.
-examples = ["hal_s3_deep_sleep_gpio+r3", "idf_s3_deep_sleep_gpio+r3"]
+examples = ["hal_s3_deep_sleep_gpio--r3", "idf_s3_deep_sleep_gpio--r3"]
 
 [[step]]
 say = "Wait for the boot line"
@@ -15,11 +15,13 @@ arm = false
 [[step]]
 say = "Hands off: forced rejection with the pad hold kept on; the guard rejects, no hang, then the L->H edge"
 expect = ['FORCED tier=\w+ int_before=L autohold=1', 'PINREAD start tier=\w+ pin=5 level=L', 'PINREAD edge tier=\w+ pin=5 L->H']
-reject = 'Deep sleep request is rejected|rst:0x8|try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST'
+reject = 'Deep sleep request is rejected|rst:0x8|try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST|abort\(\)|WDT'
 timeout = 60
+arm = false
 
 [[step]]
 say = "Hands off: the board keeps cycling; a plain cycle's recount reads the 5 s timer"
 expect = 'SLEPT tier=\w+ ms=5[0-6]\d\d forced=0'
-reject = 'rst:0x8|try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST'
+reject = 'rst:0x8|try_sleep failed|PANIC|panicked|Guru Meditation|TG1WDT_SYS_RST|abort\(\)|WDT'
 timeout = 90
+arm = false

@@ -1,6 +1,6 @@
-# RTC retention across timer deep sleep, esp-hal tier only (no IDF twin yet) (default build: action `sleep`, 5 s timer).
-# Each boot prints one `RET` line; after a timer wake the record must load and `boots` count on.
-examples = ["hal_esp32_rtc_retention"]
+# RTC retention across timer deep sleep on the S3 (RTC slow memory), ESP-IDF tier only (no esp-hal twin yet).
+# Default build: action `sleep`, 5 s timer.
+examples = ["idf_s3_rtc_retention"]
 
 [[step]]
 say = "Wait for the first boot line"
@@ -12,5 +12,6 @@ arm = false       # must read the backlog from the reset
 [[step]]
 say = "Hands off: watch two 5 s timer wakes keep the record"
 expect = ['RET reset=DeepSleep wake=Timer load=ok', 'RET reset=DeepSleep wake=Timer load=ok']
-reject = 'load=err|store failed|sleep failed|PANIC|panicked|Guru Meditation'
+reject = 'load=err|store failed|sleep failed|PANIC|panicked|Guru Meditation|abort\(\)|WDT'
 timeout = 30
+arm = false

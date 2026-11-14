@@ -4,10 +4,11 @@
 # A run printing `USB/Ext` or `No battery` has no voltage to match — recalibrate with
 # `battery-calib` first.
 # Meter the pack's polarity BEFORE connecting it (docs/project-lore.md -> Hardware).
-examples = ["hal_s3_battery", "idf_esp32s3_battery"]
+examples = ["hal_s3_battery", "idf_s3_battery"]
 
 [[step]]
 say = "Wait for three voltage readings (mV)"
 expect = ['Battery: \d+mV', 'Battery: \d+mV', 'Battery: \d+mV']
-reject = 'ADC read failed|PANIC|panicked|Guru Meditation'
+reject = 'ADC read failed|PANIC|panicked|Guru Meditation|abort\(\)|WDT'
 timeout = 15
+arm = false

@@ -49,7 +49,7 @@
 //! ## Run
 //!
 //! ```shell
-//! just run idf_esp32s3_battery
+//! just run idf_s3_battery
 //! ```
 
 use std::ffi::CString;
@@ -89,9 +89,9 @@ static LOGGER: RomLogger = RomLogger;
 
 use stoker::bench::variant_index;
 
-/// `BENCH_VARIANT` at build time (`just bench-build NAME+VARIANT`): `calib` adds a
+/// `BENCH_VARIANT` at build time (`just bench-build NAME--VARIANT`): `calib` adds a
 /// `Calib:` line printing the compensated and averaged raw pin mV in every power state, for
-/// divider-ratio calibration (see `bench/heltec/battery-calib.toml`). Unknown values fail the build.
+/// divider-ratio calibration (see `bench/s3-heltec/battery-calib.toml`). Unknown values fail the build.
 const CALIB: bool = variant_index(option_env!("BENCH_VARIANT"), &["calib"]).is_some();
 
 fn main() -> anyhow::Result<()> {
