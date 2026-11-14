@@ -356,7 +356,7 @@ ci-deny: deny
 ci-audit: audit
 
 # Set RUSTYFARIAN_CI to a local rustyfarian-ci checkout to test unpushed reusable workflows.
-# The default runs the host jobs; run a chip job with e.g. `just act check-c3` or `just act hal`.
+# The default runs the host jobs; run a chip job with e.g. `just act c3` or `just act hal`.
 # run the CI jobs locally via act: all host jobs, or one (`just act fmt`; requires Docker + act)
 act job="":
     #!/usr/bin/env bash
@@ -367,7 +367,7 @@ act job="":
 
 # --- CI chip jobs ---------------------------------------------------------
 #
-# One aggregate recipe per CI job (.github/workflows/rust.yml, hal.yml), so CI and a
+# One aggregate recipe per CI job (.github/workflows/rust.yml, cross-target-esp-hal.yml), so CI and a
 # local run execute the same steps. Provider failures are link-time facts (ADR-003
 # point 5), so these link the representative firmware per tier and chip, which
 # `cargo check` cannot do. The original ESP32 is compile-only: no link builds.

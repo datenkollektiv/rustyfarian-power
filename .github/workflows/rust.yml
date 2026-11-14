@@ -31,7 +31,7 @@ jobs:
   # cannot verify (a missing SDK symbol only fails at link time), so ldproxy is needed
   # (installed by setup-esp-idf). espup installs the esp toolchain only for an Xtensa
   # target, so the RISC-V jobs request esp32.
-  check-c3:
+  c3:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -60,9 +60,9 @@ jobs:
         uses: extractions/setup-just@v4
       - name: Check and link the C3 examples (ESP-IDF tier)
         run: just ci-c3
-  # Same toolchain as check-c3; a separate job so the C6 ESP-IDF build runs in parallel.
+  # Same toolchain as c3; a separate job so the C6 ESP-IDF build runs in parallel.
   # Checks and links the two C6 examples (deep-sleep GPIO, RTC retention) via `just ci-c6`.
-  check-c6:
+  c6:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -88,10 +88,10 @@ jobs:
         uses: extractions/setup-just@v4
       - name: Check and link the C6 examples (ESP-IDF tier)
         run: just ci-c6
-  # Same toolchain as check-c3; a separate job so the S3 ESP-IDF build runs in
+  # Same toolchain as c3; a separate job so the S3 ESP-IDF build runs in
   # parallel. Links all three S3 examples (retention, deep-sleep GPIO, power rail gate);
   # the S3 has no separate `check` step because the links compile the same code.
-  check-s3:
+  s3:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -120,7 +120,7 @@ jobs:
   # ESP32: compile-only (no link build, hardware deferred). The original ESP32
   # link builds are skipped for now; this keeps the ESP-IDF tier's `cargo check` for it.
   # Its own job: the xtensa-esp32-espidf ESP-IDF build is separate from the S3 one.
-  check-esp32:
+  esp32:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
