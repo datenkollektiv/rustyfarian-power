@@ -25,7 +25,8 @@ The ESP-IDF tier tracks the family stack of `rustyfarian-network`, `-ws2812` and
 timeline
     title rustyfarian-power Roadmap
 
-    Near term : C6-DevKitC-1 hardware pass, both tiers — timer and EXT1 wake, held-pin guard policy (Never or Always), UART drain, RTC clock, retention across resets
+    Near term : ESP-IDF v6.1 hardware pass — the GPIO wake code 0.4.0 changed shipped compile-checked only; run C3 pir-wake and retention, ESP32 anylow, S3 r2 and touch-wake, then update the v6.1 lore provenance bullet
+              : C6-DevKitC-1 hardware pass, both tiers — timer and EXT1 wake, held-pin guard policy (Never or Always), UART drain, RTC clock, retention across resets
               : Regression benches — C3 R1-R4 and Heltec V3 R2-R4 on both tiers
               : Cross-chip retry bench — three try_sleep retries after a software and after a hardware Rejected behave as fresh attempts; C3 IDF clears the wake pin's deep-sleep enable after a software Rejected
               : Cross-chip retention bench — the session id survives deep sleep, GPIO wake, brownout and every reset kind each tier supports

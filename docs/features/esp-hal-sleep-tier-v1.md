@@ -31,9 +31,9 @@ Bench results per board are in `bench/<board>/README.md`; the two-board C3 drive
 - [ ] ADR-001 acceptance:
   - `short-timer-sweep` sets the timer constants (needs the PPK2).
   - § 4b-4d cases `wake-cause-survives-rejection`, `held-level-custom-handler`, `rejection-retry-loop`, `foreign-wake-pin` (`scripts/c3-bench.py` H2-H8).
-- [ ] File the four esp-rs issues and record their numbers:
+- [ ] File the three esp-rs issues and record their numbers:
   - GPIO wake documented as light-sleep only.
   - `rtc_fastmem_pd_en` unused on the C3.
-  - C3 metadata lists `Touch` and `Ulp`.
   - ESP32 `RtcSleepConfig::deep()` loses `.rtc_fast.persistent`.
-  - Drafts: `review-queue/upstream-esp-hal-*-v1.md`.
+  - Drafts: `docs/feature-requests/upstream-esp-hal-*-v1.md`.
+  - C3 metadata listing `Touch` and `Ulp` is fixed on esp-hal `main`, not in 1.2.2; not filed.
