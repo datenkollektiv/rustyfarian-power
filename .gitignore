@@ -8,6 +8,7 @@ review-queue/
 .idea/
 release/
 audit/
+docs/feature-requests/
 
 # Temporary scratch files — local only
 tmp/

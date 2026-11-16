@@ -116,6 +116,7 @@ Refer to `AGENTS.md` and the `/project-lore` skill for recording guidelines.
 - `sys::FUN_IE_S` is absent from the v6.1 bindings on every chip, because `io_mux_reg.h` moved from `soc/<chip>/include/soc/` to `soc/<chip>/register/soc/`; the value is 9 on ESP32, S3, C2, C3 and C6 in both versions.
 - In v6.1, `esp_sleep_get_gpio_wakeup_status()` returns a mask indexed by RTC IO number, not GPIO number, and `esp_sleep_wakeup_io_bit2num()` converts a bit to the GPIO.
 - v6.1 removed the C2/C3 calls `esp_deep_sleep_enable_gpio_wakeup` and `gpio_deep_sleep_wakeup_disable` and the type `esp_deepsleep_gpio_wake_up_mode_t`; the replacements are `esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown`, `gpio_wakeup_disable_on_hp_periph_powerdown_sleep` and `esp_sleep_gpio_wake_up_mode_t`.
+- ESP-IDF v6.1 builds with picolibc by default (`CONFIG_LIBC_PICOLIBC=y` unless the toolchain is clang), so newlib-only sdkconfig keys are silently ignored: `CONFIG_NEWLIB_NANO_FORMAT` is renamed to `CONFIG_LIBC_NEWLIB_NANO_FORMAT`, which `depends on LIBC_NEWLIB`; set `CONFIG_LIBC_NEWLIB=y` to keep the v5 libc.
 - The C3, ESP32 EXT1 and S3 deep-sleep bullets above were bench-proven on v5.3.3 and source-checked against v6.1 (esp-idf-hal 0.47, esp-idf-sys 0.38.1); re-run the bench before trusting one that a v6.1 symptom contradicts.
 
 ---

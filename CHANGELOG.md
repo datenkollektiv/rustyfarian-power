@@ -11,6 +11,8 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 
 ### Migration
 - **Breaking:** `rustyfarian-esp-idf-power` requires ESP-IDF v6.0 or newer (workspace builds v6.1); ESP-IDF v5.x firmware stays on 0.3.x, and an older build stops with a `compile_error!` naming the requirement.
+- ESP-IDF v6.1 builds firmware with picolibc by default (`CONFIG_LIBC_PICOLIBC=y`), and newlib-only sdkconfig keys are silently ignored, e.g. `CONFIG_NEWLIB_NANO_FORMAT` (now `CONFIG_LIBC_NEWLIB_NANO_FORMAT`, which depends on `CONFIG_LIBC_NEWLIB`).
+  Set `CONFIG_LIBC_NEWLIB=y` to keep the v5 libc, or stay on picolibc and drop the newlib-only keys; the crates are built and benched on picolibc.
 
 ### Changed
 - ESP-IDF examples build against v6.1 (was v5.3.3); the C2/C3 GPIO wake path uses the v6 calls `esp_sleep_enable_gpio_wakeup_on_hp_periph_powerdown` and `gpio_wakeup_disable_on_hp_periph_powerdown_sleep`.
