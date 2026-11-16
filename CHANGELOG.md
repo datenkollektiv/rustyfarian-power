@@ -9,6 +9,10 @@ Starting with 0.1.0 this project follows [Semantic Versioning](https://semver.or
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-16
+
+The crates move to ESP-IDF v6.1: `rustyfarian-esp-idf-power` requires ESP-IDF v6.0 or newer, while `stoker` and `rustyfarian-esp-hal-power` change in docs only.
+
 ### Migration
 - **Breaking:** `rustyfarian-esp-idf-power` requires ESP-IDF v6.0 or newer (workspace builds v6.1); ESP-IDF v5.x firmware stays on 0.3.x, and an older build stops with a `compile_error!` naming the requirement.
 - ESP-IDF v6.1 builds firmware with picolibc by default (`CONFIG_LIBC_PICOLIBC=y`), and newlib-only sdkconfig keys are silently ignored, e.g. `CONFIG_NEWLIB_NANO_FORMAT` (now `CONFIG_LIBC_NEWLIB_NANO_FORMAT`, which depends on `CONFIG_LIBC_NEWLIB`).
